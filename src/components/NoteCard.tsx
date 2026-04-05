@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Pressable } from 'react-native';
 import { Text, useTheme, IconButton } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Note, WEEKDAY_LABELS } from '../models/Note';
 import { getCategoryColor } from '../utils/categoryColors';
 
@@ -8,9 +9,10 @@ interface Props {
   note: Note;
   onPress: () => void;
   onDelete: () => void;
+  onTogglePin: () => void;
 }
 
-export default function NoteCard({ note, onPress, onDelete }: Props) {
+export default function NoteCard({ note, onPress, onDelete, onTogglePin }: Props) {
   const theme = useTheme();
   const catColor = getCategoryColor(note.category);
 
@@ -51,6 +53,14 @@ export default function NoteCard({ note, onPress, onDelete }: Props) {
 
       <View style={styles.body}>
         <View style={styles.header}>
+          {note.isPinned && (
+            <MaterialCommunityIcons
+              name="pin"
+              size={14}
+              color={theme.colors.tertiary}
+              style={styles.pinIcon}
+            />
+          )}
           <Text
             variant="titleMedium"
             style={[styles.title, { color: theme.colors.onSurface }]}
@@ -58,6 +68,13 @@ export default function NoteCard({ note, onPress, onDelete }: Props) {
           >
             {note.title || 'Ohne Titel'}
           </Text>
+          <IconButton
+            icon={note.isPinned ? 'pin-off' : 'pin-outline'}
+            size={16}
+            iconColor={note.isPinned ? theme.colors.tertiary : theme.colors.onSurfaceVariant}
+            onPress={onTogglePin}
+            style={styles.deleteBtn}
+          />
           <IconButton
             icon="trash-can-outline"
             size={16}
@@ -76,6 +93,19 @@ export default function NoteCard({ note, onPress, onDelete }: Props) {
             {note.content}
           </Text>
         ) : null}
+
+        {note.checklist && note.checklist.length > 0 && (
+          <View style={styles.checklistBadgeRow}>
+            <MaterialCommunityIcons
+              name="checkbox-marked-outline"
+              size={13}
+              color={theme.colors.secondary}
+            />
+            <Text style={[styles.checklistBadgeText, { color: theme.colors.secondary }]}>
+              {note.checklist.filter((i) => i.checked).length}/{note.checklist.length}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.footer}>
           <Text style={[styles.categoryLabel, { color: catColor }]}>
@@ -125,9 +155,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0.15,
   },
+  pinIcon: {
+    marginRight: 4,
+  },
   deleteBtn: {
     margin: -8,
     opacity: 0.4,
+  },
+  checklistBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  checklistBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   preview: {
     marginTop: 4,

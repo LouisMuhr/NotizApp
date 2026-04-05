@@ -15,7 +15,7 @@ interface Props {
 export default function HomeScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { notes, categories, loading, deleteNote } = useNotes();
+  const { notes, categories, loading, deleteNote, togglePin } = useNotes();
 
   const [filters, setFilters] = useState<FilterOptions>({
     category: null,
@@ -42,6 +42,10 @@ export default function HomeScreen({ navigation }: Props) {
     }
 
     result.sort((a, b) => {
+      // Pinned notes always come first
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
       let valA: string, valB: string;
       switch (filters.sortField) {
         case 'title':
@@ -129,6 +133,7 @@ export default function HomeScreen({ navigation }: Props) {
               note={item}
               onPress={() => navigation.navigate('Editor', { noteId: item.id })}
               onDelete={() => setDeleteTarget(item)}
+              onTogglePin={() => togglePin(item.id)}
             />
           )}
           contentContainerStyle={styles.list}

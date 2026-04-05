@@ -12,6 +12,7 @@ interface NotesContextType {
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>) => Promise<Note>;
   updateNote: (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
+  togglePin: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
 }
@@ -139,6 +140,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [categories]);
 
+  const togglePin = useCallback(async (id: string) => {
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+    const updated = notes.map((n) =>
+      n.id === id ? { ...n, isPinned: !n.isPinned, updatedAt: new Date().toISOString() } : n
+    );
+    await persistNotes(updated);
+  }, [notes, persistNotes]);
+
   const deleteCategory = useCallback(async (name: string) => {
     const updated = categories.filter((c) => c !== name);
     setCategories(updated);
@@ -154,6 +164,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         addNote,
         updateNote,
         deleteNote,
+        togglePin,
         addCategory,
         deleteCategory,
       }}

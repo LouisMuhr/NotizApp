@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -20,9 +20,13 @@ import {
   SegmentedButtons,
 } from 'react-native-paper';
 
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNotes } from '../context/NotesContext';
 import {
+  ChecklistItem,
   ReminderRecurrence,
   WEEKDAY_LABELS,
   WEEKDAY_ORDER,
@@ -49,6 +53,9 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [content, setContent] = useState(existingNote?.content ?? '');
   const [category, setCategory] = useState(existingNote?.category ?? categories[0] ?? 'Allgemein');
+  const [isPinned, setIsPinned] = useState(existingNote?.isPinned ?? false);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(existingNote?.checklist ?? []);
+  const [newChecklistText, setNewChecklistText] = useState('');
   const [reminderAt, setReminderAt] = useState<Date | null>(
     existingNote?.reminderAt ? new Date(existingNote.reminderAt) : null
   );
@@ -75,25 +82,50 @@ export default function EditorScreen({ navigation, route }: Props) {
     });
   }, [existingNote, navigation]);
 
-  const handleSave = useCallback(async () => {
+  const saveNoteRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const hasSavedRef = useRef(false);
+
+  const saveNote = useCallback(async () => {
+    if (hasSavedRef.current) return;
+    hasSavedRef.current = true;
+
     const reminderIso = reminderAt?.toISOString() ?? null;
     const notePayload = {
       title: title.trim(),
       content,
       category,
+      isPinned,
+      checklist,
       reminderAt: reminderIso,
       reminderRecurrence: reminderIso ? recurrence : 'once' as ReminderRecurrence,
       reminderWeekday: reminderIso && recurrence === 'weekly' ? weekday : null,
       reminderDayOfMonth: reminderIso && recurrence === 'monthly' ? dayOfMonth : null,
     };
 
+    if (!existingNote && !notePayload.title && !notePayload.content && checklist.length === 0) return;
+
     if (existingNote) {
       await updateNote(existingNote.id, notePayload);
     } else {
       await addNote(notePayload);
     }
+  }, [existingNote, title, content, category, isPinned, checklist, reminderAt, recurrence, weekday, dayOfMonth, updateNote, addNote]);
+
+  useEffect(() => {
+    saveNoteRef.current = saveNote;
+  }, [saveNote]);
+
+  const handleSave = useCallback(async () => {
+    await saveNote();
     navigation.goBack();
-  }, [existingNote, title, content, category, reminderAt, recurrence, weekday, dayOfMonth, updateNote, addNote, navigation]);
+  }, [saveNote, navigation]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (_e: any) => {
+      saveNoteRef.current?.();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const handleAddCategory = useCallback(async () => {
     const name = newCategoryName.trim();
@@ -104,6 +136,26 @@ export default function EditorScreen({ navigation, route }: Props) {
       setNewCategoryDialog(false);
     }
   }, [newCategoryName, addCategory]);
+
+  const addChecklistItem = useCallback(() => {
+    const text = newChecklistText.trim();
+    if (text) {
+      setChecklist((prev) => [...prev, { id: uuidv4(), text, checked: false }]);
+      setNewChecklistText('');
+    }
+  }, [newChecklistText]);
+
+  const toggleChecklistItem = useCallback((itemId: string) => {
+    setChecklist((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, checked: !item.checked } : item
+      )
+    );
+  }, []);
+
+  const removeChecklistItem = useCallback((itemId: string) => {
+    setChecklist((prev) => prev.filter((item) => item.id !== itemId));
+  }, []);
 
   const handleDateChange = useCallback((_: any, selectedDate?: Date) => {
     setShowDatePicker(false);
@@ -175,19 +227,31 @@ export default function EditorScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Title */}
-        <TextInput
-          label="Titel"
-          value={title}
-          onChangeText={setTitle}
-          mode="outlined"
-          style={styles.input}
-          outlineStyle={styles.outline}
-          outlineColor={theme.colors.outline}
-          activeOutlineColor={theme.colors.primary}
-          textColor={theme.colors.onSurface}
-          theme={inputTheme}
-        />
+        {/* Pin + Title */}
+        <View style={styles.titleRow}>
+          <TextInput
+            label="Titel"
+            value={title}
+            onChangeText={setTitle}
+            mode="outlined"
+            style={[styles.input, { flex: 1 }]}
+            outlineStyle={styles.outline}
+            outlineColor={theme.colors.outline}
+            activeOutlineColor={theme.colors.primary}
+            textColor={theme.colors.onSurface}
+            theme={inputTheme}
+          />
+          <IconButton
+            icon={isPinned ? 'pin' : 'pin-outline'}
+            size={22}
+            iconColor={isPinned ? theme.colors.tertiary : theme.colors.onSurfaceVariant}
+            onPress={() => setIsPinned(!isPinned)}
+            style={[
+              styles.pinBtn,
+              isPinned && { backgroundColor: theme.colors.tertiaryContainer },
+            ]}
+          />
+        </View>
 
         {/* Content */}
         <TextInput
@@ -204,6 +268,67 @@ export default function EditorScreen({ navigation, route }: Props) {
           textColor={theme.colors.onSurface}
           theme={inputTheme}
         />
+
+        {/* Divider */}
+        <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
+
+        {/* Checklist */}
+        <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+          CHECKLISTE
+        </Text>
+
+        {checklist.map((item) => (
+          <View key={item.id} style={styles.checklistRow}>
+            <IconButton
+              icon={item.checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
+              size={20}
+              iconColor={item.checked ? theme.colors.secondary : theme.colors.onSurfaceVariant}
+              onPress={() => toggleChecklistItem(item.id)}
+              style={styles.checkboxBtn}
+            />
+            <Text
+              style={[
+                styles.checklistText,
+                { color: theme.colors.onSurface },
+                item.checked && { textDecorationLine: 'line-through', opacity: 0.5 },
+              ]}
+              numberOfLines={2}
+            >
+              {item.text}
+            </Text>
+            <IconButton
+              icon="close"
+              size={14}
+              iconColor={theme.colors.onSurfaceVariant}
+              onPress={() => removeChecklistItem(item.id)}
+              style={styles.checklistRemoveBtn}
+            />
+          </View>
+        ))}
+
+        <View style={styles.addChecklistRow}>
+          <TextInput
+            value={newChecklistText}
+            onChangeText={setNewChecklistText}
+            placeholder="Neuer Punkt..."
+            mode="outlined"
+            dense
+            style={[styles.input, { flex: 1 }]}
+            outlineStyle={{ borderRadius: 12, borderWidth: 1 }}
+            outlineColor={theme.colors.outline}
+            activeOutlineColor={theme.colors.primary}
+            textColor={theme.colors.onSurface}
+            theme={inputTheme}
+            onSubmitEditing={addChecklistItem}
+            returnKeyType="done"
+          />
+          <IconButton
+            icon="plus-circle"
+            size={24}
+            iconColor={theme.colors.primary}
+            onPress={addChecklistItem}
+          />
+        </View>
 
         {/* Divider */}
         <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
@@ -449,8 +574,38 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  pinBtn: {
+    borderRadius: 12,
+    marginTop: 4,
+  },
   contentInput: {
     minHeight: 160,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkboxBtn: {
+    margin: -4,
+    marginRight: 4,
+  },
+  checklistText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  checklistRemoveBtn: {
+    margin: -4,
+    opacity: 0.4,
+  },
+  addChecklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   divider: {
     height: 1,
