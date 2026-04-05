@@ -1,6 +1,6 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View, ScrollView, Pressable } from 'react-native';
-import { Text, useTheme, IconButton, Chip, Checkbox } from 'react-native-paper';
+import { Text, useTheme, IconButton, Chip, Checkbox, Portal, Dialog, Button } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useNotes } from '../context/NotesContext';
 import { WEEKDAY_LABELS } from '../models/Note';
@@ -54,11 +54,22 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
     }
   };
 
+  const [showResetDialog, setShowResetDialog] = useState(false);
+
   const toggleChecklistItem = useCallback((itemId: string) => {
     const updated = note.checklist.map((item) =>
       item.id === itemId ? { ...item, checked: !item.checked } : item
     );
     updateNote(note.id, { checklist: updated });
+    if (updated.length > 0 && updated.every((i) => i.checked)) {
+      setShowResetDialog(true);
+    }
+  }, [note, updateNote]);
+
+  const resetChecklist = useCallback(() => {
+    const reset = note.checklist.map((item) => ({ ...item, checked: false }));
+    updateNote(note.id, { checklist: reset });
+    setShowResetDialog(false);
   }, [note, updateNote]);
 
   const reminderLabel = getReminderLabel();
@@ -164,6 +175,30 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
         )}
       </ScrollView>
 
+      {/* Reset Checklist Dialog */}
+      <Portal>
+        <Dialog
+          visible={showResetDialog}
+          onDismiss={() => setShowResetDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>Alle erledigt!</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              Checkliste zurücksetzen, um sie erneut zu verwenden?
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setShowResetDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              Behalten
+            </Button>
+            <Button onPress={resetChecklist} mode="contained" style={{ borderRadius: 12 }}>
+              Zurücksetzen
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
       {/* Edit FAB */}
       <IconButton
         icon="pencil"
@@ -257,6 +292,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
+  },
+  dialog: {
+    borderRadius: 24,
   },
   editBtn: {
     position: 'absolute',

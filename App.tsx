@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { NotesProvider } from './src/context/NotesContext';
 import { AppTheme } from './src/theme/theme';
@@ -27,17 +28,19 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <PaperProvider theme={AppTheme}>
-          <NavigationContainer theme={navTheme}>
-            <NotesProvider>
-              <AppNavigator />
-              <StatusBar style="light" />
-            </NotesProvider>
-          </NavigationContainer>
-        </PaperProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <PaperProvider theme={AppTheme}>
+            <NavigationContainer theme={navTheme}>
+              <NotesProvider>
+                <AppNavigator />
+                <StatusBar style="light" />
+              </NotesProvider>
+            </NavigationContainer>
+          </PaperProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

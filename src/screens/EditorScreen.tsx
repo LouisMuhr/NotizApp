@@ -70,6 +70,7 @@ export default function EditorScreen({ navigation, route }: Props) {
     existingNote?.reminderDayOfMonth ?? 1
   );
 
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const [categoryMenuVisible, setCategoryMenuVisible] = useState(false);
   const [newCategoryDialog, setNewCategoryDialog] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -147,11 +148,15 @@ export default function EditorScreen({ navigation, route }: Props) {
   }, [newChecklistText]);
 
   const toggleChecklistItem = useCallback((itemId: string) => {
-    setChecklist((prev) =>
-      prev.map((item) =>
+    setChecklist((prev) => {
+      const updated = prev.map((item) =>
         item.id === itemId ? { ...item, checked: !item.checked } : item
-      )
-    );
+      );
+      if (updated.length > 0 && updated.every((i) => i.checked)) {
+        setShowResetDialog(true);
+      }
+      return updated;
+    });
   }, []);
 
   const removeChecklistItem = useCallback((itemId: string) => {
@@ -580,6 +585,37 @@ export default function EditorScreen({ navigation, route }: Props) {
             </Button>
             <Button onPress={handleAddCategory} mode="contained" style={{ borderRadius: 12 }}>
               Hinzufügen
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* Reset Checklist Dialog */}
+      <Portal>
+        <Dialog
+          visible={showResetDialog}
+          onDismiss={() => setShowResetDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>Alle erledigt!</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              Checkliste zurücksetzen, um sie erneut zu verwenden?
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setShowResetDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              Behalten
+            </Button>
+            <Button
+              onPress={() => {
+                setChecklist((prev) => prev.map((i) => ({ ...i, checked: false })));
+                setShowResetDialog(false);
+              }}
+              mode="contained"
+              style={{ borderRadius: 12 }}
+            >
+              Zurücksetzen
             </Button>
           </Dialog.Actions>
         </Dialog>
