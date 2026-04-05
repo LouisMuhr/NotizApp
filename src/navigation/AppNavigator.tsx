@@ -5,6 +5,7 @@ import { useTheme } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import HomeScreen from '../screens/HomeScreen';
 import EditorScreen from '../screens/EditorScreen';
+import NoteDetailScreen from '../screens/NoteDetailScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
@@ -92,6 +93,11 @@ export default function AppNavigator() {
         name="Home"
         component={HomeTabs}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: 'Notiz' }}
       />
       <Stack.Screen
         name="Editor"

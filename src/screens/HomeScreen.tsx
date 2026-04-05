@@ -131,7 +131,7 @@ export default function HomeScreen({ navigation }: Props) {
           renderItem={({ item }) => (
             <NoteCard
               note={item}
-              onPress={() => navigation.navigate('Editor', { noteId: item.id })}
+              onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
               onDelete={() => setDeleteTarget(item)}
               onTogglePin={() => togglePin(item.id)}
             />

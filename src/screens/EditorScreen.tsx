@@ -55,6 +55,7 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [category, setCategory] = useState(existingNote?.category ?? categories[0] ?? 'Allgemein');
   const [isPinned, setIsPinned] = useState(existingNote?.isPinned ?? false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(existingNote?.checklist ?? []);
+  const [showChecklist, setShowChecklist] = useState((existingNote?.checklist ?? []).length > 0);
   const [newChecklistText, setNewChecklistText] = useState('');
   const [reminderAt, setReminderAt] = useState<Date | null>(
     existingNote?.reminderAt ? new Date(existingNote.reminderAt) : null
@@ -272,63 +273,92 @@ export default function EditorScreen({ navigation, route }: Props) {
         {/* Divider */}
         <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
 
-        {/* Checklist */}
-        <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
-          CHECKLISTE
-        </Text>
+        {/* Checklist Toggle */}
+        <Chip
+          icon={showChecklist ? 'checkbox-marked-outline' : 'checkbox-blank-outline'}
+          selected={showChecklist}
+          onPress={() => {
+            if (showChecklist && checklist.length > 0) {
+              // Keep items but hide section
+            }
+            setShowChecklist(!showChecklist);
+          }}
+          compact
+          style={[
+            styles.checklistToggle,
+            {
+              backgroundColor: showChecklist
+                ? theme.colors.secondaryContainer
+                : 'transparent',
+              borderColor: showChecklist ? theme.colors.secondary : theme.colors.outline,
+            },
+          ]}
+          textStyle={{
+            fontSize: 12,
+            fontWeight: '600',
+            color: showChecklist ? theme.colors.secondary : theme.colors.onSurfaceVariant,
+          }}
+        >
+          Checkliste{checklist.length > 0 ? ` (${checklist.filter((i) => i.checked).length}/${checklist.length})` : ''}
+        </Chip>
 
-        {checklist.map((item) => (
-          <View key={item.id} style={styles.checklistRow}>
-            <IconButton
-              icon={item.checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
-              size={20}
-              iconColor={item.checked ? theme.colors.secondary : theme.colors.onSurfaceVariant}
-              onPress={() => toggleChecklistItem(item.id)}
-              style={styles.checkboxBtn}
-            />
-            <Text
-              style={[
-                styles.checklistText,
-                { color: theme.colors.onSurface },
-                item.checked && { textDecorationLine: 'line-through', opacity: 0.5 },
-              ]}
-              numberOfLines={2}
-            >
-              {item.text}
-            </Text>
-            <IconButton
-              icon="close"
-              size={14}
-              iconColor={theme.colors.onSurfaceVariant}
-              onPress={() => removeChecklistItem(item.id)}
-              style={styles.checklistRemoveBtn}
-            />
+        {/* Checklist Items */}
+        {showChecklist && (
+          <View style={styles.checklistContainer}>
+            {checklist.map((item) => (
+              <View key={item.id} style={styles.checklistRow}>
+                <IconButton
+                  icon={item.checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                  size={20}
+                  iconColor={item.checked ? theme.colors.secondary : theme.colors.onSurfaceVariant}
+                  onPress={() => toggleChecklistItem(item.id)}
+                  style={styles.checkboxBtn}
+                />
+                <Text
+                  style={[
+                    styles.checklistText,
+                    { color: theme.colors.onSurface },
+                    item.checked && { textDecorationLine: 'line-through', opacity: 0.5 },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {item.text}
+                </Text>
+                <IconButton
+                  icon="close"
+                  size={14}
+                  iconColor={theme.colors.onSurfaceVariant}
+                  onPress={() => removeChecklistItem(item.id)}
+                  style={styles.checklistRemoveBtn}
+                />
+              </View>
+            ))}
+
+            <View style={styles.addChecklistRow}>
+              <TextInput
+                value={newChecklistText}
+                onChangeText={setNewChecklistText}
+                placeholder="Neuer Punkt..."
+                mode="outlined"
+                dense
+                style={[styles.input, { flex: 1 }]}
+                outlineStyle={{ borderRadius: 12, borderWidth: 1 }}
+                outlineColor={theme.colors.outline}
+                activeOutlineColor={theme.colors.primary}
+                textColor={theme.colors.onSurface}
+                theme={inputTheme}
+                onSubmitEditing={addChecklistItem}
+                returnKeyType="done"
+              />
+              <IconButton
+                icon="plus-circle"
+                size={24}
+                iconColor={theme.colors.primary}
+                onPress={addChecklistItem}
+              />
+            </View>
           </View>
-        ))}
-
-        <View style={styles.addChecklistRow}>
-          <TextInput
-            value={newChecklistText}
-            onChangeText={setNewChecklistText}
-            placeholder="Neuer Punkt..."
-            mode="outlined"
-            dense
-            style={[styles.input, { flex: 1 }]}
-            outlineStyle={{ borderRadius: 12, borderWidth: 1 }}
-            outlineColor={theme.colors.outline}
-            activeOutlineColor={theme.colors.primary}
-            textColor={theme.colors.onSurface}
-            theme={inputTheme}
-            onSubmitEditing={addChecklistItem}
-            returnKeyType="done"
-          />
-          <IconButton
-            icon="plus-circle"
-            size={24}
-            iconColor={theme.colors.primary}
-            onPress={addChecklistItem}
-          />
-        </View>
+        )}
 
         {/* Divider */}
         <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
@@ -601,6 +631,14 @@ const styles = StyleSheet.create({
   checklistRemoveBtn: {
     margin: -4,
     opacity: 0.4,
+  },
+  checklistToggle: {
+    alignSelf: 'flex-start',
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  checklistContainer: {
+    gap: 2,
   },
   addChecklistRow: {
     flexDirection: 'row',
