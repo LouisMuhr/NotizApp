@@ -42,8 +42,20 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         loadArchive(),
       ]);
       if (cancelled) return;
-      setNotes(loadedNotes);
+      const archiveIds = new Set(loadedArchive.map((n) => n.id));
+      // Dedupe by id and exclude anything that lives in the archive
+      const seenLocal = new Set<string>();
+      const cleanedLocal = loadedNotes.filter((n) => {
+        if (archiveIds.has(n.id)) return false;
+        if (seenLocal.has(n.id)) return false;
+        seenLocal.add(n.id);
+        return true;
+      });
+      setNotes(cleanedLocal);
       setArchivedNotes(loadedArchive);
+      if (cleanedLocal.length !== loadedNotes.length) {
+        await saveNotes(cleanedLocal);
+      }
       if (loadedCategories.length > 0) {
         setCategories(loadedCategories);
       } else {
@@ -58,8 +70,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const remote = await pullRemote(deviceId);
         if (cancelled) return;
         if (remote.length > 0) {
-          const byId = new Map(loadedNotes.map((n) => [n.id, n]));
+          const byId = new Map(cleanedLocal.map((n) => [n.id, n]));
           for (const r of remote) {
+            // Don't resurrect archived notes from remote
+            if (archiveIds.has(r.id)) continue;
             const local = byId.get(r.id);
             if (!local || new Date(r.updatedAt) > new Date(local.updatedAt)) {
               byId.set(r.id, r);
@@ -72,6 +86,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           await saveNotes(merged);
         }
         unsubscribe = subscribeRemote(deviceId, (incoming) => {
+          if (archiveIds.has(incoming.id)) return;
           setNotes((prev) => {
             if (prev.some((n) => n.id === incoming.id)) return prev;
             const next = [incoming, ...prev];
