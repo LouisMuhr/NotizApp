@@ -7,7 +7,12 @@
     "strict": false,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["api/**/*.ts"]
+  "include": [
+    "api/**/*.ts"
+  ],
+  "extends": "expo/tsconfig.base"
 }
