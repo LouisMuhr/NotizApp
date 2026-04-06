@@ -12,7 +12,8 @@
       "Read(//c/NotizApp/mcp-notizapp/**)",
       "Bash(rm -f api/mcp.ts)",
       "Read(//c/NotizApp/**)",
-      "Bash(mv mcp-notizapp:*)"
+      "Bash(mv mcp-notizapp:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

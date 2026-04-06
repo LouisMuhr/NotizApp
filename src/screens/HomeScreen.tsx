@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StyleSheet, View, FlatList } from 'react-native';
-import { FAB, Text, useTheme, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
+import { FAB, Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
-import { FilterOptions, Note } from '../models/Note';
+import { FilterOptions } from '../models/Note';
 import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
 
@@ -24,10 +24,14 @@ export default function HomeScreen({ navigation }: Props) {
     sortOrder: 'desc',
   });
 
-  const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
-
   const filteredNotes = useMemo(() => {
-    let result = [...notes];
+    // Dedupe by id defensively to avoid duplicate React keys
+    const seen = new Set<string>();
+    let result = notes.filter((n) => {
+      if (seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    });
 
     if (filters.category) {
       result = result.filter((n) => n.category === filters.category);
@@ -70,13 +74,6 @@ export default function HomeScreen({ navigation }: Props) {
 
     return result;
   }, [notes, filters]);
-
-  const handleDelete = useCallback(async () => {
-    if (deleteTarget) {
-      await deleteNote(deleteTarget.id);
-      setDeleteTarget(null);
-    }
-  }, [deleteTarget, deleteNote]);
 
   if (loading) {
     return (
@@ -132,7 +129,7 @@ export default function HomeScreen({ navigation }: Props) {
             <NoteCard
               note={item}
               onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
-              onDelete={() => setDeleteTarget(item)}
+              onDelete={() => deleteNote(item.id)}
               onTogglePin={() => togglePin(item.id)}
             />
           )}
@@ -148,36 +145,6 @@ export default function HomeScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('Editor', {})}
       />
 
-      <Portal>
-        <Dialog
-          visible={!!deleteTarget}
-          onDismiss={() => setDeleteTarget(null)}
-          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
-        >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>
-            Notiz löschen?
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text style={{ color: theme.colors.onSurfaceVariant }}>
-              „{deleteTarget?.title || 'Ohne Titel'}" wird unwiderruflich gelöscht.
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDeleteTarget(null)} textColor={theme.colors.onSurfaceVariant}>
-              Abbrechen
-            </Button>
-            <Button
-              onPress={handleDelete}
-              textColor={theme.colors.error}
-              mode="contained"
-              buttonColor={theme.colors.errorContainer}
-              style={{ borderRadius: 12 }}
-            >
-              Löschen
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
     </View>
   );
 }
