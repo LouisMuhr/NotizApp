@@ -23,19 +23,15 @@ function HomeTabs() {
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
         tabBarStyle: {
-          position: 'absolute',
-          bottom: Math.max(insets.bottom, 12) + 4,
-          left: 20,
-          right: 20,
-          height: 60,
-          borderRadius: 28,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom,
+          paddingTop: 6,
           backgroundColor: theme.colors.surface,
           borderTopWidth: 0,
           elevation: 0,
-          paddingBottom: 0,
         },
         tabBarItemStyle: {
-          paddingVertical: 6,
+          paddingVertical: 4,
         },
         tabBarLabelStyle: {
           fontSize: 11,
