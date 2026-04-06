@@ -8,7 +8,9 @@
       "Bash(npm uninstall:*)",
       "Bash(node -e \"console.log\\(require.resolve\\('sharp'\\)\\)\")",
       "Bash(npm i:*)",
-      "Bash(node scripts/gen-icon.js)"
+      "Bash(node scripts/gen-icon.js)",
+      "Read(//c/NotizApp/mcp-notizapp/**)",
+      "Bash(rm -f api/mcp.ts)"
     ]
   }
 }
