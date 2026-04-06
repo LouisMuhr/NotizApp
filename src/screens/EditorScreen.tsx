@@ -22,7 +22,7 @@ import {
 
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNotes } from '../context/NotesContext';
 import {

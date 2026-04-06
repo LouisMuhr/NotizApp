@@ -2,16 +2,19 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
-import { loadNotes, saveNotes, loadCategories, saveCategories } from '../storage/noteStorage';
+import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder } from '../utils/notifications';
 
 interface NotesContextType {
   notes: Note[];
+  archivedNotes: Note[];
   categories: string[];
   loading: boolean;
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>) => Promise<Note>;
   updateNote: (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
+  restoreNote: (id: string) => Promise<void>;
+  deleteNotePermanently: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
@@ -21,16 +24,19 @@ const NotesContext = createContext<NotesContextType>({} as NotesContextType);
 
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<Note[]>([]);
+  const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [loadedNotes, loadedCategories] = await Promise.all([
+      const [loadedNotes, loadedCategories, loadedArchive] = await Promise.all([
         loadNotes(),
         loadCategories(),
+        loadArchive(),
       ]);
       setNotes(loadedNotes);
+      setArchivedNotes(loadedArchive);
       if (loadedCategories.length > 0) {
         setCategories(loadedCategories);
       } else {
@@ -124,13 +130,33 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await persistNotes(updated);
   }, [notes, persistNotes, scheduleNoteReminder]);
 
+  const persistArchive = useCallback(async (updated: Note[]) => {
+    setArchivedNotes(updated);
+    await saveArchive(updated);
+  }, []);
+
   const deleteNote = useCallback(async (id: string) => {
     const note = notes.find((n) => n.id === id);
-    if (note?.notificationId) {
+    if (!note) return;
+    if (note.notificationId) {
       await cancelReminder(note.notificationId);
     }
+    const archived = { ...note, notificationId: null, isPinned: false };
+    await persistArchive([archived, ...archivedNotes]);
     await persistNotes(notes.filter((n) => n.id !== id));
-  }, [notes, persistNotes]);
+  }, [notes, archivedNotes, persistNotes, persistArchive]);
+
+  const restoreNote = useCallback(async (id: string) => {
+    const note = archivedNotes.find((n) => n.id === id);
+    if (!note) return;
+    const restored = { ...note, updatedAt: new Date().toISOString() };
+    await persistNotes([restored, ...notes]);
+    await persistArchive(archivedNotes.filter((n) => n.id !== id));
+  }, [notes, archivedNotes, persistNotes, persistArchive]);
+
+  const deleteNotePermanently = useCallback(async (id: string) => {
+    await persistArchive(archivedNotes.filter((n) => n.id !== id));
+  }, [archivedNotes, persistArchive]);
 
   const addCategory = useCallback(async (name: string) => {
     if (!categories.includes(name)) {
@@ -159,11 +185,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     <NotesContext.Provider
       value={{
         notes,
+        archivedNotes,
         categories,
         loading,
         addNote,
         updateNote,
         deleteNote,
+        restoreNote,
+        deleteNotePermanently,
         togglePin,
         addCategory,
         deleteCategory,

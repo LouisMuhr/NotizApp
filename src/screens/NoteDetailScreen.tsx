@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { StyleSheet, View, ScrollView, Pressable } from 'react-native';
 import { Text, useTheme, IconButton, Chip, Checkbox, Portal, Dialog, Button } from 'react-native-paper';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { WEEKDAY_LABELS } from '../models/Note';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
