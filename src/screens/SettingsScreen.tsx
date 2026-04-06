@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, ScrollView } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import {
   useTheme,
   Text,
@@ -8,9 +9,12 @@ import {
   Dialog,
   Button,
   TextInput,
+  Snackbar,
 } from 'react-native-paper';
 import { useNotes } from '../context/NotesContext';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
+import { isSyncConfigured } from '../sync/supabaseClient';
+import { getDeviceId } from '../sync/deviceId';
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -19,6 +23,19 @@ export default function SettingsScreen() {
   const [newCatDialog, setNewCatDialog] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [deleteCat, setDeleteCat] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [snack, setSnack] = useState(false);
+  const syncOn = isSyncConfigured();
+
+  useEffect(() => {
+    getDeviceId().then(setDeviceId);
+  }, []);
+
+  const copyDeviceId = async () => {
+    if (!deviceId) return;
+    await Clipboard.setStringAsync(deviceId);
+    setSnack(true);
+  };
 
   const handleAddCategory = async () => {
     const name = newCatName.trim();
@@ -84,6 +101,50 @@ export default function SettingsScreen() {
         >
           Kategorie hinzufügen
         </Button>
+      </View>
+
+      {/* Claude-Bridge */}
+      <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+          CLAUDE-BRIDGE
+        </Text>
+        <View style={styles.infoRow}>
+          <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 14 }}>Status</Text>
+          <Text
+            style={{
+              color: syncOn ? theme.colors.tertiary : theme.colors.onSurfaceVariant,
+              fontSize: 14,
+              fontWeight: '600',
+            }}
+          >
+            {syncOn ? 'Verbunden' : 'Nicht konfiguriert'}
+          </Text>
+        </View>
+        <View style={[styles.rowDivider, { backgroundColor: theme.colors.outline, marginLeft: 0, marginVertical: 10 }]} />
+        <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginBottom: 6 }}>
+          Device-ID (in MCP-Server eintragen)
+        </Text>
+        <View style={styles.deviceRow}>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ flex: 1, color: theme.colors.onSurface, fontSize: 12, fontFamily: 'monospace' }}
+          >
+            {deviceId || '…'}
+          </Text>
+          <IconButton
+            icon="content-copy"
+            size={18}
+            iconColor={theme.colors.primary}
+            onPress={copyDeviceId}
+            style={{ margin: -4 }}
+          />
+        </View>
+        {!syncOn && (
+          <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, marginTop: 8, lineHeight: 16 }}>
+            Setze EXPO_PUBLIC_SUPABASE_URL und EXPO_PUBLIC_SUPABASE_ANON_KEY in der .env, dann App neu starten.
+          </Text>
+        )}
       </View>
 
       {/* Info */}
@@ -158,6 +219,10 @@ export default function SettingsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      <Snackbar visible={snack} onDismiss={() => setSnack(false)} duration={1500}>
+        Device-ID kopiert
+      </Snackbar>
     </ScrollView>
   );
 }
@@ -219,5 +284,9 @@ const styles = StyleSheet.create({
   },
   dialog: {
     borderRadius: 24,
+  },
+  deviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

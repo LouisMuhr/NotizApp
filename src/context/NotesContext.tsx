@@ -4,6 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder } from '../utils/notifications';
+import { isSyncConfigured } from '../sync/supabaseClient';
+import { getDeviceId } from '../sync/deviceId';
+import { pullRemote, subscribeRemote } from '../sync/remoteNotes';
 
 interface NotesContextType {
   notes: Note[];
@@ -29,12 +32,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
+
     (async () => {
       const [loadedNotes, loadedCategories, loadedArchive] = await Promise.all([
         loadNotes(),
         loadCategories(),
         loadArchive(),
       ]);
+      if (cancelled) return;
       setNotes(loadedNotes);
       setArchivedNotes(loadedArchive);
       if (loadedCategories.length > 0) {
@@ -43,7 +50,44 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         await saveCategories(DEFAULT_CATEGORIES);
       }
       setLoading(false);
+
+      // Sync layer (additive, only if configured)
+      if (!isSyncConfigured()) return;
+      try {
+        const deviceId = await getDeviceId();
+        const remote = await pullRemote(deviceId);
+        if (cancelled) return;
+        if (remote.length > 0) {
+          const byId = new Map(loadedNotes.map((n) => [n.id, n]));
+          for (const r of remote) {
+            const local = byId.get(r.id);
+            if (!local || new Date(r.updatedAt) > new Date(local.updatedAt)) {
+              byId.set(r.id, r);
+            }
+          }
+          const merged = Array.from(byId.values()).sort(
+            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          );
+          setNotes(merged);
+          await saveNotes(merged);
+        }
+        unsubscribe = subscribeRemote(deviceId, (incoming) => {
+          setNotes((prev) => {
+            if (prev.some((n) => n.id === incoming.id)) return prev;
+            const next = [incoming, ...prev];
+            saveNotes(next).catch(() => {});
+            return next;
+          });
+        });
+      } catch (e) {
+        console.warn('[sync] init failed', e);
+      }
     })();
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const persistNotes = useCallback(async (updated: Note[]) => {
