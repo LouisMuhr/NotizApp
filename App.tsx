@@ -9,6 +9,8 @@ import { NotesProvider } from './src/context/NotesContext';
 import { AppTheme } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import { requestNotificationPermissions } from './src/utils/notifications';
+import { LogBox } from 'react-native';
+LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 
 const navTheme = {
   ...DarkTheme,
