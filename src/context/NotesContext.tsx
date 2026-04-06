@@ -260,7 +260,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const restored = { ...note, updatedAt: new Date().toISOString() };
     await persistNotes([restored, ...notes]);
     await persistArchive(archivedNotes.filter((n) => n.id !== id));
-  }, [notes, archivedNotes, persistNotes, persistArchive]);
+    pushRemote(restored);
+  }, [notes, archivedNotes, persistNotes, persistArchive, pushRemote]);
 
   const deleteNotePermanently = useCallback(async (id: string) => {
     await persistArchive(archivedNotes.filter((n) => n.id !== id));
