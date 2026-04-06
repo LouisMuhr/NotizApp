@@ -13,7 +13,9 @@
       "Bash(rm -f api/mcp.ts)",
       "Read(//c/NotizApp/**)",
       "Bash(mv mcp-notizapp:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(ls *.ts *.tsx *.js)",
+      "Bash(npx eas-cli@latest update --branch preview --message \"add supabase env\")"
     ]
   }
 }

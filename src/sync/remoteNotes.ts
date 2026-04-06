@@ -51,6 +51,20 @@ export async function pullRemote(deviceId: string): Promise<Note[]> {
   return (data as RemoteRow[]).map(rowToNote);
 }
 
+export async function deleteRemote(deviceId: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('notes')
+    .delete()
+    .eq('device_id', deviceId)
+    .in('id', ids);
+  if (error) {
+    console.warn('[sync] deleteRemote error', error.message);
+  }
+}
+
 export type Unsubscribe = () => void;
 
 export function subscribeRemote(
