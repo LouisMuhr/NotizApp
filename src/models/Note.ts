@@ -1,10 +1,18 @@
 export type ReminderRecurrence = 'once' | 'daily' | 'weekly' | 'monthly';
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
 export interface Note {
   id: string;
   title: string;
   content: string;
   category: string;
+  isPinned: boolean;
+  checklist: ChecklistItem[];
   createdAt: string;
   updatedAt: string;
   reminderAt: string | null;

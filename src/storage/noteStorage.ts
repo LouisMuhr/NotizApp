@@ -3,6 +3,7 @@ import { Note } from '../models/Note';
 
 const NOTES_KEY = '@notizapp_notes';
 const CATEGORIES_KEY = '@notizapp_categories';
+const ARCHIVE_KEY = '@notizapp_archive';
 
 export async function loadNotes(): Promise<Note[]> {
   const json = await AsyncStorage.getItem(NOTES_KEY);
@@ -20,4 +21,13 @@ export async function loadCategories(): Promise<string[]> {
 
 export async function saveCategories(categories: string[]): Promise<void> {
   await AsyncStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+}
+
+export async function loadArchive(): Promise<Note[]> {
+  const json = await AsyncStorage.getItem(ARCHIVE_KEY);
+  return json ? JSON.parse(json) : [];
+}
+
+export async function saveArchive(notes: Note[]): Promise<void> {
+  await AsyncStorage.setItem(ARCHIVE_KEY, JSON.stringify(notes));
 }

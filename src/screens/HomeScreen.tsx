@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { StyleSheet, View, FlatList } from 'react-native';
 import { FAB, Text, useTheme, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
 import { FilterOptions, Note } from '../models/Note';
@@ -15,7 +15,7 @@ interface Props {
 export default function HomeScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { notes, categories, loading, deleteNote } = useNotes();
+  const { notes, categories, loading, deleteNote, togglePin } = useNotes();
 
   const [filters, setFilters] = useState<FilterOptions>({
     category: null,
@@ -42,6 +42,10 @@ export default function HomeScreen({ navigation }: Props) {
     }
 
     result.sort((a, b) => {
+      // Pinned notes always come first
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+
       let valA: string, valB: string;
       switch (filters.sortField) {
         case 'title':
@@ -127,8 +131,9 @@ export default function HomeScreen({ navigation }: Props) {
           renderItem={({ item }) => (
             <NoteCard
               note={item}
-              onPress={() => navigation.navigate('Editor', { noteId: item.id })}
+              onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
               onDelete={() => setDeleteTarget(item)}
+              onTogglePin={() => togglePin(item.id)}
             />
           )}
           contentContainerStyle={styles.list}

@@ -2,9 +2,11 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from 'react-native-paper';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import HomeScreen from '../screens/HomeScreen';
 import EditorScreen from '../screens/EditorScreen';
+import NoteDetailScreen from '../screens/NoteDetailScreen';
+import ArchiveScreen from '../screens/ArchiveScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
@@ -59,6 +61,16 @@ function HomeTabs() {
         }}
       />
       <Tab.Screen
+        name="Archiv"
+        component={ArchiveScreen}
+        options={{
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="archive-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="Einstellungen"
         component={SettingsScreen}
         options={{
@@ -92,6 +104,11 @@ export default function AppNavigator() {
         name="Home"
         component={HomeTabs}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: 'Notiz' }}
       />
       <Stack.Screen
         name="Editor"
