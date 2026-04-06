@@ -1,12 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
-import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive } from '../storage/noteStorage';
+import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
-import { pullRemote, subscribeRemote } from '../sync/remoteNotes';
+import { pullRemote, subscribeRemote, deleteRemote } from '../sync/remoteNotes';
 
 interface NotesContextType {
   notes: Note[];
@@ -30,18 +30,35 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
+  const deviceIdRef = useRef<string | null>(null);
+  const tombstonesRef = useRef<Set<string>>(new Set());
+
+  const addTombstones = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    for (const id of ids) tombstonesRef.current.add(id);
+    await saveTombstones(Array.from(tombstonesRef.current));
+    if (deviceIdRef.current) {
+      try {
+        await deleteRemote(deviceIdRef.current, ids);
+      } catch (e) {
+        console.warn('[sync] deleteRemote failed', e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
 
     (async () => {
-      const [loadedNotes, loadedCategories, loadedArchive] = await Promise.all([
+      const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones] = await Promise.all([
         loadNotes(),
         loadCategories(),
         loadArchive(),
+        loadTombstones(),
       ]);
       if (cancelled) return;
+      tombstonesRef.current = new Set(loadedTombstones);
       const archiveIds = new Set(loadedArchive.map((n) => n.id));
       // Dedupe by id and exclude anything that lives in the archive
       const seenLocal = new Set<string>();
@@ -67,13 +84,27 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!isSyncConfigured()) return;
       try {
         const deviceId = await getDeviceId();
+        deviceIdRef.current = deviceId;
+        // Clean up remote: drop everything that has been archived or tombstoned locally
+        const purgeIds = [
+          ...Array.from(archiveIds),
+          ...Array.from(tombstonesRef.current),
+        ];
+        if (purgeIds.length > 0) {
+          try {
+            await deleteRemote(deviceId, purgeIds);
+          } catch (e) {
+            console.warn('[sync] purge failed', e);
+          }
+        }
         const remote = await pullRemote(deviceId);
         if (cancelled) return;
         if (remote.length > 0) {
           const byId = new Map(cleanedLocal.map((n) => [n.id, n]));
           for (const r of remote) {
-            // Don't resurrect archived notes from remote
+            // Don't resurrect archived or tombstoned notes from remote
             if (archiveIds.has(r.id)) continue;
+            if (tombstonesRef.current.has(r.id)) continue;
             const local = byId.get(r.id);
             if (!local || new Date(r.updatedAt) > new Date(local.updatedAt)) {
               byId.set(r.id, r);
@@ -87,6 +118,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
         unsubscribe = subscribeRemote(deviceId, (incoming) => {
           if (archiveIds.has(incoming.id)) return;
+          if (tombstonesRef.current.has(incoming.id)) return;
           setNotes((prev) => {
             if (prev.some((n) => n.id === incoming.id)) return prev;
             const next = [incoming, ...prev];
@@ -203,6 +235,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const archived = { ...note, notificationId: null, isPinned: false };
     await persistArchive([archived, ...archivedNotes]);
     await persistNotes(notes.filter((n) => n.id !== id));
+    // Remove from remote so it doesn't get pulled back as an active note
+    if (deviceIdRef.current) {
+      try {
+        await deleteRemote(deviceIdRef.current, [id]);
+      } catch (e) {
+        console.warn('[sync] deleteRemote (archive) failed', e);
+      }
+    }
   }, [notes, archivedNotes, persistNotes, persistArchive]);
 
   const restoreNote = useCallback(async (id: string) => {
@@ -215,7 +255,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const deleteNotePermanently = useCallback(async (id: string) => {
     await persistArchive(archivedNotes.filter((n) => n.id !== id));
-  }, [archivedNotes, persistArchive]);
+    await addTombstones([id]);
+  }, [archivedNotes, persistArchive, addTombstones]);
 
   const addCategory = useCallback(async (name: string) => {
     if (!categories.includes(name)) {

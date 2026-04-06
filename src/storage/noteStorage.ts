@@ -4,6 +4,7 @@ import { Note } from '../models/Note';
 const NOTES_KEY = '@notizapp_notes';
 const CATEGORIES_KEY = '@notizapp_categories';
 const ARCHIVE_KEY = '@notizapp_archive';
+const TOMBSTONES_KEY = '@notizapp_tombstones';
 
 export async function loadNotes(): Promise<Note[]> {
   const json = await AsyncStorage.getItem(NOTES_KEY);
@@ -30,4 +31,13 @@ export async function loadArchive(): Promise<Note[]> {
 
 export async function saveArchive(notes: Note[]): Promise<void> {
   await AsyncStorage.setItem(ARCHIVE_KEY, JSON.stringify(notes));
+}
+
+export async function loadTombstones(): Promise<string[]> {
+  const json = await AsyncStorage.getItem(TOMBSTONES_KEY);
+  return json ? JSON.parse(json) : [];
+}
+
+export async function saveTombstones(ids: string[]): Promise<void> {
+  await AsyncStorage.setItem(TOMBSTONES_KEY, JSON.stringify(ids));
 }
