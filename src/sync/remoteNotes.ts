@@ -51,6 +51,31 @@ export async function pullRemote(deviceId: string): Promise<Note[]> {
   return (data as RemoteRow[]).map(rowToNote);
 }
 
+export async function upsertRemote(deviceId: string, note: Note): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const row = {
+    id: note.id,
+    device_id: deviceId,
+    title: note.title,
+    content: note.content,
+    category: note.category,
+    is_pinned: note.isPinned,
+    checklist: note.checklist ?? [],
+    created_at: note.createdAt,
+    updated_at: note.updatedAt,
+    reminder_at: note.reminderAt,
+    reminder_recurrence: note.reminderRecurrence,
+    reminder_weekday: note.reminderWeekday,
+    reminder_day_of_month: note.reminderDayOfMonth,
+    source: 'app',
+  };
+  const { error } = await supabase.from('notes').upsert(row, { onConflict: 'id' });
+  if (error) {
+    console.warn('[sync] upsertRemote error', error.message);
+  }
+}
+
 export async function deleteRemote(deviceId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const supabase = getSupabase();

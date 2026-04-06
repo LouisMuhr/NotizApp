@@ -6,7 +6,7 @@ import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, save
 import { scheduleReminder, cancelReminder } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
-import { pullRemote, subscribeRemote, deleteRemote } from '../sync/remoteNotes';
+import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 
 interface NotesContextType {
   notes: Note[];
@@ -142,6 +142,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await saveNotes(updated);
   }, []);
 
+  const pushRemote = useCallback((note: Note) => {
+    if (!deviceIdRef.current) return;
+    upsertRemote(deviceIdRef.current, note).catch((e) =>
+      console.warn('[sync] upsertRemote failed', e),
+    );
+  }, []);
+
   const scheduleNoteReminder = useCallback(async (note: {
     id: string; title: string; content: string;
     reminderAt: string | null; reminderRecurrence: Note['reminderRecurrence'];
@@ -187,8 +194,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     const updated = [newNote, ...notes];
     await persistNotes(updated);
+    pushRemote(newNote);
     return newNote;
-  }, [notes, persistNotes, scheduleNoteReminder]);
+  }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
 
   const updateNote = useCallback(async (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => {
     const oldNote = notes.find((n) => n.id === id);
@@ -219,7 +227,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     const updated = notes.map((n) => (n.id === id ? updatedNote : n));
     await persistNotes(updated);
-  }, [notes, persistNotes, scheduleNoteReminder]);
+    pushRemote(updatedNote);
+  }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
 
   const persistArchive = useCallback(async (updated: Note[]) => {
     setArchivedNotes(updated);
@@ -269,11 +278,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const togglePin = useCallback(async (id: string) => {
     const note = notes.find((n) => n.id === id);
     if (!note) return;
-    const updated = notes.map((n) =>
-      n.id === id ? { ...n, isPinned: !n.isPinned, updatedAt: new Date().toISOString() } : n
-    );
+    const toggled = { ...note, isPinned: !note.isPinned, updatedAt: new Date().toISOString() };
+    const updated = notes.map((n) => (n.id === id ? toggled : n));
     await persistNotes(updated);
-  }, [notes, persistNotes]);
+    pushRemote(toggled);
+  }, [notes, persistNotes, pushRemote]);
 
   const deleteCategory = useCallback(async (name: string) => {
     const updated = categories.filter((c) => c !== name);
