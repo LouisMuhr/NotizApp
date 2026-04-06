@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>NotizApp Bookmarklet</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.5; color: #1a1a1a; }
+  h1 { color: #5B67CA; }
+  code, pre { background: #f4f4f8; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  pre { padding: 12px; overflow-x: auto; }
+  .bm { display: inline-block; background: #5B67CA; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 12px 0; }
+  .step { background: #f8f8fc; border-left: 3px solid #5B67CA; padding: 12px 16px; margin: 16px 0; border-radius: 6px; }
+  input { width: 100%; padding: 8px; font-family: monospace; box-sizing: border-box; }
+  button { padding: 10px 20px; background: #5B67CA; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>📝 NotizApp Bookmarklet</h1>
+<p>Markiere Text in claude.ai (oder irgendeiner Webseite), klick das Bookmark, und der Text landet als Notiz in deiner App.</p>
+
+<div class="step">
+  <strong>Schritt 1:</strong> Trage deine Endpoint-URL und dein Token ein:
+  <p><label>Vercel URL (ohne <code>/api/note</code>):<br>
+  <input id="url" placeholder="https://dein-projekt.vercel.app"></label></p>
+  <p><label>Token (<code>MCP_BEARER_TOKEN</code>):<br>
+  <input id="tok" placeholder="abcdef123..."></label></p>
+  <button onclick="build()">Bookmarklet generieren</button>
+</div>
+
+<div class="step" id="result" style="display:none">
+  <strong>Schritt 2:</strong> Zieh diesen Link in deine Lesezeichen-Leiste:<br>
+  <a id="bm" class="bm" href="#">📝 In NotizApp speichern</a>
+  <p><strong>Schritt 3:</strong> In claude.ai eine Antwort markieren → Bookmarklet klicken → Titel eingeben → Notiz erscheint am Handy.</p>
+</div>
+
+<h3>Wie es funktioniert</h3>
+<p>Das Bookmarklet liest <code>window.getSelection()</code>, fragt nach einem Titel via <code>prompt()</code> und schickt einen POST an <code>/api/note?token=...</code>. Der Vercel-Endpoint inserted in Supabase, dein Handy zieht die Notiz per Realtime.</p>
+
+<script>
+function build() {
+  var url = document.getElementById('url').value.trim().replace(/\/$/, '');
+  var tok = document.getElementById('tok').value.trim();
+  if (!url || !tok) { alert('Bitte URL und Token eintragen'); return; }
+  var src = "javascript:(function(){var s=window.getSelection().toString().trim();if(!s){alert('Bitte zuerst Text markieren.');return;}var t=prompt('Titel der Notiz:',s.split('\\n')[0].slice(0,80));if(t===null)return;fetch('"+url+"/api/note?token="+encodeURIComponent(tok)+"',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,content:s})}).then(function(r){return r.text().then(function(txt){return{status:r.status,ok:r.ok,txt:txt}})}).then(function(x){if(x.ok)alert('\u2705 Notiz gespeichert');else alert('\u274C Fehler '+x.status+': '+(x.txt||'(leer)'))}).catch(function(e){alert('\u274C Netzwerkfehler: '+e.message)})})();";
+  var a = document.getElementById('bm');
+  a.href = src;
+  document.getElementById('result').style.display = 'block';
+}
+</script>
+</body>
+</html>

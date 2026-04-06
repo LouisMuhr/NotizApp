@@ -31,7 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# bridge (Vercel)
+bridge/.vercel
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +43,5 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+.vercel

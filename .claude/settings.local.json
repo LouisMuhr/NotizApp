@@ -10,7 +10,9 @@
       "Bash(npm i:*)",
       "Bash(node scripts/gen-icon.js)",
       "Read(//c/NotizApp/mcp-notizapp/**)",
-      "Bash(rm -f api/mcp.ts)"
+      "Bash(rm -f api/mcp.ts)",
+      "Read(//c/NotizApp/**)",
+      "Bash(mv mcp-notizapp:*)"
     ]
   }
 }
