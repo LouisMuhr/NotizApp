@@ -5,7 +5,10 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(npm ls:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(node -e \"console.log\\(require.resolve\\('sharp'\\)\\)\")",
+      "Bash(npm i:*)",
+      "Bash(node scripts/gen-icon.js)"
     ]
   }
 }

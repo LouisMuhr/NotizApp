@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import HomeScreen from '../screens/HomeScreen';
 import EditorScreen from '../screens/EditorScreen';
 import NoteDetailScreen from '../screens/NoteDetailScreen';
@@ -14,6 +15,7 @@ const Tab = createBottomTabNavigator();
 
 function HomeTabs() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -22,7 +24,7 @@ function HomeTabs() {
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
         tabBarStyle: {
           position: 'absolute',
-          bottom: 16,
+          bottom: Math.max(insets.bottom, 12) + 4,
           left: 20,
           right: 20,
           height: 60,

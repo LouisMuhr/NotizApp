@@ -2,6 +2,7 @@
   "expo": {
     "name": "NotizApp",
     "slug": "NotizApp",
+    "android.package": "com.louismuhr.notizapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -41,6 +42,12 @@
           "color": "#5B67CA"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "26bfe8bb-e2b2-4feb-849a-dfc3bbb1fa04"
+      }
+    },
+    "owner": "l0u1"
   }
 }
