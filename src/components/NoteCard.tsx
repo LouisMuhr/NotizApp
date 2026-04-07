@@ -1,22 +1,59 @@
-import React, { useRef } from 'react';
-import { StyleSheet, View, Pressable, Animated } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, View, Pressable, Animated, Easing } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Note, WEEKDAY_LABELS } from '../models/Note';
-import { getCategoryColor } from '../utils/categoryColors';
+import { getCategoryColor, withAlpha } from '../utils/categoryColors';
+import { getCategoryGradient, Radii, Shadows } from '../theme/gradients';
+import * as haptics from '../utils/haptics';
 
 interface Props {
   note: Note;
   onPress: () => void;
   onDelete: () => void;
   onTogglePin: () => void;
+  index?: number;
 }
 
-export default function NoteCard({ note, onPress, onDelete, onTogglePin }: Props) {
+export default function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
   const theme = useTheme();
   const catColor = getCategoryColor(note.category);
+  const catGradient = getCategoryGradient(note.category);
   const swipeableRef = useRef<Swipeable>(null);
+
+  // Spring-press scale
+  const pressScale = useRef(new Animated.Value(1)).current;
+  // Entrance: subtle fade + lift
+  const entry = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(entry, {
+      toValue: 1,
+      duration: 350,
+      delay: Math.min(index, 8) * 40,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [entry, index]);
+
+  const handlePressIn = () => {
+    Animated.spring(pressScale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 220,
+    }).start();
+  };
+  const handlePressOut = () => {
+    Animated.spring(pressScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+      tension: 220,
+    }).start();
+  };
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
@@ -43,18 +80,27 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin }: Props
     }
   };
 
-  const renderLeftActions = (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+  const renderLeftActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
     const scale = dragX.interpolate({
       inputRange: [0, 80],
       outputRange: [0.5, 1],
       extrapolate: 'clamp',
     });
     return (
-      <View style={[styles.swipeAction, styles.pinAction, { backgroundColor: theme.colors.tertiaryContainer }]}>
+      <View
+        style={[
+          styles.swipeAction,
+          styles.pinAction,
+          { backgroundColor: theme.colors.tertiaryContainer },
+        ]}
+      >
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons
             name={note.isPinned ? 'pin-off' : 'pin'}
-            size={24}
+            size={26}
             color={theme.colors.tertiary}
           />
         </Animated.View>
@@ -65,18 +111,27 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin }: Props
     );
   };
 
-  const renderRightActions = (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+  const renderRightActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
     const scale = dragX.interpolate({
       inputRange: [-80, 0],
       outputRange: [1, 0.5],
       extrapolate: 'clamp',
     });
     return (
-      <View style={[styles.swipeAction, styles.deleteAction, { backgroundColor: theme.colors.errorContainer }]}>
+      <View
+        style={[
+          styles.swipeAction,
+          styles.deleteAction,
+          { backgroundColor: theme.colors.errorContainer },
+        ]}
+      >
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons
             name="trash-can-outline"
-            size={24}
+            size={26}
             color={theme.colors.error}
           />
         </Animated.View>
@@ -89,125 +144,180 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin }: Props
 
   const handleSwipeLeft = () => {
     swipeableRef.current?.close();
+    haptics.light();
     onTogglePin();
   };
 
   const handleSwipeRight = () => {
     swipeableRef.current?.close();
+    haptics.medium();
     onDelete();
   };
 
+  const handlePress = () => {
+    haptics.tap();
+    onPress();
+  };
+
+  const translateY = entry.interpolate({
+    inputRange: [0, 1],
+    outputRange: [12, 0],
+  });
+
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderLeftActions={renderLeftActions}
-      renderRightActions={renderRightActions}
-      onSwipeableOpen={(direction) => {
-        if (direction === 'left') handleSwipeLeft();
-        else if (direction === 'right') handleSwipeRight();
+    <Animated.View
+      style={{
+        opacity: entry,
+        transform: [{ translateY }, { scale: pressScale }],
       }}
-      overshootLeft={false}
-      overshootRight={false}
-      containerStyle={styles.swipeContainer}
     >
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.card,
-          { backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface },
-        ]}
+      <Swipeable
+        ref={swipeableRef}
+        renderLeftActions={renderLeftActions}
+        renderRightActions={renderRightActions}
+        onSwipeableOpen={(direction) => {
+          if (direction === 'left') handleSwipeLeft();
+          else if (direction === 'right') handleSwipeRight();
+        }}
+        overshootLeft={false}
+        overshootRight={false}
+        containerStyle={styles.swipeContainer}
       >
-        <View style={[styles.accent, { backgroundColor: catColor }]} />
+        <Pressable
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          style={[
+            styles.cardOuter,
+            Shadows.soft,
+            note.isPinned && Shadows.glow(catColor),
+          ]}
+        >
+          <LinearGradient
+            colors={[withAlpha(catGradient[0], 0.18), withAlpha(catGradient[1], 0.06)] as const}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.card, { backgroundColor: theme.colors.surface }]}
+          >
+            {/* Vertical gradient accent strip */}
+            <LinearGradient
+              colors={catGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.accent}
+            />
 
-        <View style={styles.body}>
-          <View style={styles.header}>
-            {note.isPinned && (
-              <MaterialCommunityIcons
-                name="pin"
-                size={14}
-                color={theme.colors.tertiary}
-                style={styles.pinIcon}
-              />
-            )}
-            <Text
-              variant="titleMedium"
-              style={[styles.title, { color: theme.colors.onSurface }]}
-              numberOfLines={1}
-            >
-              {note.title || 'Ohne Titel'}
-            </Text>
-          </View>
+            <View style={styles.body}>
+              <View style={styles.header}>
+                {note.isPinned && (
+                  <MaterialCommunityIcons
+                    name="pin"
+                    size={14}
+                    color={theme.colors.tertiary}
+                    style={styles.pinIcon}
+                  />
+                )}
+                <Text
+                  variant="titleMedium"
+                  style={[styles.title, { color: theme.colors.onSurface }]}
+                  numberOfLines={1}
+                >
+                  {note.title || 'Ohne Titel'}
+                </Text>
+              </View>
 
-          {note.content ? (
-            <Text
-              variant="bodyMedium"
-              style={[styles.preview, { color: theme.colors.onSurfaceVariant }]}
-              numberOfLines={2}
-            >
-              {note.content}
-            </Text>
-          ) : null}
+              {note.content ? (
+                <Text
+                  variant="bodyMedium"
+                  style={[styles.preview, { color: theme.colors.onSurfaceVariant }]}
+                  numberOfLines={2}
+                >
+                  {note.content}
+                </Text>
+              ) : null}
 
-          {note.checklist && note.checklist.length > 0 && (
-            <View style={styles.checklistBadgeRow}>
-              <MaterialCommunityIcons
-                name="checkbox-marked-outline"
-                size={13}
-                color={theme.colors.secondary}
-              />
-              <Text style={[styles.checklistBadgeText, { color: theme.colors.secondary }]}>
-                {note.checklist.filter((i) => i.checked).length}/{note.checklist.length}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.footer}>
-            <Text style={[styles.categoryLabel, { color: catColor }]}>
-              {note.category}
-            </Text>
-            <View style={styles.footerRight}>
-              {note.reminderAt && (
-                <View style={[styles.reminderBadge, { backgroundColor: theme.colors.tertiaryContainer }]}>
-                  <Text style={[styles.reminderText, { color: theme.colors.tertiary }]}>
-                    {getReminderLabel(note)}
+              {note.checklist && note.checklist.length > 0 && (
+                <View style={styles.checklistBadgeRow}>
+                  <MaterialCommunityIcons
+                    name="checkbox-marked-outline"
+                    size={13}
+                    color={theme.colors.secondary}
+                  />
+                  <Text style={[styles.checklistBadgeText, { color: theme.colors.secondary }]}>
+                    {note.checklist.filter((i) => i.checked).length}/{note.checklist.length}
                   </Text>
                 </View>
               )}
-              <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>
-                {formatDate(note.updatedAt)}
-              </Text>
+
+              <View style={styles.footer}>
+                <View
+                  style={[
+                    styles.categoryChip,
+                    { backgroundColor: withAlpha(catColor, 0.15) },
+                  ]}
+                >
+                  <Text style={[styles.categoryLabel, { color: catColor }]}>
+                    {note.category}
+                  </Text>
+                </View>
+                <View style={styles.footerRight}>
+                  {note.reminderAt && (
+                    <View
+                      style={[
+                        styles.reminderBadge,
+                        { backgroundColor: theme.colors.tertiaryContainer },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="bell-outline"
+                        size={11}
+                        color={theme.colors.tertiary}
+                      />
+                      <Text style={[styles.reminderText, { color: theme.colors.tertiary }]}>
+                        {getReminderLabel(note)}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>
+                    {formatDate(note.updatedAt)}
+                  </Text>
+                </View>
+              </View>
             </View>
-          </View>
-        </View>
-      </Pressable>
-    </Swipeable>
+          </LinearGradient>
+        </Pressable>
+      </Swipeable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   swipeContainer: {
     marginHorizontal: 16,
-    marginVertical: 5,
-    borderRadius: 16,
+    marginVertical: 6,
+    borderRadius: Radii.lg,
     overflow: 'hidden',
+  },
+  cardOuter: {
+    borderRadius: Radii.lg,
   },
   card: {
     flexDirection: 'row',
-    borderRadius: 16,
+    borderRadius: Radii.lg,
     overflow: 'hidden',
   },
   swipeAction: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 90,
+    width: 92,
   },
   pinAction: {
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
+    borderTopLeftRadius: Radii.lg,
+    borderBottomLeftRadius: Radii.lg,
   },
   deleteAction: {
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
+    borderTopRightRadius: Radii.lg,
+    borderBottomRightRadius: Radii.lg,
   },
   swipeLabel: {
     fontSize: 10,
@@ -215,12 +325,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   accent: {
-    width: 4,
+    width: 5,
   },
   body: {
     flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
   header: {
     flexDirection: 'row',
@@ -228,9 +338,9 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.15,
+    fontWeight: '800',
+    fontSize: 16,
+    letterSpacing: -0.1,
   },
   pinIcon: {
     marginRight: 4,
@@ -249,17 +359,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 13,
     lineHeight: 19,
-    opacity: 0.75,
+    opacity: 0.78,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 12,
+  },
+  categoryChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: Radii.pill,
   },
   categoryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
@@ -269,16 +384,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   reminderBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.pill,
   },
   reminderText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   dateText: {
     fontSize: 11,
-    opacity: 0.5,
+    opacity: 0.55,
+    fontWeight: '500',
   },
 });

@@ -7,6 +7,7 @@ import { scheduleReminder, cancelReminder } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
+import * as haptics from '../utils/haptics';
 
 interface NotesContextType {
   notes: Note[];
@@ -51,6 +52,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     (async () => {
+      // Load haptics preference early so utility helpers see the right value.
+      haptics.loadHapticsPref().catch(() => {});
       const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones] = await Promise.all([
         loadNotes(),
         loadCategories(),
@@ -195,6 +198,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const updated = [newNote, ...notes];
     await persistNotes(updated);
     pushRemote(newNote);
+    haptics.success();
     return newNote;
   }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
 
@@ -228,6 +232,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const updated = notes.map((n) => (n.id === id ? updatedNote : n));
     await persistNotes(updated);
     pushRemote(updatedNote);
+    haptics.light();
   }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
 
   const persistArchive = useCallback(async (updated: Note[]) => {
@@ -283,6 +288,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const updated = notes.map((n) => (n.id === id ? toggled : n));
     await persistNotes(updated);
     pushRemote(toggled);
+    haptics.light();
   }, [notes, persistNotes, pushRemote]);
 
   const deleteCategory = useCallback(async (name: string) => {
