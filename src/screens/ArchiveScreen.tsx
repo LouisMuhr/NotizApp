@@ -4,9 +4,12 @@ import { Text, useTheme, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNotes } from '../context/NotesContext';
 import { Note } from '../models/Note';
 import { getCategoryColor } from '../utils/categoryColors';
+import { Gradients, Radii, Shadows } from '../theme/gradients';
+import * as haptics from '../utils/haptics';
 
 interface ArchiveRowProps {
   item: Note;
@@ -68,8 +71,13 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
       renderRightActions={renderRightActions}
       onSwipeableOpen={(direction) => {
         swipeableRef.current?.close();
-        if (direction === 'left') onRestore();
-        else if (direction === 'right') onRequestDelete();
+        if (direction === 'left') {
+          haptics.light();
+          onRestore();
+        } else if (direction === 'right') {
+          haptics.medium();
+          onRequestDelete();
+        }
       }}
       overshootLeft={false}
       overshootRight={false}
@@ -140,14 +148,17 @@ export default function ArchiveScreen() {
 
       {archivedNotes.length === 0 ? (
         <View style={styles.center}>
-          <MaterialCommunityIcons
-            name="archive-outline"
-            size={56}
-            color={theme.colors.outline}
-          />
+          <LinearGradient
+            colors={Gradients.lavender}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.emptyIconWrap}
+          >
+            <MaterialCommunityIcons name="archive-outline" size={48} color="#FFFFFF" />
+          </LinearGradient>
           <Text
             variant="titleMedium"
-            style={[styles.emptyTitle, { color: theme.colors.onSurfaceVariant }]}
+            style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
           >
             Archiv ist leer
           </Text>
@@ -228,14 +239,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 32,
   },
+  emptyIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyTitle: {
-    marginTop: 16,
+    marginTop: 22,
     textAlign: 'center',
+    fontWeight: '800',
+    fontSize: 18,
   },
   emptySubtitle: {
-    marginTop: 4,
+    marginTop: 6,
     textAlign: 'center',
-    opacity: 0.5,
+    opacity: 0.6,
   },
   list: {
     paddingBottom: 100,

@@ -10,11 +10,13 @@ import {
   Button,
   TextInput,
   Snackbar,
+  Switch,
 } from 'react-native-paper';
 import { useNotes } from '../context/NotesContext';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
+import { isHapticsEnabled, setHapticsEnabled, light as hapticLight } from '../utils/haptics';
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -25,7 +27,14 @@ export default function SettingsScreen() {
   const [deleteCat, setDeleteCat] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>('');
   const [snack, setSnack] = useState(false);
+  const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
   const syncOn = isSyncConfigured();
+
+  const toggleHaptics = async (value: boolean) => {
+    setHapticsOn(value);
+    await setHapticsEnabled(value);
+    if (value) hapticLight();
+  };
 
   useEffect(() => {
     getDeviceId().then(setDeviceId);
@@ -145,6 +154,24 @@ export default function SettingsScreen() {
             Setze EXPO_PUBLIC_SUPABASE_URL und EXPO_PUBLIC_SUPABASE_ANON_KEY in der .env, dann App neu starten.
           </Text>
         )}
+      </View>
+
+      {/* Feel */}
+      <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+        <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+          FEEL
+        </Text>
+        <View style={styles.infoRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: theme.colors.onSurface, fontSize: 14, fontWeight: '600' }}>
+              Vibration
+            </Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 2 }}>
+              Haptisches Feedback bei Aktionen
+            </Text>
+          </View>
+          <Switch value={hapticsOn} onValueChange={toggleHaptics} color={theme.colors.primary} />
+        </View>
       </View>
 
       {/* Info */}

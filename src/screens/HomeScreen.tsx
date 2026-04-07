@@ -1,12 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, View, FlatList } from 'react-native';
-import { FAB, Text, useTheme, ActivityIndicator } from 'react-native-paper';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { StyleSheet, View, FlatList, Pressable, Animated, Easing } from 'react-native';
+import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
 import { FilterOptions } from '../models/Note';
 import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
+import { Gradients, Radii, Shadows } from '../theme/gradients';
+import * as haptics from '../utils/haptics';
 
 interface Props {
   navigation: any;
@@ -83,9 +86,50 @@ export default function HomeScreen({ navigation }: Props) {
     );
   }
 
+  // FAB pulse animation (subtle "alive" feel)
+  const fabPulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabPulse, {
+          toValue: 1.06,
+          duration: 1400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(fabPulse, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [fabPulse]);
+
+  const fabScale = useRef(new Animated.Value(1)).current;
+  const fabPressIn = () => {
+    Animated.spring(fabScale, {
+      toValue: 0.9,
+      friction: 5,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+  const fabPressOut = () => {
+    Animated.spring(fabScale, {
+      toValue: 1,
+      friction: 4,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
-      {/* Custom header */}
+      {/* Custom header with subtle gradient halo */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
           Notizen
@@ -103,14 +147,21 @@ export default function HomeScreen({ navigation }: Props) {
 
       {filteredNotes.length === 0 ? (
         <View style={styles.center}>
-          <MaterialCommunityIcons
-            name={notes.length === 0 ? 'note-plus-outline' : 'file-search-outline'}
-            size={56}
-            color={theme.colors.outline}
-          />
+          <LinearGradient
+            colors={Gradients.primary}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.emptyIconWrap}
+          >
+            <MaterialCommunityIcons
+              name={notes.length === 0 ? 'notebook-plus-outline' : 'file-search-outline'}
+              size={48}
+              color="#FFFFFF"
+            />
+          </LinearGradient>
           <Text
             variant="titleMedium"
-            style={[styles.emptyTitle, { color: theme.colors.onSurfaceVariant }]}
+            style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
           >
             {notes.length === 0 ? 'Noch keine Notizen' : 'Keine Treffer'}
           </Text>
@@ -125,9 +176,10 @@ export default function HomeScreen({ navigation }: Props) {
         <FlatList
           data={filteredNotes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <NoteCard
               note={item}
+              index={index}
               onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
               onDelete={() => deleteNote(item.id)}
               onTogglePin={() => togglePin(item.id)}
@@ -138,12 +190,32 @@ export default function HomeScreen({ navigation }: Props) {
         />
       )}
 
-      <FAB
-        icon="plus"
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-        color="#FFFFFF"
-        onPress={() => navigation.navigate('Editor', {})}
-      />
+      <Animated.View
+        style={[
+          styles.fabWrap,
+          Shadows.glow(Gradients.primary[0]),
+          { transform: [{ scale: Animated.multiply(fabScale, fabPulse) }] },
+        ]}
+      >
+        <Pressable
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('Editor', {});
+          }}
+          onPressIn={fabPressIn}
+          onPressOut={fabPressOut}
+          style={styles.fabPressable}
+        >
+          <LinearGradient
+            colors={Gradients.primary}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.fabGradient}
+          >
+            <MaterialCommunityIcons name="plus" size={30} color="#FFFFFF" />
+          </LinearGradient>
+        </Pressable>
+      </Animated.View>
 
     </View>
   );
@@ -174,26 +246,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 32,
   },
+  emptyIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyTitle: {
-    marginTop: 16,
+    marginTop: 22,
     textAlign: 'center',
+    fontWeight: '800',
+    fontSize: 18,
   },
   emptySubtitle: {
-    marginTop: 4,
+    marginTop: 6,
     textAlign: 'center',
-    opacity: 0.5,
+    opacity: 0.6,
   },
   list: {
     paddingBottom: 160,
     paddingTop: 4,
   },
-  fab: {
+  fabWrap: {
     position: 'absolute',
     right: 20,
     bottom: 90,
-    borderRadius: 18,
-    width: 56,
-    height: 56,
+    borderRadius: 22,
+  },
+  fabPressable: {
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
+  fabGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
