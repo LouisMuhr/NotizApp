@@ -78,16 +78,9 @@ export default function HomeScreen({ navigation }: Props) {
     return result;
   }, [notes, filters]);
 
-  if (loading) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    );
-  }
-
   // FAB pulse animation (subtle "alive" feel)
   const fabPulse = useRef(new Animated.Value(1)).current;
+  const fabScale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -109,7 +102,14 @@ export default function HomeScreen({ navigation }: Props) {
     return () => loop.stop();
   }, [fabPulse]);
 
-  const fabScale = useRef(new Animated.Value(1)).current;
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
   const fabPressIn = () => {
     Animated.spring(fabScale, {
       toValue: 0.9,
