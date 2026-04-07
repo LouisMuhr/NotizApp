@@ -194,27 +194,29 @@ export default function HomeScreen({ navigation }: Props) {
         style={[
           styles.fabWrap,
           Shadows.glow(Gradients.primary[0]),
-          { transform: [{ scale: Animated.multiply(fabScale, fabPulse) }] },
+          { transform: [{ scale: fabPulse }] },
         ]}
       >
-        <Pressable
-          onPress={() => {
-            haptics.light();
-            navigation.navigate('Editor', {});
-          }}
-          onPressIn={fabPressIn}
-          onPressOut={fabPressOut}
-          style={styles.fabPressable}
-        >
-          <LinearGradient
-            colors={Gradients.primary}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.fabGradient}
+        <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+          <Pressable
+            onPress={() => {
+              haptics.light();
+              navigation.navigate('Editor', {});
+            }}
+            onPressIn={fabPressIn}
+            onPressOut={fabPressOut}
+            style={styles.fabPressable}
           >
-            <MaterialCommunityIcons name="plus" size={30} color="#FFFFFF" />
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={Gradients.primary}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.fabGradient}
+            >
+              <MaterialCommunityIcons name="plus" size={30} color="#FFFFFF" />
+            </LinearGradient>
+          </Pressable>
+        </Animated.View>
       </Animated.View>
 
     </View>
