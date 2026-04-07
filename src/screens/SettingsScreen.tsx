@@ -15,7 +15,7 @@ import {
 import { useNotes } from '../context/NotesContext';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
 import { isSyncConfigured } from '../sync/supabaseClient';
-import { getDeviceId } from '../sync/deviceId';
+import { getDeviceId, isDeviceIdFromEnv } from '../sync/deviceId';
 import { isHapticsEnabled, setHapticsEnabled, light as hapticLight } from '../utils/haptics';
 
 export default function SettingsScreen() {
@@ -131,7 +131,7 @@ export default function SettingsScreen() {
         </View>
         <View style={[styles.rowDivider, { backgroundColor: theme.colors.outline, marginLeft: 0, marginVertical: 10 }]} />
         <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginBottom: 6 }}>
-          Device-ID (in MCP-Server eintragen)
+          Device-ID {isDeviceIdFromEnv() ? '(.env, fixiert)' : '(lokal generiert)'}
         </Text>
         <View style={styles.deviceRow}>
           <Text
