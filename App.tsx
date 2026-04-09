@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { NotesProvider } from './src/context/NotesContext';
+import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import { requestNotificationPermissions } from './src/utils/notifications';
@@ -36,8 +37,10 @@ export default function App() {
           <PaperProvider theme={AppTheme}>
             <NavigationContainer theme={navTheme}>
               <NotesProvider>
-                <AppNavigator />
-                <StatusBar style="light" />
+                <ThoughtsProvider>
+                  <AppNavigator />
+                  <StatusBar style="light" />
+                </ThoughtsProvider>
               </NotesProvider>
             </NavigationContainer>
           </PaperProvider>
