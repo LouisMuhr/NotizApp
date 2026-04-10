@@ -27,7 +27,8 @@
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
-        "SCHEDULE_EXACT_ALARM"
+        "SCHEDULE_EXACT_ALARM",
+        "RECORD_AUDIO"
       ]
     },
     "web": {
@@ -40,6 +41,13 @@
         {
           "icon": "./assets/icon.png",
           "color": "#5B67CA"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "NotizApp möchte dein Mikrofon für die Sprachaufnahme nutzen.",
+          "speechRecognitionPermission": "NotizApp möchte deine Sprache erkennen, um Gedanken aufzunehmen."
         }
       ]
     ],

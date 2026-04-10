@@ -8,6 +8,7 @@ import { useNotes } from '../context/NotesContext';
 import { FilterOptions } from '../models/Note';
 import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
+import QuickCaptureFAB from '../components/QuickCaptureFAB';
 import { Gradients, Radii, Shadows } from '../theme/gradients';
 import * as haptics from '../utils/haptics';
 
@@ -218,6 +219,9 @@ export default function HomeScreen({ navigation }: Props) {
           </Pressable>
         </Animated.View>
       </Animated.View>
+
+      {/* Brainstorm-FAB: Tap = Voice, Long-Press = Text */}
+      <QuickCaptureFAB />
 
     </View>
   );
