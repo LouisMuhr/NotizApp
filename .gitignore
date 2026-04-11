@@ -37,6 +37,10 @@ yarn-error.*
 # bridge (Vercel)
 bridge/.vercel
 
+# brainstorm worker logs & secrets
+bridge/worker/logs/
+bridge/worker/.env
+
 # typescript
 *.tsbuildinfo
 

@@ -32,7 +32,7 @@ if (-not (Test-Path $logDir)) {
 # Action: claude --print --file brainstorm-prompt.md >> logs\brainstorm-<datum>.log
 $action = New-ScheduledTaskAction `
     -Execute "cmd.exe" `
-    -Argument "/c cd /d `"$workDir`" && claude --print --file `"$promptFile`" >> `"$logDir\brainstorm-%date:~-4,4%%date:~-7,2%%date:~-10,2%.log`" 2>&1" `
+    -Argument "/c cd /d `"$workDir`" && type `"$promptFile`" | `"$claudeExe`" --print --dangerously-skip-permissions >> `"$logDir\brainstorm-%date:~-4,4%%date:~-7,2%%date:~-10,2%.log`" 2>&1" `
     -WorkingDirectory $workDir
 
 # Trigger: jede Stunde, täglich
