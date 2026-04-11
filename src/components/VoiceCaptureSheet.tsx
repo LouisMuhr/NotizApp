@@ -23,11 +23,25 @@ import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-  AVAudioSessionCategory,
-} from 'expo-speech-recognition';
+// expo-speech-recognition benötigt einen Custom Dev Build (EAS).
+// In Expo Go ist das native Modul nicht verfügbar → wir laden es lazy
+// und fallen auf reinen Text-Modus zurück, wenn es fehlt.
+let ExpoSpeechRecognitionModule: any = null;
+let useSpeechRecognitionEvent: (event: string, handler: (e: any) => void) => void =
+  () => {};
+let AVAudioSessionCategory: any = {};
+let speechAvailable = false;
+
+try {
+  const mod = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = mod.ExpoSpeechRecognitionModule;
+  useSpeechRecognitionEvent = mod.useSpeechRecognitionEvent;
+  AVAudioSessionCategory = mod.AVAudioSessionCategory;
+  speechAvailable = true;
+} catch {
+  // Expo Go oder kein Custom Build → nur Text-Modus
+  speechAvailable = false;
+}
 import { useThoughts } from '../context/ThoughtsContext';
 import { Gradients, Radii, Shadows } from '../theme/gradients';
 import * as haptics from '../utils/haptics';
@@ -47,7 +61,10 @@ export default function VoiceCaptureSheet({
   const insets = useSafeAreaInsets();
   const { addThought } = useThoughts();
 
-  const [mode, setMode] = useState<'voice' | 'text'>(initialMode);
+  // Wenn das native Modul fehlt (Expo Go), erzwinge Text-Modus
+  const [mode, setMode] = useState<'voice' | 'text'>(
+    speechAvailable ? initialMode : 'text',
+  );
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
@@ -114,6 +131,7 @@ export default function VoiceCaptureSheet({
   }, [visible, initialMode]);
 
   const requestPermissionAndStart = useCallback(async () => {
+    if (!speechAvailable || !ExpoSpeechRecognitionModule) return;
     haptics.medium();
     const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     setPermissionGranted(granted);
@@ -132,7 +150,9 @@ export default function VoiceCaptureSheet({
   }, []);
 
   const stopListening = useCallback(() => {
-    ExpoSpeechRecognitionModule.stop();
+    if (speechAvailable && ExpoSpeechRecognitionModule) {
+      ExpoSpeechRecognitionModule.stop();
+    }
     setIsListening(false);
   }, []);
 
@@ -270,7 +290,13 @@ export default function VoiceCaptureSheet({
                 </Text>
               </View>
 
-              {permissionGranted === false && (
+              {!speechAvailable && (
+                <Text style={[styles.hintText, { color: theme.colors.onSurfaceVariant }]}>
+                  Spracherkennung benötigt einen Custom Dev Build.{'\n'}
+                  Bitte Text-Modus verwenden.
+                </Text>
+              )}
+              {speechAvailable && permissionGranted === false && (
                 <Text style={[styles.hintText, { color: Gradients.danger[0] }]}>
                   Mikrofon-Zugriff verweigert — bitte in den Einstellungen erlauben.
                 </Text>
