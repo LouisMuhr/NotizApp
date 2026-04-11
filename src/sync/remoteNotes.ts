@@ -16,6 +16,7 @@ interface RemoteRow {
   reminder_weekday: number | null;
   reminder_day_of_month: number | null;
   source?: string | null;
+  feeds_threads?: boolean | null;
 }
 
 function rowToNote(row: RemoteRow): Note {
@@ -33,6 +34,7 @@ function rowToNote(row: RemoteRow): Note {
     reminderWeekday: row.reminder_weekday,
     reminderDayOfMonth: row.reminder_day_of_month,
     notificationId: null,
+    feedsThreads: row.feeds_threads ?? false,
   };
 }
 
@@ -69,6 +71,7 @@ export async function upsertRemote(deviceId: string, note: Note): Promise<void> 
     reminder_weekday: note.reminderWeekday,
     reminder_day_of_month: note.reminderDayOfMonth,
     source: 'app',
+    feeds_threads: note.feedsThreads,
   };
   const { error } = await supabase.from('notes').upsert(row, { onConflict: 'id' });
   if (error) {

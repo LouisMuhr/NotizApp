@@ -15,8 +15,12 @@ create table if not exists public.notes (
   reminder_recurrence text default 'once',
   reminder_weekday int,
   reminder_day_of_month int,
-  source text default 'app'
+  source text default 'app',
+  feeds_threads boolean not null default false
 );
+
+-- Migration: feeds_threads Spalte (in bestehenden Projekten ausführen)
+-- ALTER TABLE public.notes ADD COLUMN IF NOT EXISTS feeds_threads boolean NOT NULL DEFAULT false;
 
 create index if not exists notes_device_id_idx on public.notes (device_id);
 create index if not exists notes_updated_at_idx on public.notes (updated_at desc);

@@ -20,6 +20,7 @@ export interface Note {
   reminderWeekday: number | null;
   reminderDayOfMonth: number | null;
   notificationId: string | null;
+  feedsThreads: boolean; // default false — ob die Note in den AI-Worker fließt
 }
 
 export type SortField = 'updatedAt' | 'createdAt' | 'title' | 'category';

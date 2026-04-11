@@ -250,15 +250,25 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin, index =
               )}
 
               <View style={styles.footer}>
-                <View
-                  style={[
-                    styles.categoryChip,
-                    { backgroundColor: withAlpha(catColor, 0.15) },
-                  ]}
-                >
-                  <Text style={[styles.categoryLabel, { color: catColor }]}>
-                    {note.category}
-                  </Text>
+                <View style={styles.categoryRow}>
+                  <View
+                    style={[
+                      styles.categoryChip,
+                      { backgroundColor: withAlpha(catColor, 0.15) },
+                    ]}
+                  >
+                    <Text style={[styles.categoryLabel, { color: catColor }]}>
+                      {note.category}
+                    </Text>
+                  </View>
+                  {note.feedsThreads && (
+                    <MaterialCommunityIcons
+                      name="thought-bubble-outline"
+                      size={14}
+                      color={theme.colors.primary}
+                      style={styles.feedsThreadsIcon}
+                    />
+                  )}
                 </View>
                 <View style={styles.footerRight}>
                   {note.reminderAt && (
@@ -367,10 +377,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   categoryChip: {
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: Radii.pill,
+  },
+  feedsThreadsIcon: {
+    opacity: 0.7,
   },
   categoryLabel: {
     fontSize: 10,
