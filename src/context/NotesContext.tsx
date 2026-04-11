@@ -109,15 +109,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const remote = await pullRemote(deviceId);
         if (cancelled) return;
         if (remote.length > 0) {
-          const byId = new Map(cleanedLocal.map((n) => [n.id, n]));
+          // Remote ist die authoritative Quelle: Notes die remote nicht existieren
+          // wurden auf dem Server gelöscht und sollen nicht aus dem lokalen Cache
+          // wieder auftauchen.
+          const byId = new Map<string, Note>();
           for (const r of remote) {
-            // Don't resurrect archived or tombstoned notes from remote
             if (archiveIds.has(r.id)) continue;
             if (tombstonesRef.current.has(r.id)) continue;
-            const local = byId.get(r.id);
-            if (!local || new Date(r.updatedAt) > new Date(local.updatedAt)) {
-              byId.set(r.id, r);
+            byId.set(r.id, r);
+          }
+          for (const local of cleanedLocal) {
+            if (archiveIds.has(local.id)) continue;
+            if (tombstonesRef.current.has(local.id)) continue;
+            const existing = byId.get(local.id);
+            if (existing && new Date(local.updatedAt) > new Date(existing.updatedAt)) {
+              byId.set(local.id, local);
             }
+            // Lokale Notes die remote nicht existieren werden ignoriert (server-seitig gelöscht).
           }
           const merged = Array.from(byId.values()).sort(
             (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
