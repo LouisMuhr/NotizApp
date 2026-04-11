@@ -82,13 +82,17 @@ function mergeThoughtsByIdNewerWins(local: Thought[], remote: Thought[]): Though
 }
 
 function mergeThreadsByIdNewerWins(local: Thread[], remote: Thread[]): Thread[] {
+  // Threads werden ausschließlich vom Backend-Worker erstellt.
+  // Remote ist deshalb die authoritative Quelle: Threads die remote nicht existieren
+  // wurden auf dem Server gelöscht und sollen nicht aus dem lokalen Cache wieder auftauchen.
   const byId = new Map<string, Thread>();
-  for (const t of local) byId.set(t.id, t);
-  for (const t of remote) {
+  for (const t of remote) byId.set(t.id, t);
+  for (const t of local) {
     const existing = byId.get(t.id);
-    if (!existing || new Date(t.updatedAt) > new Date(existing.updatedAt)) {
+    if (existing && new Date(t.updatedAt) > new Date(existing.updatedAt)) {
       byId.set(t.id, t);
     }
+    // Lokale Threads die remote nicht existieren werden ignoriert (server-seitig gelöscht).
   }
   return Array.from(byId.values()).sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
