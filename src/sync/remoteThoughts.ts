@@ -167,6 +167,19 @@ export async function insertThought(
   }
 }
 
+export async function deleteThought(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('thoughts')
+    .delete()
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] deleteThought error', error.message);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Detail-Lookup für Thread-Detail-Screen (kommt erst in Slice 3 zum Einsatz,
 // wird hier aber schon bereitgestellt damit der Sync-Layer komplett ist).

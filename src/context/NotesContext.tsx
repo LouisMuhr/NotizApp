@@ -7,7 +7,13 @@ import { scheduleReminder, cancelReminder } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
+import { insertThought, deleteThought } from '../sync/remoteThoughts';
+import { Thought } from '../models/Thought';
 import * as haptics from '../utils/haptics';
+
+function noteToThoughtContent(note: { title: string; content: string }): string {
+  return note.title ? `${note.title}\n\n${note.content}`.trim() : note.content;
+}
 
 interface NotesContextType {
   notes: Note[];
@@ -198,6 +204,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const updated = [newNote, ...notes];
     await persistNotes(updated);
     pushRemote(newNote);
+    if (newNote.feedsThreads && deviceIdRef.current) {
+      const thought: Thought = {
+        id: newNote.id,
+        content: noteToThoughtContent(newNote),
+        source: 'app',
+        rawAudioUrl: null,
+        createdAt: newNote.createdAt,
+        processedAt: null,
+      };
+      insertThought(deviceIdRef.current, thought).catch((e) =>
+        console.warn('[sync] insertThought (addNote) failed', e),
+      );
+    }
     haptics.success();
     return newNote;
   }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
@@ -232,6 +251,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     const updated = notes.map((n) => (n.id === id ? updatedNote : n));
     await persistNotes(updated);
     pushRemote(updatedNote);
+    if (deviceIdRef.current) {
+      if (updatedNote.feedsThreads) {
+        const thought: Thought = {
+          id: updatedNote.id,
+          content: noteToThoughtContent(updatedNote),
+          source: 'app',
+          rawAudioUrl: null,
+          createdAt: updatedNote.createdAt,
+          processedAt: null,
+        };
+        // Upsert: erst löschen, dann neu einfügen — damit processed_at zurückgesetzt wird
+        deleteThought(deviceIdRef.current, updatedNote.id)
+          .then(() => insertThought(deviceIdRef.current!, thought))
+          .catch((e) => console.warn('[sync] thought upsert (updateNote) failed', e));
+      } else if (oldNote.feedsThreads && !updatedNote.feedsThreads) {
+        deleteThought(deviceIdRef.current, updatedNote.id).catch((e) =>
+          console.warn('[sync] deleteThought (updateNote toggle off) failed', e),
+        );
+      }
+    }
     haptics.light();
   }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
 
@@ -255,6 +294,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         await deleteRemote(deviceIdRef.current, [id]);
       } catch (e) {
         console.warn('[sync] deleteRemote (archive) failed', e);
+      }
+      if (note.feedsThreads) {
+        deleteThought(deviceIdRef.current, id).catch((e) =>
+          console.warn('[sync] deleteThought (deleteNote) failed', e),
+        );
       }
     }
   }, [notes, archivedNotes, persistNotes, persistArchive]);

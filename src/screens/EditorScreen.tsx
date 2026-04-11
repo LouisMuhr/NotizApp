@@ -18,6 +18,7 @@ import {
   Portal,
   Dialog,
   SegmentedButtons,
+  Switch,
 } from 'react-native-paper';
 
 import 'react-native-get-random-values';
@@ -70,6 +71,7 @@ export default function EditorScreen({ navigation, route }: Props) {
     existingNote?.reminderDayOfMonth ?? 1
   );
 
+  const [feedsThreads, setFeedsThreads] = useState(existingNote?.feedsThreads ?? false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [categoryMenuVisible, setCategoryMenuVisible] = useState(false);
   const [newCategoryDialog, setNewCategoryDialog] = useState(false);
@@ -98,6 +100,7 @@ export default function EditorScreen({ navigation, route }: Props) {
       category,
       isPinned,
       checklist,
+      feedsThreads,
       reminderAt: reminderIso,
       reminderRecurrence: reminderIso ? recurrence : 'once' as ReminderRecurrence,
       reminderWeekday: reminderIso && recurrence === 'weekly' ? weekday : null,
@@ -111,7 +114,7 @@ export default function EditorScreen({ navigation, route }: Props) {
     } else {
       await addNote(notePayload);
     }
-  }, [existingNote, title, content, category, isPinned, checklist, reminderAt, recurrence, weekday, dayOfMonth, updateNote, addNote]);
+  }, [existingNote, title, content, category, isPinned, checklist, feedsThreads, reminderAt, recurrence, weekday, dayOfMonth, updateNote, addNote]);
 
   useEffect(() => {
     saveNoteRef.current = saveNote;
@@ -403,6 +406,23 @@ export default function EditorScreen({ navigation, route }: Props) {
             onPress={() => { setCategoryMenuVisible(false); setNewCategoryDialog(true); }}
           />
         </Menu>
+
+        {/* Feeds Threads Toggle */}
+        <View style={styles.feedsThreadsRow}>
+          <View style={styles.feedsThreadsLabel}>
+            <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
+              In Threads einbeziehen
+            </Text>
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              Wird vom KI-Worker verknüpft
+            </Text>
+          </View>
+          <Switch
+            value={feedsThreads}
+            onValueChange={setFeedsThreads}
+            color={theme.colors.primary}
+          />
+        </View>
 
         {/* Divider */}
         <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
@@ -696,6 +716,16 @@ const styles = StyleSheet.create({
   categoryBtn: {
     borderRadius: 14,
     alignSelf: 'flex-start',
+  },
+  feedsThreadsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  feedsThreadsLabel: {
+    flex: 1,
+    gap: 2,
   },
   segmented: {
     marginBottom: 12,
