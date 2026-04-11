@@ -9,6 +9,8 @@ import EditorScreen from '../screens/EditorScreen';
 import NoteDetailScreen from '../screens/NoteDetailScreen';
 import ArchiveScreen from '../screens/ArchiveScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ThreadsScreen from '../screens/ThreadsScreen';
+import ThreadDetailScreen from '../screens/ThreadDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -49,7 +51,17 @@ function HomeTabs() {
       }}
     >
       <Tab.Screen
-        name="Notizen"
+        name="Threads"
+        component={ThreadsScreen}
+        options={{
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="thought-bubble-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Inbox"
         component={HomeScreen}
         options={{
           headerShown: false,
@@ -112,6 +124,11 @@ export default function AppNavigator() {
         name="Editor"
         component={EditorScreen}
         options={{ title: 'Notiz' }}
+      />
+      <Stack.Screen
+        name="ThreadDetail"
+        component={ThreadDetailScreen}
+        options={({ route }: any) => ({ title: route.params?.title ?? 'Thread' })}
       />
     </Stack.Navigator>
   );
