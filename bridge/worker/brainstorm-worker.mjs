@@ -346,14 +346,11 @@ async function cmdWrite(arg) {
     if (thoughtIdsToProcess.length > 0) {
       try {
         // Batch-Update: Alle Thoughts mit device_id markieren, deren ID in der Liste
-        const processedUpdates = thoughtIdsToProcess.map(id => ({
-          id,
-          device_id: DEVICE_ID,
-          processed_at: now,
-        }));
-        await sbBatchPatch(
-          `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
-          processedUpdates,
+        // PostgREST: PATCH mit id=in.(...) Filter + einfachem Body (kein Array)
+        const idList = thoughtIdsToProcess.join(',');
+        await sbPatch(
+          `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}&id=in.(${idList})`,
+          { processed_at: now },
         );
         stats.thoughts_processed = thoughtIdsToProcess.length;
       } catch (err) {
