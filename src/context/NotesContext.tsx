@@ -108,7 +108,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
         const remote = await pullRemote(deviceId);
         if (cancelled) return;
-        if (remote.length > 0) {
+        if (remote !== null) {
           // Remote ist die authoritative Quelle: Notes die remote nicht existieren
           // wurden auf dem Server gelöscht und sollen nicht aus dem lokalen Cache
           // wieder auftauchen.

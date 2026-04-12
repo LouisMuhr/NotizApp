@@ -38,9 +38,9 @@ function rowToNote(row: RemoteRow): Note {
   };
 }
 
-export async function pullRemote(deviceId: string): Promise<Note[]> {
+export async function pullRemote(deviceId: string): Promise<Note[] | null> {
   const supabase = getSupabase();
-  if (!supabase) return [];
+  if (!supabase) return null;
   const { data, error } = await supabase
     .from('notes')
     .select('*')
@@ -48,7 +48,7 @@ export async function pullRemote(deviceId: string): Promise<Note[]> {
     .order('updated_at', { ascending: false });
   if (error) {
     console.warn('[sync] pullRemote error', error.message);
-    return [];
+    return null;
   }
   return (data as RemoteRow[]).map(rowToNote);
 }
