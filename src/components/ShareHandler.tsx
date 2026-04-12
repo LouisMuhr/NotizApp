@@ -6,6 +6,7 @@
 // Rendert kein UI — rein logische Komponente.
 
 import { useEffect } from 'react';
+import { NativeModules } from 'react-native';
 import ReceiveSharingIntent from 'react-native-receive-sharing-intent';
 import { useThoughts } from '../context/ThoughtsContext';
 
@@ -20,6 +21,11 @@ export default function ShareHandler() {
   const { addThought } = useThoughts();
 
   useEffect(() => {
+    if (!NativeModules.ReceiveSharingIntent) {
+      // Natives Modul nicht verfügbar (Expo Go / kein nativer Build) — still überspringen
+      return;
+    }
+
     const handleFiles = (files: SharedFile[]) => {
       for (const file of files) {
         const text = (file.text ?? file.weblink ?? file.subject ?? '').trim();
