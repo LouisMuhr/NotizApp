@@ -30,12 +30,24 @@ und beende die Ausführung.
 
 Analysiere jeden unverarbeiteten Thought im Kontext der bestehenden Threads.
 
-### Entscheidungsbaum pro Thought:
+### Vorsortierung: Micro-Thoughts ausfiltern
+- Thoughts mit ≤14 Zeichen: Überprüfe semantischen Gehalt
+- Nichtsagende Einträge ("ja", "nein", "erledigen", "ok", einzelnes Wort): als `processed` markieren, keinen Thread anlegen
+- Diese Thoughts gehören in `processed_thought_ids`, nicht in `new_threads` oder `thread_updates`
+
+### Pruning: Dormant-Threads aus Vergleich ausschließen
+- Vor der Synthese: Überprüfe bestehende active_threads auf `updated_at`
+- Threads ohne neuen Thought seit >21 Tagen: Markiere als `status='dormant'` (siehe `thread_updates`)
+- Diese Threads aus dem Relevanz-Vergleich ausschließen (nicht mit aktuellen Thoughts vergleichen)
+- Der Worker wird dormant-Threads später archivieren/entfernen; hier: nur aus dem aktiven Vergleich raus
+
+### Entscheidungsbaum pro Thought (nach Vorsortierung):
 
 **A) Passt er inhaltlich zu einem bestehenden Thread?**
 - Vergleiche den Thought-Inhalt mit Thread-Titel + Summary
-- Wenn thematische Überschneidung ≥ ~60%: dem bestehenden Thread zuordnen
-- Aktualisiere die Summary so, dass der neue Gedanke organisch eingewoben wird
+- Kernfrage: Passt dieser Thought zum Kernanliegen des Threads – ja oder nein?
+- Bei Unsicherheit: nein, neuer Thread (binäre Entscheidung, nicht Prozentzahl)
+- Wenn ja: Aktualisiere die Summary so, dass der neue Gedanke organisch eingewoben wird
 - Kein reines Appending — schreibe die Summary als lebendigen, kohärenten Fließtext (2-4 Sätze)
 
 **B) Ist er verwandt mit anderen unverarbeiteten Thoughts (kein bestehender Thread passt)?**
@@ -52,7 +64,8 @@ Analysiere jeden unverarbeiteten Thought im Kontext der bestehenden Threads.
 - Immer Deutsch, Fließtext, keine Bullet-Points
 - Max. 3-4 Sätze — verdichtend, nicht auflistend
 - Wenn ein Thread ≥5 neue Thoughts bekommt: füge einen Satz ein, der beschreibt was seit dem letzten Mal neu hinzugekommen ist ("Neu hinzugekommen ist...")
-- Schreibe in der dritten Person über die Gedanken, nicht als Ich-Aussage
+- Schreibe die Summary als sachliche Themen-Beschreibung, nicht als Auflistung der einzelnen Thoughts
+- Die Summary beschreibt das übergeordnete Thema selbst, nicht die Gedanken als Objekte
 
 ### UUIDs generieren (für neue Threads):
 ```bash
@@ -64,10 +77,9 @@ Generiere so viele UUIDs wie du neue Threads brauchst.
 
 ## Schritt 3 — Ergebnis-JSON erstellen
 
-Speichere das Synthese-Ergebnis in eine temporäre Datei:
+Erstelle folgende JSON-Struktur (verwende das Schreib-Tool direkt, nicht bash-heredoc):
 
-```bash
-cat > /tmp/brainstorm-results.json << 'ENDJSON'
+```json
 {
   "new_threads": [
     {
@@ -83,15 +95,21 @@ cat > /tmp/brainstorm-results.json << 'ENDJSON'
       "summary": "Aktualisierte Summary, die neue Gedanken integriert...",
       "thought_count": 5,
       "new_thought_ids": ["<thought-uuid-3>"]
+    },
+    {
+      "id": "<dormant-thread-uuid>",
+      "status": "dormant",
+      "summary": "<unverändert>"
     }
   ],
   "processed_thought_ids": ["<uuid-1>", "<uuid-2>", "<uuid-3>"]
 }
-ENDJSON
 ```
 
-**Kritisch:** `processed_thought_ids` muss ALLE `unprocessed_thoughts`-IDs enthalten —
-auch wenn ein Thought als isolierter Single-Thread angelegt wurde.
+**Kritisch:** 
+- `processed_thought_ids` muss ALLE `unprocessed_thoughts`-IDs enthalten — auch Micro-Thoughts und isolierte Single-Threads
+- Schreibe die JSON direkt mit dem verfügbaren Schreib-Tool (nicht `cat > /tmp/...`), damit Sonderzeichen, Anführungszeichen und Zeilenumbrüche in Thought-Inhalten korrekt escaped werden
+- `thread_updates` kann `status="dormant"` enthalten (für Pruning); der Worker übernimmt das Speichern
 
 ---
 
@@ -108,7 +126,8 @@ als verarbeitet markiert wurden.
 
 ## Schritt 5 — Abschlussbericht
 
-Gib eine kurze Zusammenfassung aus (max. 5 Zeilen):
-- Wie viele Thoughts verarbeitet
+Gib eine kurze Zusammenfassung aus (max. 6 Zeilen):
+- Wie viele Thoughts verarbeitet (inkl. Micro-Thoughts gefiltert)
 - Wie viele neue Threads erstellt / bestehende aktualisiert
+- Wie viele Threads als dormant markiert (wenn zutreffend)
 - Einen optionalen Satz zu einer interessanten thematischen Verbindung, die du erkannt hast

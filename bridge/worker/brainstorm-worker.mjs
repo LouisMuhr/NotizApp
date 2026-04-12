@@ -120,6 +120,34 @@ async function sbPatch(resource, body) {
   }
 }
 
+async function sbBatchPost(resource, body, upsert = false) {
+  const url = `${SUPABASE_URL}/rest/v1/${resource}`;
+  const headers = {
+    ...authHeaders(),
+    Prefer: upsert ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`POST ${resource} (batch) → HTTP ${res.status}: ${await res.text()}`);
+  }
+}
+
+async function sbBatchPatch(resource, body) {
+  const url = `${SUPABASE_URL}/rest/v1/${resource}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), Prefer: 'return=minimal' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`PATCH ${resource} (batch) → HTTP ${res.status}: ${await res.text()}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Subkommando: fetch
 // ---------------------------------------------------------------------------
@@ -158,9 +186,14 @@ async function cmdFetch() {
  * Erwartet JSON (Dateiname oder Inline-JSON-String) mit:
  * {
  *   new_threads: [{ id, title, summary, thought_ids: string[] }],
- *   thread_updates: [{ id, summary, thought_count, new_thought_ids: string[] }],
+ *   thread_updates: [{ id, summary, thought_count, new_thought_ids: string[], status?: string }],
  *   processed_thought_ids: string[]
  * }
+ *
+ * Optimierungen:
+ * - Batch-Operations: Alle neue Threads in 1 POST, alle thought_threads in 1 POST,
+ *   alle processed_at Updates in 1 PATCH (statt N einzelne Requests)
+ * - Idempotenz: Prüft Duplikat-Titel und überspringt
  */
 async function cmdWrite(arg) {
   if (!arg) {
@@ -184,16 +217,38 @@ async function cmdWrite(arg) {
   const stats = {
     threads_created: 0,
     threads_updated: 0,
+    threads_deduplicated: 0,
     thoughts_linked: 0,
     thoughts_processed: 0,
     errors: [],
   };
 
-  // 1. Neue Threads anlegen
-  for (const t of results.new_threads ?? []) {
+  try {
+    // Idempotenz: Existierende Thread-Titel laden
+    let existingTitles = new Set();
     try {
-      const row = {
-        id: t.id ?? randomUUID(),
+      const existing = await sbGet(
+        `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&select=title`,
+      );
+      existingTitles = new Set(existing.map(t => t.title));
+    } catch (err) {
+      stats.errors.push(`Failed to load existing titles: ${err.message}`);
+    }
+
+    // === BATCH 1: Neue Threads ===
+    const newThreadsToInsert = [];
+    const newThreadsById = new Map(); // Für thought_threads Zuordnung
+
+    for (const t of results.new_threads ?? []) {
+      // Idempotenz-Check: Skip if Titel existiert bereits
+      if (existingTitles.has(t.title)) {
+        stats.threads_deduplicated++;
+        continue;
+      }
+
+      const threadId = t.id ?? randomUUID();
+      newThreadsToInsert.push({
+        id: threadId,
         device_id: DEVICE_ID,
         title: t.title,
         summary: t.summary ?? '',
@@ -202,63 +257,111 @@ async function cmdWrite(arg) {
         last_synthesized_at: now,
         created_at: now,
         updated_at: now,
-      };
-      await sbPost('threads', row, true);
+      });
+      newThreadsById.set(threadId, t.thought_ids ?? []);
       stats.threads_created++;
-
-      for (const thoughtId of t.thought_ids ?? []) {
-        await sbPost('thought_threads', {
-          thought_id: thoughtId,
-          thread_id: row.id,
-          relevance: 1.0,
-          created_at: now,
-        }, true);
-        stats.thoughts_linked++;
-      }
-    } catch (err) {
-      stats.errors.push(`new_thread "${t.title}": ${err.message}`);
     }
-  }
 
-  // 2. Bestehende Threads aktualisieren
-  for (const u of results.thread_updates ?? []) {
-    try {
-      await sbPatch(
-        `threads?id=eq.${u.id}&device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
-        {
-          summary: u.summary,
-          thought_count: u.thought_count,
-          last_synthesized_at: now,
-          updated_at: now,
-        },
-      );
+    // Batch-POST: Alle neuen Threads auf einmal
+    if (newThreadsToInsert.length > 0) {
+      try {
+        await sbBatchPost('threads', newThreadsToInsert, true);
+      } catch (err) {
+        stats.errors.push(`Batch INSERT threads: ${err.message}`);
+      }
+    }
+
+    // === BATCH 2: Thread-Updates ===
+    const threadUpdates = [];
+    const updateThoughtsMap = new Map(); // thread_id → thought_ids
+
+    for (const u of results.thread_updates ?? []) {
+      threadUpdates.push({
+        id: u.id,
+        device_id: DEVICE_ID,
+        summary: u.summary,
+        thought_count: u.thought_count,
+        status: u.status ?? 'active', // Für Pruning: kann 'dormant' sein
+        last_synthesized_at: now,
+        updated_at: now,
+      });
+      if ((u.new_thought_ids ?? []).length > 0) {
+        updateThoughtsMap.set(u.id, u.new_thought_ids);
+      }
       stats.threads_updated++;
+    }
 
-      for (const thoughtId of u.new_thought_ids ?? []) {
-        await sbPost('thought_threads', {
+    // Batch-PATCH: Alle Thread-Updates auf einmal
+    if (threadUpdates.length > 0) {
+      try {
+        await sbBatchPatch(
+          `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
+          threadUpdates,
+        );
+      } catch (err) {
+        stats.errors.push(`Batch UPDATE threads: ${err.message}`);
+      }
+    }
+
+    // === BATCH 3: Thought-Thread-Links ===
+    const allThoughtThreadLinks = [];
+
+    // Links aus neuen Threads
+    for (const [threadId, thoughtIds] of newThreadsById.entries()) {
+      for (const thoughtId of thoughtIds) {
+        allThoughtThreadLinks.push({
           thought_id: thoughtId,
-          thread_id: u.id,
+          thread_id: threadId,
           relevance: 1.0,
           created_at: now,
-        }, true);
+        });
         stats.thoughts_linked++;
       }
-    } catch (err) {
-      stats.errors.push(`thread_update "${u.id}": ${err.message}`);
     }
-  }
 
-  // 3. Thoughts als verarbeitet markieren
-  for (const thoughtId of results.processed_thought_ids ?? []) {
-    try {
-      await sbPatch(
-        `thoughts?id=eq.${thoughtId}&device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
-        { processed_at: now },
-      );
-      stats.thoughts_processed++;
-    } catch (err) {
-      stats.errors.push(`mark_processed "${thoughtId}": ${err.message}`);
+    // Links aus Thread-Updates
+    for (const [threadId, thoughtIds] of updateThoughtsMap.entries()) {
+      for (const thoughtId of thoughtIds) {
+        allThoughtThreadLinks.push({
+          thought_id: thoughtId,
+          thread_id: threadId,
+          relevance: 1.0,
+          created_at: now,
+        });
+        stats.thoughts_linked++;
+      }
     }
+
+    // Batch-POST: Alle thought_threads auf einmal
+    if (allThoughtThreadLinks.length > 0) {
+      try {
+        await sbBatchPost('thought_threads', allThoughtThreadLinks, true);
+      } catch (err) {
+        stats.errors.push(`Batch INSERT thought_threads: ${err.message}`);
+      }
+    }
+
+    // === BATCH 4: Mark Processed ===
+    const thoughtIdsToProcess = results.processed_thought_ids ?? [];
+    if (thoughtIdsToProcess.length > 0) {
+      try {
+        // Batch-Update: Alle Thoughts mit device_id markieren, deren ID in der Liste
+        const processedUpdates = thoughtIdsToProcess.map(id => ({
+          id,
+          device_id: DEVICE_ID,
+          processed_at: now,
+        }));
+        await sbBatchPatch(
+          `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
+          processedUpdates,
+        );
+        stats.thoughts_processed = thoughtIdsToProcess.length;
+      } catch (err) {
+        stats.errors.push(`Batch UPDATE thoughts (processed_at): ${err.message}`);
+      }
+    }
+  } catch (err) {
+    stats.errors.push(`Unexpected error: ${err.message}`);
   }
 
   if (stats.errors.length > 0) {
