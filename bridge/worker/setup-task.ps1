@@ -1,12 +1,12 @@
 # setup-task.ps1
-# Registriert einen Windows Scheduled Task, der den Brainstorm-Worker stündlich ausführt.
+# Registriert einen Windows Scheduled Task, der den Brainstorm-Worker täglich um 21:00 ausführt.
 #
 # Ausführen (einmalig, als Administrator):
 #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 #   .\bridge\worker\setup-task.ps1
 #
 # Was der Task tut:
-#   Jede Stunde → `claude --print --file brainstorm-prompt.md` ausführen
+#   Täglich 21:00 → `claude --print --file brainstorm-prompt.md` ausführen
 #   Logs landen in bridge/worker/logs/brainstorm-<datum>.log
 
 $ErrorActionPreference = "Stop"
@@ -35,11 +35,10 @@ $action = New-ScheduledTaskAction `
     -Argument "/c cd /d `"$workDir`" && type `"$promptFile`" | `"$claudeExe`" --print --dangerously-skip-permissions >> `"$logDir\brainstorm-%date:~-4,4%%date:~-7,2%%date:~-10,2%.log`" 2>&1" `
     -WorkingDirectory $workDir
 
-# Trigger: jede Stunde, täglich
+# Trigger: täglich um 21:00
 $trigger = New-ScheduledTaskTrigger `
-    -RepetitionInterval (New-TimeSpan -Hours 1) `
-    -Once `
-    -At (Get-Date).Date.AddHours(9)   # Start: heute 09:00, danach stündlich
+    -Daily `
+    -At "21:00"
 
 # Einstellungen: bei AC+Batterie laufen, Netz nicht zwingend nötig
 $settings = New-ScheduledTaskSettingsSet `
@@ -70,7 +69,7 @@ Register-ScheduledTask `
 
 Write-Host ""
 Write-Host "Task '$taskName' erfolgreich registriert." -ForegroundColor Green
-Write-Host "  Interval: stündlich"
+Write-Host "  Zeitplan: täglich 21:00"
 Write-Host "  Logs:     $logDir"
 Write-Host ""
 Write-Host "Jetzt sofort manuell ausführen (Test):"
