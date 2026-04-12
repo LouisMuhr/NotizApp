@@ -6,10 +6,16 @@ import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNotes } from '../context/NotesContext';
+import { useThoughts } from '../context/ThoughtsContext';
 import { Note } from '../models/Note';
+import { Thread } from '../models/Thought';
 import { getCategoryColor } from '../utils/categoryColors';
 import { Gradients, Radii, Shadows } from '../theme/gradients';
 import * as haptics from '../utils/haptics';
+
+// ---------------------------------------------------------------------------
+// Archived Note Row (unchanged)
+// ---------------------------------------------------------------------------
 
 interface ArchiveRowProps {
   item: Note;
@@ -112,28 +118,182 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
   );
 }
 
+// ---------------------------------------------------------------------------
+// Archived Thread Row
+// ---------------------------------------------------------------------------
+
+const THREAD_GRADIENTS: Array<readonly [string, string]> = [
+  Gradients.primary,
+  Gradients.secondary,
+  Gradients.tertiary,
+  Gradients.lavender,
+  Gradients.sky,
+  Gradients.emerald,
+  Gradients.pink,
+];
+
+interface ArchivedThreadRowProps {
+  thread: Thread;
+  index: number;
+  onRestore: () => void;
+  onRequestDelete: () => void;
+}
+
+function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: ArchivedThreadRowProps) {
+  const theme = useTheme();
+  const swipeableRef = useRef<Swipeable>(null);
+  const gradient = THREAD_GRADIENTS[index % THREAD_GRADIENTS.length];
+
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
+
+  const renderLeftActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [0, 80],
+      outputRange: [0.5, 1],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={[styles.swipeAction, styles.leftAction, { backgroundColor: theme.colors.tertiaryContainer }]}>
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <MaterialCommunityIcons name="restore" size={24} color={theme.colors.tertiary} />
+        </Animated.View>
+        <Text style={[styles.swipeLabel, { color: theme.colors.tertiary }]}>Wiederherstellen</Text>
+      </View>
+    );
+  };
+
+  const renderRightActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-80, 0],
+      outputRange: [1, 0.5],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={[styles.swipeAction, styles.rightAction, { backgroundColor: theme.colors.errorContainer }]}>
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <MaterialCommunityIcons name="trash-can-outline" size={24} color={theme.colors.error} />
+        </Animated.View>
+        <Text style={[styles.swipeLabel, { color: theme.colors.error }]}>Löschen</Text>
+      </View>
+    );
+  };
+
+  return (
+    <Swipeable
+      ref={swipeableRef}
+      renderLeftActions={renderLeftActions}
+      renderRightActions={renderRightActions}
+      onSwipeableOpen={(direction) => {
+        swipeableRef.current?.close();
+        if (direction === 'left') {
+          haptics.light();
+          onRestore();
+        } else if (direction === 'right') {
+          haptics.medium();
+          onRequestDelete();
+        }
+      }}
+      overshootLeft={false}
+      overshootRight={false}
+      containerStyle={styles.swipeContainer}
+    >
+      <Pressable
+        style={({ pressed }) => [
+          styles.card,
+          { backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface },
+        ]}
+      >
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[styles.accent, { opacity: 0.5 }]}
+        />
+        <View style={styles.body}>
+          <Text style={[styles.title, { color: theme.colors.onSurface }]} numberOfLines={1}>
+            {thread.title}
+          </Text>
+          {thread.summary ? (
+            <Text style={[styles.preview, { color: theme.colors.onSurfaceVariant }]} numberOfLines={2}>
+              {thread.summary}
+            </Text>
+          ) : null}
+          <View style={styles.footer}>
+            <View style={styles.threadMeta}>
+              <MaterialCommunityIcons
+                name="thought-bubble-outline"
+                size={13}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.categoryLabel, { color: theme.colors.onSurfaceVariant }]}>
+                {thread.thoughtCount} {thread.thoughtCount === 1 ? 'Gedanke' : 'Gedanken'}
+              </Text>
+            </View>
+            <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>
+              {formatDate(thread.updatedAt)}
+            </Text>
+          </View>
+        </View>
+      </Pressable>
+    </Swipeable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Screen
+// ---------------------------------------------------------------------------
+
+type ArchiveItem =
+  | { type: 'thread'; thread: Thread; index: number }
+  | { type: 'note'; note: Note };
+
+type DeleteTarget =
+  | { type: 'note'; item: Note }
+  | { type: 'thread'; item: Thread };
+
 export default function ArchiveScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { archivedNotes, restoreNote, deleteNotePermanently } = useNotes();
+  const { threads, restoreThread, deleteThreadPermanently } = useThoughts();
 
-  const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+  const archivedThreads = threads.filter((t) => t.status === 'archived');
+
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const handleDelete = useCallback(async () => {
-    if (deleteTarget) {
-      await deleteNotePermanently(deleteTarget.id);
-      setDeleteTarget(null);
+    if (!deleteTarget) return;
+    if (deleteTarget.type === 'note') {
+      await deleteNotePermanently(deleteTarget.item.id);
+    } else {
+      deleteThreadPermanently(deleteTarget.item.id);
     }
-  }, [deleteTarget, deleteNotePermanently]);
+    setDeleteTarget(null);
+  }, [deleteTarget, deleteNotePermanently, deleteThreadPermanently]);
 
-  const renderItem = ({ item }: { item: Note }) => (
-    <ArchiveRow
-      item={item}
-      onRestore={() => restoreNote(item.id)}
-      onRequestDelete={() => setDeleteTarget(item)}
-      onPress={() => {}}
-    />
-  );
+  const totalCount = archivedNotes.length + archivedThreads.length;
+
+  const deleteLabel = deleteTarget?.type === 'thread'
+    ? `Thread „${deleteTarget.item.title}" wird unwiderruflich gelöscht.`
+    : `„${(deleteTarget?.item as Note)?.title || 'Ohne Titel'}" wird unwiderruflich gelöscht.`;
+
+  // Build a flat list mixing both types to avoid SectionList union issues
+  const items: ArchiveItem[] = [
+    ...archivedThreads.map((t, i) => ({ type: 'thread' as const, thread: t, index: i })),
+    ...archivedNotes.map((n) => ({ type: 'note' as const, note: n })),
+  ];
+
+  // Show section headers inline
+  const hasThreads = archivedThreads.length > 0;
+  const hasNotes = archivedNotes.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
@@ -142,11 +302,13 @@ export default function ArchiveScreen() {
           Archiv
         </Text>
         <Text style={[styles.headerSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-          {archivedNotes.length} {archivedNotes.length === 1 ? 'Notiz' : 'Notizen'}
+          {totalCount === 0
+            ? 'Leer'
+            : `${archivedNotes.length} ${archivedNotes.length === 1 ? 'Notiz' : 'Notizen'}, ${archivedThreads.length} ${archivedThreads.length === 1 ? 'Thread' : 'Threads'}`}
         </Text>
       </View>
 
-      {archivedNotes.length === 0 ? (
+      {totalCount === 0 ? (
         <View style={styles.center}>
           <LinearGradient
             colors={Gradients.lavender}
@@ -166,14 +328,52 @@ export default function ArchiveScreen() {
             variant="bodySmall"
             style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
           >
-            Gelöschte Notizen landen hier
+            Gelöschte Notizen und archivierte Threads landen hier
           </Text>
         </View>
       ) : (
         <FlatList
-          data={archivedNotes}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
+          data={items}
+          keyExtractor={(item) => (item.type === 'thread' ? `t-${item.thread.id}` : `n-${item.note.id}`)}
+          renderItem={({ item, index }) => {
+            // Section headers
+            const showThreadHeader = hasThreads && index === 0;
+            const showNoteHeader = hasNotes && item.type === 'note' && (index === 0 || items[index - 1]?.type === 'thread');
+
+            return (
+              <>
+                {showThreadHeader && (
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
+                      Threads
+                    </Text>
+                  </View>
+                )}
+                {showNoteHeader && (
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
+                      Notizen
+                    </Text>
+                  </View>
+                )}
+                {item.type === 'thread' ? (
+                  <ArchivedThreadRow
+                    thread={item.thread}
+                    index={item.index}
+                    onRestore={() => restoreThread(item.thread.id)}
+                    onRequestDelete={() => setDeleteTarget({ type: 'thread', item: item.thread })}
+                  />
+                ) : (
+                  <ArchiveRow
+                    item={item.note}
+                    onRestore={() => restoreNote(item.note.id)}
+                    onRequestDelete={() => setDeleteTarget({ type: 'note', item: item.note })}
+                    onPress={() => {}}
+                  />
+                )}
+              </>
+            );
+          }}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         />
@@ -191,7 +391,7 @@ export default function ArchiveScreen() {
           </Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>
-              „{deleteTarget?.title || 'Ohne Titel'}" wird unwiderruflich gelöscht.
+              {deleteLabel}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
@@ -257,6 +457,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     opacity: 0.6,
   },
+  sectionHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    opacity: 0.6,
+  },
   list: {
     paddingBottom: 100,
     paddingTop: 8,
@@ -315,6 +527,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 10,
+  },
+  threadMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   categoryLabel: {
     fontSize: 11,

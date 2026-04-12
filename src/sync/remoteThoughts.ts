@@ -180,6 +180,45 @@ export async function deleteThought(deviceId: string, id: string): Promise<void>
   }
 }
 
+export async function archiveThread(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .update({ status: 'archived', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] archiveThread error', error.message);
+  }
+}
+
+export async function restoreThread(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .update({ status: 'active', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] restoreThread error', error.message);
+  }
+}
+
+export async function deleteThreadPermanently(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .delete()
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] deleteThreadPermanently error', error.message);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Detail-Lookup für Thread-Detail-Screen (kommt erst in Slice 3 zum Einsatz,
 // wird hier aber schon bereitgestellt damit der Sync-Layer komplett ist).
