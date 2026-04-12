@@ -1,5 +1,8 @@
 # NotizApp – CLAUDE.md
 
+> **Meta:** After every significant code change, update this file to reflect the new state.
+> Keep it under 200 lines — compress or merge sections if it grows beyond that.
+
 ## Project Overview
 
 NotizApp is a German-language note-taking mobile app built with React Native / Expo.
@@ -27,19 +30,24 @@ c:/NotizApp/
 │   ├── .env               # Real secrets (git-ignored)
 │   ├── .env.example       # Template
 │   ├── src/
-│   │   ├── components/    # FilterBar, GradientCard, NoteCard
+│   │   ├── components/    # FilterBar, GradientCard, NoteCard,
+│   │   │                  #   QuickCaptureFAB, VoiceCaptureSheet
 │   │   ├── context/       # NotesContext, ThoughtsContext, ThemeContext
 │   │   ├── models/        # Note.ts, Thought.ts (pure TypeScript types)
 │   │   ├── navigation/    # AppNavigator (Stack + BottomTabs)
 │   │   ├── screens/       # HomeScreen, EditorScreen, NoteDetailScreen,
-│   │   │                  #   ArchiveScreen, SettingsScreen
+│   │   │                  #   ArchiveScreen, SettingsScreen,
+│   │   │                  #   ThreadsScreen, ThreadDetailScreen
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, remoteNotes, remoteThoughts, deviceId
 │   │   ├── theme/         # theme.ts (MD3 dark theme, deep-navy palette)
 │   │   └── utils/         # notifications, haptics, …
-│   └── bridge/            # Vercel serverless bridge API
-│       ├── api/           # Serverless functions
+│   └── bridge/            # Vercel serverless bridge API + worker
+│       ├── api/           # Serverless functions (note.ts, thought.ts)
 │       ├── bookmarklet/   # Browser bookmarklet source
+│       ├── worker/        # Brainstorm worker (Node.js, no bundler)
+│       │   ├── brainstorm-worker.mjs  # CLI: fetch / write / add
+│       │   └── brainstorm-prompt.md  # Claude Code agent prompt
 │       └── package.json
 └── README.md
 ```
@@ -127,7 +135,7 @@ GestureHandlerRootView
 
 ### Navigation
 - **Bottom tabs**: Notizen (HomeScreen), Archiv (ArchiveScreen), Einstellungen (SettingsScreen)
-- **Stack screens**: NoteDetail, Editor (pushed on top of tabs)
+- **Stack screens**: NoteDetail, Editor, ThreadsScreen, ThreadDetail (pushed on top of tabs)
 
 ### Data flow
 - State lives in `NotesContext` / `ThoughtsContext` (React Context + useState).
@@ -147,6 +155,25 @@ single-user/anon-key setups; replace for multi-user deployments.
 `src/theme/theme.ts` – extends `MD3DarkTheme` from react-native-paper.
 Deep navy backgrounds (`#0F1117` / `#181B23`), soft indigo primary (`#7B6EF6`),
 mint secondary (`#3ECFB4`), amber tertiary (`#FFB347`).
+
+### Brainstorm Worker
+`bridge/worker/brainstorm-worker.mjs` – standalone Node.js ESM CLI (no bundler,
+no extra deps beyond the built-in `fetch`). Bridges Claude Code ↔ Supabase for
+the Thoughts synthesis pipeline.
+
+Commands (run from `NotizApp/NotizApp/`):
+```bash
+node bridge/worker/brainstorm-worker.mjs fetch          # unprocessed Thoughts + active Threads → stdout JSON
+node bridge/worker/brainstorm-worker.mjs write <json>   # write synthesis (new threads, updates, processed marks)
+node bridge/worker/brainstorm-worker.mjs add "Gedanke"  # push a single thought directly
+```
+
+`bridge/worker/brainstorm-prompt.md` is the Claude Code agent prompt that drives
+the full pipeline: fetch → AI synthesizes Thoughts into Threads → write back.
+
+**Credentials** (resolved in order): `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` from
+`bridge/worker/.env` → `NotizApp/.env` → `EXPO_PUBLIC_*` env vars. Service-role key
+preferred for PATCH; anon key works while RLS uses `using (true)`.
 
 ---
 
