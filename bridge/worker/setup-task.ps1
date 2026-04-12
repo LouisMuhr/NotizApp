@@ -15,7 +15,7 @@ $taskName    = "NotizApp-BrainstormWorker"
 $workDir     = "C:\NotizApp\NotizApp"
 $promptFile  = "bridge\worker\brainstorm-prompt.md"
 $logDir      = Join-Path $workDir "bridge\worker\logs"
-$claudeCmd   = Get-Command "claude" -ErrorAction SilentlyContinue
+$claudeCmd   = Get-Command "claude.cmd" -ErrorAction SilentlyContinue
 $claudeExe   = if ($claudeCmd) { $claudeCmd.Source } else { $null }
 
 if (-not $claudeExe) {
