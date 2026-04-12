@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   StyleSheet,
   View,
   FlatList,
   Pressable,
+  Animated,
 } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Thread } from '../models/Thought';
@@ -51,93 +53,142 @@ interface ThreadCardProps {
   index: number;
   newCount: number;
   onPress: () => void;
+  onDelete: () => void;
 }
 
-function ThreadCard({ thread, index, newCount, onPress }: ThreadCardProps) {
+function ThreadCard({ thread, index, newCount, onPress, onDelete }: ThreadCardProps) {
   const theme = useTheme();
   const gradient = getThreadGradient(index);
+  const swipeableRef = useRef<Swipeable>(null);
 
   const lastUpdated = formatRelativeTime(thread.updatedAt);
 
-  return (
-    <Pressable
-      onPress={() => {
-        haptics.light();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
-    >
-      <GradientCard
-        colors={['#1E2130', '#181B26'] as unknown as readonly [string, string]}
-        style={styles.card}
-        glow={false}
+  const renderRightActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-80, 0],
+      outputRange: [1, 0.5],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View
+        style={[
+          styles.swipeAction,
+          styles.archiveAction,
+          { backgroundColor: theme.colors.tertiaryContainer },
+        ]}
       >
-        {/* Accent bar on the left */}
-        <LinearGradient
-          colors={gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.accentBar}
-        />
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <MaterialCommunityIcons
+            name="archive-outline"
+            size={26}
+            color={theme.colors.tertiary}
+          />
+        </Animated.View>
+        <Text style={[styles.swipeLabel, { color: theme.colors.tertiary }]}>
+          Archivieren
+        </Text>
+      </View>
+    );
+  };
 
-        <View style={styles.cardContent}>
-          {/* Header row */}
-          <View style={styles.cardHeader}>
-            <Text
-              style={[styles.threadTitle, { color: theme.colors.onSurface }]}
-              numberOfLines={1}
-            >
-              {thread.title}
-            </Text>
-            {newCount > 0 && (
-              <View style={[styles.badge, { backgroundColor: gradient[0] }]}>
-                <Text style={styles.badgeText}>{newCount} neu</Text>
-              </View>
+  const handleSwipeRight = () => {
+    swipeableRef.current?.close();
+    haptics.medium();
+    onDelete();
+  };
+
+  return (
+    <Swipeable
+      ref={swipeableRef}
+      renderRightActions={renderRightActions}
+      onSwipeableOpen={(direction) => {
+        if (direction === 'right') handleSwipeRight();
+      }}
+      overshootRight={false}
+      containerStyle={styles.swipeContainer}
+    >
+      <Pressable
+        onPress={() => {
+          haptics.light();
+          onPress();
+        }}
+        style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
+      >
+        <GradientCard
+          colors={['#1E2130', '#181B26'] as unknown as readonly [string, string]}
+          style={styles.card}
+          glow={false}
+        >
+          {/* Accent bar on the left */}
+          <LinearGradient
+            colors={gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.accentBar}
+          />
+
+          <View style={styles.cardContent}>
+            {/* Header row */}
+            <View style={styles.cardHeader}>
+              <Text
+                style={[styles.threadTitle, { color: theme.colors.onSurface }]}
+                numberOfLines={1}
+              >
+                {thread.title}
+              </Text>
+              {newCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: gradient[0] }]}>
+                  <Text style={styles.badgeText}>{newCount} neu</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Summary preview */}
+            {thread.summary ? (
+              <Text
+                style={[styles.summary, { color: theme.colors.onSurfaceVariant }]}
+                numberOfLines={2}
+              >
+                {thread.summary}
+              </Text>
+            ) : (
+              <Text
+                style={[styles.summaryEmpty, { color: theme.colors.onSurfaceVariant }]}
+              >
+                Noch keine Zusammenfassung — Worker läuft bald.
+              </Text>
             )}
-          </View>
 
-          {/* Summary preview */}
-          {thread.summary ? (
-            <Text
-              style={[styles.summary, { color: theme.colors.onSurfaceVariant }]}
-              numberOfLines={2}
-            >
-              {thread.summary}
-            </Text>
-          ) : (
-            <Text
-              style={[styles.summaryEmpty, { color: theme.colors.onSurfaceVariant }]}
-            >
-              Noch keine Zusammenfassung — Worker läuft bald.
-            </Text>
-          )}
-
-          {/* Footer row */}
-          <View style={styles.cardFooter}>
-            <MaterialCommunityIcons
-              name="thought-bubble-outline"
-              size={13}
-              color={theme.colors.onSurfaceVariant}
-              style={{ marginRight: 4 }}
-            />
-            <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
-              {thread.thoughtCount} {thread.thoughtCount === 1 ? 'Gedanke' : 'Gedanken'}
-            </Text>
-            <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>·</Text>
-            <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
-              {lastUpdated}
-            </Text>
+            {/* Footer row */}
+            <View style={styles.cardFooter}>
+              <MaterialCommunityIcons
+                name="thought-bubble-outline"
+                size={13}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
+                {thread.thoughtCount} {thread.thoughtCount === 1 ? 'Gedanke' : 'Gedanken'}
+              </Text>
+              <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>·</Text>
+              <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
+                {lastUpdated}
+              </Text>
+            </View>
           </View>
-        </View>
-      </GradientCard>
-    </Pressable>
+        </GradientCard>
+      </Pressable>
+    </Swipeable>
   );
 }
 
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { threads, links, loading } = useThoughts();
+  const { threads, links, loading, archiveThread } = useThoughts();
 
   const activeThreads = threads.filter((t) => t.status === 'active');
 
@@ -215,6 +266,7 @@ export default function ThreadsScreen({ navigation }: Props) {
               index={index}
               newCount={newCountByThread[item.id] ?? 0}
               onPress={() => navigation.navigate('ThreadDetail', { threadId: item.id, title: item.title })}
+              onDelete={() => archiveThread(item.id)}
             />
           )}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
@@ -272,10 +324,28 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingTop: 12,
-    paddingHorizontal: 16,
   },
   separator: {
     height: 10,
+  },
+  swipeContainer: {
+    marginHorizontal: 16,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  swipeAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 92,
+  },
+  archiveAction: {
+    borderTopRightRadius: 18,
+    borderBottomRightRadius: 18,
+  },
+  swipeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
   },
   cardPressable: {
     borderRadius: 18,

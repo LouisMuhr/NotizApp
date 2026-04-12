@@ -41,6 +41,9 @@ import {
   pullThreads,
   pullThoughtThreadLinks,
   insertThought,
+  archiveThread as archiveThreadRemote,
+  restoreThread as restoreThreadRemote,
+  deleteThreadPermanently as deleteThreadPermanentlyRemote,
   subscribeThoughts,
   subscribeThreads,
   subscribeThoughtThreadLinks,
@@ -53,6 +56,12 @@ interface ThoughtsContextType {
   loading: boolean;
   /** Erzeugt einen neuen Thought lokal und schickt ihn zu Supabase. */
   addThought: (content: string, source?: ThoughtSource) => Promise<Thought>;
+  /** Archiviert einen Thread (setzt Status auf 'archived'). */
+  archiveThread: (threadId: string) => void;
+  /** Stellt einen archivierten Thread wieder her. */
+  restoreThread: (threadId: string) => void;
+  /** Löscht einen Thread endgültig (lokal + remote). */
+  deleteThreadPermanently: (threadId: string) => void;
   /** Liefert alle Thoughts, die zu einem gegebenen Thread verlinkt sind. */
   getThoughtsForThread: (threadId: string) => Thought[];
 }
@@ -298,6 +307,82 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const archiveThread = useCallback(
+    (threadId: string) => {
+      setThreads((prev) => {
+        const next = prev.map((t) =>
+          t.id === threadId
+            ? { ...t, status: 'archived' as const, updatedAt: new Date().toISOString() }
+            : t,
+        );
+        saveThreads(next).catch((e) =>
+          console.warn('[brainstorm] saveThreads failed', e),
+        );
+        return next;
+      });
+
+      const deviceId = deviceIdRef.current;
+      if (deviceId) {
+        archiveThreadRemote(deviceId, threadId).catch((e) =>
+          console.warn('[brainstorm] archiveThread remote failed', e),
+        );
+      }
+    },
+    [],
+  );
+
+  const restoreThread = useCallback(
+    (threadId: string) => {
+      setThreads((prev) => {
+        const next = prev.map((t) =>
+          t.id === threadId
+            ? { ...t, status: 'active' as const, updatedAt: new Date().toISOString() }
+            : t,
+        );
+        saveThreads(next).catch((e) =>
+          console.warn('[brainstorm] saveThreads failed', e),
+        );
+        return next;
+      });
+
+      const deviceId = deviceIdRef.current;
+      if (deviceId) {
+        restoreThreadRemote(deviceId, threadId).catch((e) =>
+          console.warn('[brainstorm] restoreThread remote failed', e),
+        );
+      }
+    },
+    [],
+  );
+
+  const deleteThreadPermanently = useCallback(
+    (threadId: string) => {
+      setThreads((prev) => {
+        const next = prev.filter((t) => t.id !== threadId);
+        saveThreads(next).catch((e) =>
+          console.warn('[brainstorm] saveThreads failed', e),
+        );
+        return next;
+      });
+      // Zugehörige Links entfernen
+      setLinks((prev) => {
+        const next = prev.filter((l) => l.threadId !== threadId);
+        saveThoughtThreadLinks(next).catch((e) =>
+          console.warn('[brainstorm] saveThoughtThreadLinks failed', e),
+        );
+        return next;
+      });
+
+      const deviceId = deviceIdRef.current;
+      if (deviceId) {
+        deleteThreadPermanentlyRemote(deviceId, threadId).catch((e) =>
+          console.warn('[brainstorm] deleteThreadPermanently remote failed', e),
+        );
+      }
+    },
+    [],
+  );
+
   const getThoughtsForThread = useCallback(
     (threadId: string): Thought[] => {
       const linkedIds = new Set(
@@ -321,6 +406,9 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
         links,
         loading,
         addThought,
+        archiveThread,
+        restoreThread,
+        deleteThreadPermanently,
         getThoughtsForThread,
       }}
     >
