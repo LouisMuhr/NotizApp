@@ -228,13 +228,13 @@ function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: Archiv
           <View style={styles.footer}>
             <View style={styles.threadMeta}>
               <MaterialCommunityIcons
-                name="thought-bubble-outline"
+                name="note-text-outline"
                 size={13}
                 color={theme.colors.onSurfaceVariant}
                 style={{ marginRight: 4 }}
               />
               <Text style={[styles.categoryLabel, { color: theme.colors.onSurfaceVariant }]}>
-                {thread.thoughtCount} {thread.thoughtCount === 1 ? 'Gedanke' : 'Gedanken'}
+                {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
               </Text>
             </View>
             <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>

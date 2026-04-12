@@ -6,10 +6,10 @@
  *
  * Befehle:
  *   node bridge/worker/brainstorm-worker.mjs fetch
- *     → Liest unverarbeitete Thoughts + aktive Threads aus Supabase, gibt JSON auf stdout aus.
+ *     → Liest Notizen mit feeds_threads=true + aktive Threads aus Supabase, gibt JSON auf stdout aus.
  *
  *   node bridge/worker/brainstorm-worker.mjs write <json-datei-oder-inline-json>
- *     → Schreibt Synthese-Ergebnis (neue Threads, Updates, processed-Markierungen) nach Supabase.
+ *     → Schreibt Synthese-Ergebnis (neue Threads, Updates) nach Supabase.
  *
  * Credentials (wird automatisch geladen):
  *   1. Umgebungsvariablen:  SUPABASE_URL, SUPABASE_SERVICE_KEY, DEVICE_ID
@@ -42,13 +42,12 @@ function loadDotEnv(path) {
     if (eqIdx < 0) continue;
     const key = trimmed.slice(0, eqIdx).trim();
     const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
-    if (!process.env[key]) process.env[key] = val; // env hat Vorrang
+    if (!process.env[key]) process.env[key] = val;
   }
 }
 
-// Reihenfolge: lokale Worker-.env > NotizApp/.env > EXPO_PUBLIC_* Variablen
 loadDotEnv(resolve(__dirname, '.env'));
-loadDotEnv(resolve(__dirname, '../../.env'));  // NotizApp/.env
+loadDotEnv(resolve(__dirname, '../../.env'));
 
 const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -108,18 +107,6 @@ async function sbPost(resource, body, upsert = false) {
   }
 }
 
-async function sbPatch(resource, body) {
-  const url = `${SUPABASE_URL}/rest/v1/${resource}`;
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), Prefer: 'return=minimal' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`PATCH ${resource} → HTTP ${res.status}: ${await res.text()}`);
-  }
-}
-
 async function sbBatchPost(resource, body, upsert = false) {
   const url = `${SUPABASE_URL}/rest/v1/${resource}`;
   const headers = {
@@ -150,28 +137,22 @@ async function sbBatchPatch(resource, body) {
 
 // ---------------------------------------------------------------------------
 // Subkommando: fetch
+// Liest Notizen mit feeds_threads=true (Input für den Worker) + aktive Threads.
 // ---------------------------------------------------------------------------
 
 async function cmdFetch() {
-  const [unprocessed, threads] = await Promise.all([
+  const [notes, threads] = await Promise.all([
     sbGet(
-      `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}&processed_at=is.null&order=created_at.asc&select=id,content,source,created_at`,
+      `notes?device_id=eq.${encodeURIComponent(DEVICE_ID)}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`,
     ),
     sbGet(
       `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,last_synthesized_at`,
     ),
   ]);
 
-  // Kürzlich verarbeitete Thoughts als Kontext (letzte 7 Tage, max. 30)
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const recentProcessed = await sbGet(
-    `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}&processed_at=not.is.null&created_at=gte.${since}&order=created_at.desc&limit=30&select=id,content,created_at`,
-  );
-
   const output = {
-    unprocessed_thoughts: unprocessed,
+    feed_notes: notes,
     active_threads: threads,
-    recent_processed_thoughts: recentProcessed,
     device_id: DEVICE_ID,
     fetched_at: new Date().toISOString(),
   };
@@ -185,15 +166,9 @@ async function cmdFetch() {
 /**
  * Erwartet JSON (Dateiname oder Inline-JSON-String) mit:
  * {
- *   new_threads: [{ id, title, summary, thought_ids: string[] }],
- *   thread_updates: [{ id, summary, thought_count, new_thought_ids: string[], status?: string }],
- *   processed_thought_ids: string[]
+ *   new_threads: [{ id?, title, summary, note_count: number }],
+ *   thread_updates: [{ id, summary, note_count, status?: string }],
  * }
- *
- * Optimierungen:
- * - Batch-Operations: Alle neue Threads in 1 POST, alle thought_threads in 1 POST,
- *   alle processed_at Updates in 1 PATCH (statt N einzelne Requests)
- * - Idempotenz: Prüft Duplikat-Titel und überspringt
  */
 async function cmdWrite(arg) {
   if (!arg) {
@@ -218,8 +193,6 @@ async function cmdWrite(arg) {
     threads_created: 0,
     threads_updated: 0,
     threads_deduplicated: 0,
-    thoughts_linked: 0,
-    thoughts_processed: 0,
     errors: [],
   };
 
@@ -237,32 +210,26 @@ async function cmdWrite(arg) {
 
     // === BATCH 1: Neue Threads ===
     const newThreadsToInsert = [];
-    const newThreadsById = new Map(); // Für thought_threads Zuordnung
 
     for (const t of results.new_threads ?? []) {
-      // Idempotenz-Check: Skip if Titel existiert bereits
       if (existingTitles.has(t.title)) {
         stats.threads_deduplicated++;
         continue;
       }
-
-      const threadId = t.id ?? randomUUID();
       newThreadsToInsert.push({
-        id: threadId,
+        id: t.id ?? randomUUID(),
         device_id: DEVICE_ID,
         title: t.title,
         summary: t.summary ?? '',
         status: 'active',
-        thought_count: (t.thought_ids ?? []).length,
+        thought_count: t.note_count ?? 0,
         last_synthesized_at: now,
         created_at: now,
         updated_at: now,
       });
-      newThreadsById.set(threadId, t.thought_ids ?? []);
       stats.threads_created++;
     }
 
-    // Batch-POST: Alle neuen Threads auf einmal
     if (newThreadsToInsert.length > 0) {
       try {
         await sbBatchPost('threads', newThreadsToInsert, true);
@@ -273,25 +240,20 @@ async function cmdWrite(arg) {
 
     // === BATCH 2: Thread-Updates ===
     const threadUpdates = [];
-    const updateThoughtsMap = new Map(); // thread_id → thought_ids
 
     for (const u of results.thread_updates ?? []) {
       threadUpdates.push({
         id: u.id,
         device_id: DEVICE_ID,
         summary: u.summary,
-        thought_count: u.thought_count,
-        status: u.status ?? 'active', // Für Pruning: kann 'dormant' sein
+        thought_count: u.note_count,
+        status: u.status ?? 'active',
         last_synthesized_at: now,
         updated_at: now,
       });
-      if ((u.new_thought_ids ?? []).length > 0) {
-        updateThoughtsMap.set(u.id, u.new_thought_ids);
-      }
       stats.threads_updated++;
     }
 
-    // Batch-PATCH: Alle Thread-Updates auf einmal
     if (threadUpdates.length > 0) {
       try {
         await sbBatchPatch(
@@ -300,61 +262,6 @@ async function cmdWrite(arg) {
         );
       } catch (err) {
         stats.errors.push(`Batch UPDATE threads: ${err.message}`);
-      }
-    }
-
-    // === BATCH 3: Thought-Thread-Links ===
-    const allThoughtThreadLinks = [];
-
-    // Links aus neuen Threads
-    for (const [threadId, thoughtIds] of newThreadsById.entries()) {
-      for (const thoughtId of thoughtIds) {
-        allThoughtThreadLinks.push({
-          thought_id: thoughtId,
-          thread_id: threadId,
-          relevance: 1.0,
-          created_at: now,
-        });
-        stats.thoughts_linked++;
-      }
-    }
-
-    // Links aus Thread-Updates
-    for (const [threadId, thoughtIds] of updateThoughtsMap.entries()) {
-      for (const thoughtId of thoughtIds) {
-        allThoughtThreadLinks.push({
-          thought_id: thoughtId,
-          thread_id: threadId,
-          relevance: 1.0,
-          created_at: now,
-        });
-        stats.thoughts_linked++;
-      }
-    }
-
-    // Batch-POST: Alle thought_threads auf einmal
-    if (allThoughtThreadLinks.length > 0) {
-      try {
-        await sbBatchPost('thought_threads', allThoughtThreadLinks, true);
-      } catch (err) {
-        stats.errors.push(`Batch INSERT thought_threads: ${err.message}`);
-      }
-    }
-
-    // === BATCH 4: Mark Processed ===
-    const thoughtIdsToProcess = results.processed_thought_ids ?? [];
-    if (thoughtIdsToProcess.length > 0) {
-      try {
-        // Batch-Update: Alle Thoughts mit device_id markieren, deren ID in der Liste
-        // PostgREST: PATCH mit id=in.(...) Filter + einfachem Body (kein Array)
-        const idList = thoughtIdsToProcess.join(',');
-        await sbPatch(
-          `thoughts?device_id=eq.${encodeURIComponent(DEVICE_ID)}&id=in.(${idList})`,
-          { processed_at: now },
-        );
-        stats.thoughts_processed = thoughtIdsToProcess.length;
-      } catch (err) {
-        stats.errors.push(`Batch UPDATE thoughts (processed_at): ${err.message}`);
       }
     }
   } catch (err) {
@@ -369,6 +276,7 @@ async function cmdWrite(arg) {
 
 // ---------------------------------------------------------------------------
 // Subkommando: add
+// Fügt eine Notiz mit feeds_threads=true direkt in Supabase ein.
 // ---------------------------------------------------------------------------
 
 async function cmdAdd(content) {
@@ -380,14 +288,22 @@ async function cmdAdd(content) {
   const row = {
     id: randomUUID(),
     device_id: DEVICE_ID,
+    title: '',
     content,
-    source: 'app',
-    raw_audio_url: null,
+    category: 'Allgemein',
+    is_pinned: false,
+    checklist: '[]',
     created_at: now,
-    processed_at: null,
+    updated_at: now,
+    reminder_at: null,
+    reminder_recurrence: 'once',
+    reminder_weekday: null,
+    reminder_day_of_month: null,
+    notification_id: null,
+    feeds_threads: true,
   };
-  await sbPost('thoughts', row);
-  console.log(`[brainstorm-worker] Thought gespeichert: "${content}" (id: ${row.id})`);
+  await sbPost('notes', row);
+  console.log(`[brainstorm-worker] Notiz gespeichert: "${content}" (id: ${row.id})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +318,6 @@ if (cmd === 'fetch') {
 } else if (cmd === 'add') {
   await cmdAdd(process.argv[3]);
 } else {
-  console.error('Nutzung: node brainstorm-worker.mjs [fetch | write <json> | add "Gedanke"]');
+  console.error('Nutzung: node brainstorm-worker.mjs [fetch | write <json> | add "Notiz"]');
   process.exit(1);
 }

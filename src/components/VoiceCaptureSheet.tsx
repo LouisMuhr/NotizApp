@@ -42,7 +42,7 @@ try {
   // Expo Go oder kein Custom Build → nur Text-Modus
   speechAvailable = false;
 }
-import { useThoughts } from '../context/ThoughtsContext';
+import { useNotes } from '../context/NotesContext';
 import { Gradients, Radii, Shadows } from '../theme/gradients';
 import * as haptics from '../utils/haptics';
 
@@ -59,7 +59,7 @@ export default function VoiceCaptureSheet({
 }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { addThought } = useThoughts();
+  const { addNote } = useNotes();
 
   // Wenn das native Modul fehlt (Expo Go), erzwinge Text-Modus
   const [mode, setMode] = useState<'voice' | 'text'>(
@@ -170,10 +170,21 @@ export default function VoiceCaptureSheet({
     setIsSaving(true);
     haptics.success();
     try {
-      await addThought(content, mode === 'voice' ? 'voice' : 'app');
+      await addNote({
+        title: '',
+        content,
+        category: 'Allgemein',
+        isPinned: false,
+        checklist: [],
+        reminderAt: null,
+        reminderRecurrence: 'once',
+        reminderWeekday: null,
+        reminderDayOfMonth: null,
+        feedsThreads: false,
+      });
       onClose();
     } catch (e) {
-      console.warn('[capture] addThought fehlgeschlagen', e);
+      console.warn('[capture] addNote fehlgeschlagen', e);
     } finally {
       setIsSaving(false);
     }
@@ -224,7 +235,7 @@ export default function VoiceCaptureSheet({
 
           {/* Titel */}
           <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-            {mode === 'voice' ? 'Gedanke sprechen' : 'Gedanke tippen'}
+            {mode === 'voice' ? 'Notiz sprechen' : 'Notiz tippen'}
           </Text>
 
           {mode === 'voice' ? (
@@ -322,7 +333,7 @@ export default function VoiceCaptureSheet({
                 multiline
                 value={transcript}
                 onChangeText={setTranscript}
-                placeholder="Gedanke eingeben…"
+                placeholder="Notiz eingeben…"
                 placeholderTextColor={theme.colors.onSurfaceVariant}
                 style={[
                   styles.textInput,

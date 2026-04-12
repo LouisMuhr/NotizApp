@@ -1,33 +1,13 @@
-// Supabase sync layer für thoughts/threads/thought_threads.
-// Spiegelt das Pattern aus remoteNotes.ts wider:
-//   - row → model mapper
-//   - pull*, insert*/upsert*, subscribe*
-// subscribeThreads nutzt event '*' (statt nur INSERT) weil Threads vom Worker
-// auch ge-UPDATEt werden, wenn ein neuer Thought hinzukommt.
+// Supabase sync layer für Threads.
+// Thoughts wurden entfernt — Threads sind reine AI-Output-Entitäten.
+// Der brainstorm-worker liest Notes mit feeds_threads=true und schreibt Threads zurück.
 
-import {
-  Thought,
-  ThoughtSource,
-  Thread,
-  ThreadStatus,
-  ThoughtThreadLink,
-  ThreadWithThoughts,
-} from '../models/Thought';
+import { Thread, ThreadStatus } from '../models/Thought';
 import { getSupabase } from './supabaseClient';
 
 // ----------------------------------------------------------------------------
 // Row-Typen (snake_case wie in Supabase)
 // ----------------------------------------------------------------------------
-
-interface ThoughtRow {
-  id: string;
-  device_id: string;
-  content: string;
-  source: ThoughtSource | null;
-  raw_audio_url: string | null;
-  created_at: string;
-  processed_at: string | null;
-}
 
 interface ThreadRow {
   id: string;
@@ -42,39 +22,9 @@ interface ThreadRow {
   updated_at: string;
 }
 
-interface ThoughtThreadRow {
-  thought_id: string;
-  thread_id: string;
-  relevance: number | null;
-  created_at: string;
-}
-
 // ----------------------------------------------------------------------------
 // Mapper
 // ----------------------------------------------------------------------------
-
-function rowToThought(row: ThoughtRow): Thought {
-  return {
-    id: row.id,
-    content: row.content ?? '',
-    source: (row.source ?? 'app') as ThoughtSource,
-    rawAudioUrl: row.raw_audio_url,
-    createdAt: row.created_at,
-    processedAt: row.processed_at,
-  };
-}
-
-function thoughtToRow(deviceId: string, t: Thought): ThoughtRow {
-  return {
-    id: t.id,
-    device_id: deviceId,
-    content: t.content,
-    source: t.source,
-    raw_audio_url: t.rawAudioUrl,
-    created_at: t.createdAt,
-    processed_at: t.processedAt,
-  };
-}
 
 function rowToThread(row: ThreadRow): Thread {
   return {
@@ -83,40 +33,16 @@ function rowToThread(row: ThreadRow): Thread {
     summary: row.summary ?? '',
     status: (row.status ?? 'active') as ThreadStatus,
     isPinned: row.is_pinned ?? false,
-    thoughtCount: row.thought_count ?? 0,
+    noteCount: row.thought_count ?? 0,
     lastSynthesizedAt: row.last_synthesized_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function rowToLink(row: ThoughtThreadRow): ThoughtThreadLink {
-  return {
-    thoughtId: row.thought_id,
-    threadId: row.thread_id,
-    relevance: row.relevance ?? 1.0,
-    createdAt: row.created_at,
-  };
-}
-
 // ----------------------------------------------------------------------------
-// Pull (initial fetch)
+// Pull
 // ----------------------------------------------------------------------------
-
-export async function pullThoughts(deviceId: string): Promise<Thought[]> {
-  const supabase = getSupabase();
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('thoughts')
-    .select('*')
-    .eq('device_id', deviceId)
-    .order('created_at', { ascending: false });
-  if (error) {
-    console.warn('[brainstorm] pullThoughts error', error.message);
-    return [];
-  }
-  return (data as ThoughtRow[]).map(rowToThought);
-}
 
 export async function pullThreads(deviceId: string): Promise<Thread[]> {
   const supabase = getSupabase();
@@ -133,54 +59,9 @@ export async function pullThreads(deviceId: string): Promise<Thread[]> {
   return (data as ThreadRow[]).map(rowToThread);
 }
 
-export async function pullThoughtThreadLinks(
-  deviceId: string,
-): Promise<ThoughtThreadLink[]> {
-  const supabase = getSupabase();
-  if (!supabase) return [];
-  // Wir filtern indirekt über die Thread-Zugehörigkeit, damit fremde device_ids
-  // nicht im Resultat landen (RLS ist permissive).
-  const { data, error } = await supabase
-    .from('thought_threads')
-    .select('thought_id, thread_id, relevance, created_at, threads!inner(device_id)')
-    .eq('threads.device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] pullThoughtThreadLinks error', error.message);
-    return [];
-  }
-  return (data as unknown as ThoughtThreadRow[]).map(rowToLink);
-}
-
 // ----------------------------------------------------------------------------
 // Write
 // ----------------------------------------------------------------------------
-
-export async function insertThought(
-  deviceId: string,
-  thought: Thought,
-): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('thoughts')
-    .insert(thoughtToRow(deviceId, thought));
-  if (error) {
-    console.warn('[brainstorm] insertThought error', error.message);
-  }
-}
-
-export async function deleteThought(deviceId: string, id: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('thoughts')
-    .delete()
-    .eq('id', id)
-    .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] deleteThought error', error.message);
-  }
-}
 
 export async function archiveThread(deviceId: string, id: string): Promise<void> {
   const supabase = getSupabase();
@@ -190,9 +71,7 @@ export async function archiveThread(deviceId: string, id: string): Promise<void>
     .update({ status: 'archived', updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] archiveThread error', error.message);
-  }
+  if (error) console.warn('[brainstorm] archiveThread error', error.message);
 }
 
 export async function restoreThread(deviceId: string, id: string): Promise<void> {
@@ -203,9 +82,7 @@ export async function restoreThread(deviceId: string, id: string): Promise<void>
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] restoreThread error', error.message);
-  }
+  if (error) console.warn('[brainstorm] restoreThread error', error.message);
 }
 
 export async function deleteThreadPermanently(deviceId: string, id: string): Promise<void> {
@@ -216,89 +93,37 @@ export async function deleteThreadPermanently(deviceId: string, id: string): Pro
     .delete()
     .eq('id', id)
     .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] deleteThreadPermanently error', error.message);
-  }
+  if (error) console.warn('[brainstorm] deleteThreadPermanently error', error.message);
 }
 
-// ----------------------------------------------------------------------------
-// Detail-Lookup für Thread-Detail-Screen (kommt erst in Slice 3 zum Einsatz,
-// wird hier aber schon bereitgestellt damit der Sync-Layer komplett ist).
-// ----------------------------------------------------------------------------
-
-export async function getThreadWithThoughts(
-  deviceId: string,
-  threadId: string,
-): Promise<ThreadWithThoughts | null> {
+export async function pinThread(deviceId: string, id: string): Promise<void> {
   const supabase = getSupabase();
-  if (!supabase) return null;
-
-  const { data: threadData, error: threadError } = await supabase
+  if (!supabase) return;
+  const { error } = await supabase
     .from('threads')
-    .select('*')
-    .eq('device_id', deviceId)
-    .eq('id', threadId)
-    .maybeSingle();
-  if (threadError) {
-    console.warn('[brainstorm] getThreadWithThoughts thread error', threadError.message);
-    return null;
-  }
-  if (!threadData) return null;
+    .update({ is_pinned: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) console.warn('[brainstorm] pinThread error', error.message);
+}
 
-  const { data: linkData, error: linkError } = await supabase
-    .from('thought_threads')
-    .select('thought_id, relevance, created_at, thoughts!inner(*)')
-    .eq('thread_id', threadId);
-  if (linkError) {
-    console.warn('[brainstorm] getThreadWithThoughts links error', linkError.message);
-    return { ...rowToThread(threadData as ThreadRow), thoughts: [] };
-  }
-
-  const thoughts = (linkData ?? [])
-    .map((row: any) => rowToThought(row.thoughts as ThoughtRow))
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-  return { ...rowToThread(threadData as ThreadRow), thoughts };
+export async function unpinThread(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .update({ is_pinned: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) console.warn('[brainstorm] unpinThread error', error.message);
 }
 
 // ----------------------------------------------------------------------------
-// Realtime-Subscriptions
+// Realtime
 // ----------------------------------------------------------------------------
 
 export type Unsubscribe = () => void;
 
-export function subscribeThoughts(
-  deviceId: string,
-  onInsert: (thought: Thought) => void,
-): Unsubscribe {
-  const supabase = getSupabase();
-  if (!supabase) return () => {};
-  const channel = supabase
-    .channel(`thoughts:${deviceId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'thoughts',
-        filter: `device_id=eq.${deviceId}`,
-      },
-      (payload) => {
-        try {
-          onInsert(rowToThought(payload.new as ThoughtRow));
-        } catch (e) {
-          console.warn('[brainstorm] subscribeThoughts map error', e);
-        }
-      },
-    )
-    .subscribe();
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}
-
-// Threads brauchen UPDATE-Events (nicht nur INSERT) — der Worker schreibt
-// Summary/thought_count laufend fort.
 export type ThreadChangeEvent =
   | { type: 'insert' | 'update'; thread: Thread }
   | { type: 'delete'; threadId: string };
@@ -313,12 +138,7 @@ export function subscribeThreads(
     .channel(`threads:${deviceId}`)
     .on(
       'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'threads',
-        filter: `device_id=eq.${deviceId}`,
-      },
+      { event: '*', schema: 'public', table: 'threads', filter: `device_id=eq.${deviceId}` },
       (payload) => {
         try {
           if (payload.eventType === 'DELETE') {
@@ -327,93 +147,12 @@ export function subscribeThreads(
             return;
           }
           const thread = rowToThread(payload.new as ThreadRow);
-          onChange({
-            type: payload.eventType === 'INSERT' ? 'insert' : 'update',
-            thread,
-          });
+          onChange({ type: payload.eventType === 'INSERT' ? 'insert' : 'update', thread });
         } catch (e) {
           console.warn('[brainstorm] subscribeThreads map error', e);
         }
       },
     )
     .subscribe();
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}
-
-export async function pinThread(deviceId: string, id: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('threads')
-    .update({ is_pinned: true, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] pinThread error', error.message);
-  }
-}
-
-export async function unpinThread(deviceId: string, id: string): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('threads')
-    .update({ is_pinned: false, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('device_id', deviceId);
-  if (error) {
-    console.warn('[brainstorm] unpinThread error', error.message);
-  }
-}
-
-export async function insertThoughtThreadLink(
-  thoughtId: string,
-  threadId: string,
-  relevance = 1.0,
-): Promise<void> {
-  const supabase = getSupabase();
-  if (!supabase) return;
-  const { error } = await supabase
-    .from('thought_threads')
-    .insert({ thought_id: thoughtId, thread_id: threadId, relevance, created_at: new Date().toISOString() });
-  if (error) {
-    console.warn('[brainstorm] insertThoughtThreadLink error', error.message);
-  }
-}
-
-// thought_threads-Links: wir hören auf INSERT, weil der Worker neue
-// Verknüpfungen erzeugt sobald ein Thread um einen Thought erweitert wird.
-// (Updates der relevance sind unkritisch, DELETE kommt selten vor.)
-export function subscribeThoughtThreadLinks(
-  deviceId: string,
-  onInsert: (link: ThoughtThreadLink) => void,
-): Unsubscribe {
-  const supabase = getSupabase();
-  if (!supabase) return () => {};
-  // Filter direkt per device_id ist nicht möglich (Tabelle hat keinen device_id-
-  // Spalte), aber RLS ist permissive für single-device. Wir bekommen also alle
-  // Inserts und filtern client-seitig nach bekannten Thread-IDs falls nötig.
-  const channel = supabase
-    .channel(`thought_threads:${deviceId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'thought_threads',
-      },
-      (payload) => {
-        try {
-          onInsert(rowToLink(payload.new as ThoughtThreadRow));
-        } catch (e) {
-          console.warn('[brainstorm] subscribeThoughtThreadLinks map error', e);
-        }
-      },
-    )
-    .subscribe();
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  return () => { supabase.removeChannel(channel); };
 }

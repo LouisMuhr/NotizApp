@@ -2,13 +2,12 @@
 // Android: liest ACTION_SEND Intent-Extras via react-native-receive-sharing-intent
 // iOS:     liest Daten aus der Share Extension (expo-share-extension Plugin)
 //
-// Muss innerhalb von <ThoughtsProvider> gerendert werden.
 // Rendert kein UI — rein logische Komponente.
 
 import { useEffect } from 'react';
 import { NativeModules } from 'react-native';
 import ReceiveSharingIntent from 'react-native-receive-sharing-intent';
-import { useThoughts } from '../context/ThoughtsContext';
+import { useNotes } from '../context/NotesContext';
 
 interface SharedFile {
   text?: string | null;
@@ -18,11 +17,10 @@ interface SharedFile {
 }
 
 export default function ShareHandler() {
-  const { addThought } = useThoughts();
+  const { addNote } = useNotes();
 
   useEffect(() => {
     if (!NativeModules.ReceiveSharingIntent) {
-      // Natives Modul nicht verfügbar (Expo Go / kein nativer Build) — still überspringen
       return;
     }
 
@@ -30,9 +28,18 @@ export default function ShareHandler() {
       for (const file of files) {
         const text = (file.text ?? file.weblink ?? file.subject ?? '').trim();
         if (text) {
-          addThought(text, 'share').catch((e) =>
-            console.warn('[share] addThought failed', e),
-          );
+          addNote({
+            title: '',
+            content: text,
+            category: 'Allgemein',
+            isPinned: false,
+            checklist: [],
+            reminderAt: null,
+            reminderRecurrence: 'once',
+            reminderWeekday: null,
+            reminderDayOfMonth: null,
+            feedsThreads: false,
+          }).catch((e: unknown) => console.warn('[share] addNote failed', e));
         }
       }
       ReceiveSharingIntent.clearReceivedFiles();

@@ -225,7 +225,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
                 style={{ marginRight: 4 }}
               />
               <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
-                {thread.thoughtCount} {thread.thoughtCount === 1 ? 'Gedanke' : 'Gedanken'}
+                {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
               </Text>
               <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>·</Text>
               <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
@@ -242,7 +242,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { threads, links, loading, archiveThread, pinThread, unpinThread } = useThoughts();
+  const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
 
   const activeThreads = threads
     .filter((t) => t.status === 'active')
@@ -252,14 +252,7 @@ export default function ThreadsScreen({ navigation }: Props) {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
 
-  // Calculate how many thoughts are "new" (unprocessed) per thread
-  const newCountByThread = React.useMemo(() => {
-    const counts: Record<string, number> = {};
-    // A thought is "new" in a thread when it has no processedAt.
-    // We don't have that info directly here without joining — so for now
-    // we show the raw thoughtCount as a simpler proxy.
-    return counts;
-  }, [links]);
+  const newCountByThread: Record<string, number> = {};
 
   if (loading) {
     return (
@@ -312,8 +305,8 @@ export default function ThreadsScreen({ navigation }: Props) {
             variant="bodySmall"
             style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
           >
-            Erfasse Gedanken über das Mikrofon-Symbol.{'\n'}
-            Der Worker verbindet sie zu Threads.
+            Notizen mit aktiviertem Thread-Feed werden{'\n'}
+            vom Worker zu Threads zusammengefasst.
           </Text>
         </View>
       ) : (
