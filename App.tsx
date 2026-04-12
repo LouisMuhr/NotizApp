@@ -9,6 +9,7 @@ import { NotesProvider } from './src/context/NotesContext';
 import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
+import ShareHandler from './src/components/ShareHandler';
 import { requestNotificationPermissions } from './src/utils/notifications';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
@@ -38,6 +39,7 @@ export default function App() {
             <NavigationContainer theme={navTheme}>
               <NotesProvider>
                 <ThoughtsProvider>
+                  <ShareHandler />
                   <AppNavigator />
                   <StatusBar style="light" />
                 </ThoughtsProvider>

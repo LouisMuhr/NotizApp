@@ -53,10 +53,12 @@ interface ThreadCardProps {
   index: number;
   newCount: number;
   onPress: () => void;
-  onDelete: () => void;
+  onArchive: () => void;
+  onPin: () => void;
+  onUnpin: () => void;
 }
 
-function ThreadCard({ thread, index, newCount, onPress, onDelete }: ThreadCardProps) {
+function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
   const theme = useTheme();
   const gradient = getThreadGradient(index);
   const swipeableRef = useRef<Swipeable>(null);
@@ -94,20 +96,64 @@ function ThreadCard({ thread, index, newCount, onPress, onDelete }: ThreadCardPr
     );
   };
 
+  const renderLeftActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [0, 80],
+      outputRange: [0.5, 1],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View
+        style={[
+          styles.swipeAction,
+          styles.pinAction,
+          { backgroundColor: theme.colors.secondaryContainer },
+        ]}
+      >
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <MaterialCommunityIcons
+            name={thread.isPinned ? 'pin-off-outline' : 'pin-outline'}
+            size={26}
+            color={theme.colors.secondary}
+          />
+        </Animated.View>
+        <Text style={[styles.swipeLabel, { color: theme.colors.secondary }]}>
+          {thread.isPinned ? 'Lösen' : 'Fixieren'}
+        </Text>
+      </View>
+    );
+  };
+
   const handleSwipeRight = () => {
     swipeableRef.current?.close();
     haptics.medium();
-    onDelete();
+    onArchive();
+  };
+
+  const handleSwipeLeft = () => {
+    swipeableRef.current?.close();
+    haptics.medium();
+    if (thread.isPinned) {
+      onUnpin();
+    } else {
+      onPin();
+    }
   };
 
   return (
     <Swipeable
       ref={swipeableRef}
       renderRightActions={renderRightActions}
+      renderLeftActions={renderLeftActions}
       onSwipeableOpen={(direction) => {
         if (direction === 'right') handleSwipeRight();
+        if (direction === 'left') handleSwipeLeft();
       }}
       overshootRight={false}
+      overshootLeft={false}
       containerStyle={styles.swipeContainer}
     >
       <Pressable
@@ -133,6 +179,14 @@ function ThreadCard({ thread, index, newCount, onPress, onDelete }: ThreadCardPr
           <View style={styles.cardContent}>
             {/* Header row */}
             <View style={styles.cardHeader}>
+              {thread.isPinned && (
+                <MaterialCommunityIcons
+                  name="pin"
+                  size={14}
+                  color={theme.colors.secondary}
+                  style={styles.pinIcon}
+                />
+              )}
               <Text
                 style={[styles.threadTitle, { color: theme.colors.onSurface }]}
                 numberOfLines={1}
@@ -188,9 +242,15 @@ function ThreadCard({ thread, index, newCount, onPress, onDelete }: ThreadCardPr
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { threads, links, loading, archiveThread } = useThoughts();
+  const { threads, links, loading, archiveThread, pinThread, unpinThread } = useThoughts();
 
-  const activeThreads = threads.filter((t) => t.status === 'active');
+  const activeThreads = threads
+    .filter((t) => t.status === 'active')
+    .sort((a, b) => {
+      // Pinned threads first, then by updatedAt descending
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
 
   // Calculate how many thoughts are "new" (unprocessed) per thread
   const newCountByThread = React.useMemo(() => {
@@ -266,7 +326,9 @@ export default function ThreadsScreen({ navigation }: Props) {
               index={index}
               newCount={newCountByThread[item.id] ?? 0}
               onPress={() => navigation.navigate('ThreadDetail', { threadId: item.id, title: item.title })}
-              onDelete={() => archiveThread(item.id)}
+              onArchive={() => archiveThread(item.id)}
+              onPin={() => pinThread(item.id)}
+              onUnpin={() => unpinThread(item.id)}
             />
           )}
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
@@ -342,6 +404,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     borderBottomRightRadius: 18,
   },
+  pinAction: {
+    borderTopLeftRadius: 18,
+    borderBottomLeftRadius: 18,
+  },
   swipeLabel: {
     fontSize: 10,
     fontWeight: '700',
@@ -373,6 +439,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  pinIcon: {
+    marginRight: -2,
   },
   threadTitle: {
     flex: 1,

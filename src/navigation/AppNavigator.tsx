@@ -61,7 +61,7 @@ function HomeTabs() {
         }}
       />
       <Tab.Screen
-        name="Inbox"
+        name="Notizen"
         component={HomeScreen}
         options={{
           headerShown: false,

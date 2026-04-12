@@ -14,7 +14,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.notizapp.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +30,13 @@
         "VIBRATE",
         "SCHEDULE_EXACT_ALARM",
         "RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "android.intent.action.SEND",
+          "data": [{ "mimeType": "text/plain" }],
+          "category": "android.intent.category.DEFAULT"
+        }
       ]
     },
     "web": {
@@ -48,6 +56,14 @@
         {
           "microphonePermission": "NotizApp möchte dein Mikrofon für die Sprachaufnahme nutzen.",
           "speechRecognitionPermission": "NotizApp möchte deine Sprache erkennen, um Gedanken aufzunehmen."
+        }
+      ],
+      [
+        "expo-share-extension",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsText": true
+          }
         }
       ]
     ],

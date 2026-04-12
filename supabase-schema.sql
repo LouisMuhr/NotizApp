@@ -125,3 +125,9 @@ create policy "tt read"         on public.thought_threads for select using (true
 create policy "tt insert"       on public.thought_threads for insert with check (true);
 create policy "tt update"       on public.thought_threads for update using (true);
 create policy "tt delete"       on public.thought_threads for delete using (true);
+
+-- ============================================================================
+-- Migration Slice 5: Thread-Pinning
+-- ============================================================================
+-- Einmalig im Supabase SQL-Editor ausführen (bestehende Projekte):
+-- ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS is_pinned boolean NOT NULL DEFAULT false;
