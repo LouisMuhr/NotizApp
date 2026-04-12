@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
   ScrollView,
+  Modal,
   FlatList,
+  Pressable,
+  TouchableOpacity,
 } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,7 +14,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Thought } from '../models/Thought';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { Gradients } from '../theme/gradients';
+import * as haptics from '../utils/haptics';
 
 interface Props {
   navigation: any;
@@ -33,6 +37,18 @@ function formatDateTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days = Math.floor(diff / 86_400_000);
+  if (minutes < 1) return 'gerade eben';
+  if (minutes < 60) return `vor ${minutes} Min.`;
+  if (hours < 24) return `vor ${hours} Std.`;
+  if (days === 1) return 'gestern';
+  return `vor ${days} Tagen`;
 }
 
 interface ThoughtItemProps {
@@ -81,7 +97,8 @@ function ThoughtItem({ thought, isLast }: ThoughtItemProps) {
 export default function ThreadDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { threads, loading, getThoughtsForThread } = useThoughts();
+  const { thoughts, threads, links, loading, getThoughtsForThread, linkThoughtToThread } = useThoughts();
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   const threadId = route.params?.threadId as string;
   const thread = threads.find((t) => t.id === threadId);
@@ -102,16 +119,28 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const thoughts = getThoughtsForThread(threadId);
+  const linkedThoughts = getThoughtsForThread(threadId);
+  const linkedIds = new Set(linkedThoughts.map((t) => t.id));
+
+  // Thoughts that are not yet linked to this thread, sorted newest first
+  const unlinkableThoughts = thoughts
+    .filter((t) => !linkedIds.has(t.id))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const lastSynth = thread.lastSynthesizedAt
     ? formatDateTime(thread.lastSynthesizedAt)
     : null;
 
+  const handleLink = (thought: Thought) => {
+    haptics.medium();
+    linkThoughtToThread(thought.id, threadId);
+    setShowLinkModal(false);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Summary card */}
@@ -171,10 +200,10 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
 
         {/* Thoughts section header */}
         <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-          Gedanken ({thoughts.length})
+          Gedanken ({linkedThoughts.length})
         </Text>
 
-        {thoughts.length === 0 ? (
+        {linkedThoughts.length === 0 ? (
           <View style={styles.emptyThoughts}>
             <MaterialCommunityIcons
               name="timeline-outline"
@@ -188,16 +217,105 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
           </View>
         ) : (
           <View style={styles.timeline}>
-            {thoughts.map((thought, idx) => (
+            {linkedThoughts.map((thought, idx) => (
               <ThoughtItem
                 key={thought.id}
                 thought={thought}
-                isLast={idx === thoughts.length - 1}
+                isLast={idx === linkedThoughts.length - 1}
               />
             ))}
           </View>
         )}
       </ScrollView>
+
+      {/* FAB: Thought manuell hinzufügen */}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
+        onPress={() => {
+          haptics.light();
+          setShowLinkModal(true);
+        }}
+        activeOpacity={0.8}
+      >
+        <MaterialCommunityIcons name="link-plus" size={24} color={theme.colors.primary} />
+      </TouchableOpacity>
+
+      {/* Modal: Thought auswählen */}
+      <Modal
+        visible={showLinkModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowLinkModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowLinkModal(false)}
+        >
+          <Pressable
+            style={[styles.modalSheet, { backgroundColor: theme.colors.surface }]}
+            onPress={() => {}}
+          >
+            <View style={[styles.modalHandle, { backgroundColor: theme.colors.onSurfaceVariant }]} />
+
+            <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
+              Thought verknüpfen
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: theme.colors.onSurfaceVariant }]}>
+              Wähle einen Gedanken aus, der zu diesem Thread passt.
+            </Text>
+
+            {unlinkableThoughts.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={40}
+                  color={theme.colors.onSurfaceVariant}
+                  style={{ opacity: 0.4 }}
+                />
+                <Text style={[styles.modalEmptyText, { color: theme.colors.onSurfaceVariant }]}>
+                  Alle Gedanken sind bereits verknüpft
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={unlinkableThoughts}
+                keyExtractor={(item) => item.id}
+                style={styles.modalList}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => handleLink(item)}
+                    style={({ pressed }) => [
+                      styles.modalItem,
+                      { backgroundColor: pressed ? theme.colors.surfaceVariant : 'transparent' },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={(SOURCE_ICON[item.source] ?? 'circle-small') as any}
+                      size={16}
+                      color={theme.colors.primary}
+                      style={{ marginRight: 10, marginTop: 2 }}
+                    />
+                    <View style={styles.modalItemContent}>
+                      <Text
+                        style={[styles.modalItemText, { color: theme.colors.onSurface }]}
+                        numberOfLines={2}
+                      >
+                        {item.content}
+                      </Text>
+                      <Text style={[styles.modalItemMeta, { color: theme.colors.onSurfaceVariant }]}>
+                        {formatRelativeTime(item.createdAt)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
+                ItemSeparatorComponent={() => (
+                  <View style={[styles.modalSeparator, { backgroundColor: theme.colors.surfaceVariant }]} />
+                )}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -313,6 +431,88 @@ const styles = StyleSheet.create({
   },
   emptyThoughtsText: {
     fontSize: 13,
+    opacity: 0.5,
+  },
+  // FAB
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+    opacity: 0.3,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    opacity: 0.6,
+    marginBottom: 16,
+  },
+  modalList: {
+    flexGrow: 0,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  modalItemContent: {
+    flex: 1,
+    gap: 3,
+  },
+  modalItemText: {
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  modalItemMeta: {
+    fontSize: 11,
+    opacity: 0.5,
+  },
+  modalSeparator: {
+    height: 1,
+    opacity: 0.4,
+  },
+  modalEmpty: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    gap: 10,
+  },
+  modalEmptyText: {
+    fontSize: 14,
     opacity: 0.5,
   },
 });

@@ -69,6 +69,7 @@ c:/NotizApp/
 | Haptics | expo-haptics |
 | IDs | uuid v13 + react-native-get-random-values polyfill |
 | Bridge API | Vercel serverless (ESM TypeScript, deployed separately) |
+| Share-Target | `expo-share-extension` (iOS plugin) + `react-native-receive-sharing-intent` (Android) |
 
 ---
 
@@ -130,12 +131,13 @@ GestureHandlerRootView
              └─ NavigationContainer
                  └─ NotesProvider
                      └─ ThoughtsProvider
+                         ├─ ShareHandler   ← liest eingehende Share-Intents
                          └─ AppNavigator
 ```
 
 ### Navigation
-- **Bottom tabs**: Notizen (HomeScreen), Archiv (ArchiveScreen), Einstellungen (SettingsScreen)
-- **Stack screens**: NoteDetail, Editor, ThreadsScreen, ThreadDetail (pushed on top of tabs)
+- **Bottom tabs**: Threads, Notizen (HomeScreen), Archiv, Einstellungen
+- **Stack screens**: NoteDetail, Editor, ThreadDetail (pushed on top of tabs)
 
 ### Data flow
 - State lives in `NotesContext` / `ThoughtsContext` (React Context + useState).
@@ -150,6 +152,7 @@ GestureHandlerRootView
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`.
 Schema source: `supabase-schema.sql`. RLS policies use simple `using (true)` for
 single-user/anon-key setups; replace for multi-user deployments.
+`threads` has an `is_pinned` column (Slice 5 migration — run once in SQL editor).
 
 ### Theme
 `src/theme/theme.ts` – extends `MD3DarkTheme` from react-native-paper.

@@ -35,6 +35,7 @@ interface ThreadRow {
   title: string;
   summary: string;
   status: ThreadStatus | null;
+  is_pinned: boolean | null;
   thought_count: number | null;
   last_synthesized_at: string | null;
   created_at: string;
@@ -81,6 +82,7 @@ function rowToThread(row: ThreadRow): Thread {
     title: row.title ?? '',
     summary: row.summary ?? '',
     status: (row.status ?? 'active') as ThreadStatus,
+    isPinned: row.is_pinned ?? false,
     thoughtCount: row.thought_count ?? 0,
     lastSynthesizedAt: row.last_synthesized_at,
     createdAt: row.created_at,
@@ -338,6 +340,47 @@ export function subscribeThreads(
   return () => {
     supabase.removeChannel(channel);
   };
+}
+
+export async function pinThread(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .update({ is_pinned: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] pinThread error', error.message);
+  }
+}
+
+export async function unpinThread(deviceId: string, id: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('threads')
+    .update({ is_pinned: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('device_id', deviceId);
+  if (error) {
+    console.warn('[brainstorm] unpinThread error', error.message);
+  }
+}
+
+export async function insertThoughtThreadLink(
+  thoughtId: string,
+  threadId: string,
+  relevance = 1.0,
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('thought_threads')
+    .insert({ thought_id: thoughtId, thread_id: threadId, relevance, created_at: new Date().toISOString() });
+  if (error) {
+    console.warn('[brainstorm] insertThoughtThreadLink error', error.message);
+  }
 }
 
 // thought_threads-Links: wir hören auf INSERT, weil der Worker neue

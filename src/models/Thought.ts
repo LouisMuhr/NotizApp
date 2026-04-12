@@ -21,6 +21,7 @@ export interface Thread {
   title: string;
   summary: string;
   status: ThreadStatus;
+  isPinned: boolean;
   thoughtCount: number;
   lastSynthesizedAt: string | null;
   createdAt: string;
