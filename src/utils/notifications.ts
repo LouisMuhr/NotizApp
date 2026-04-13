@@ -90,14 +90,11 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       break;
 
     default: {
-      // once
-      const secondsUntilTrigger = Math.max(
-        1,
-        Math.floor((triggerDate.getTime() - Date.now()) / 1000)
-      );
+      // once — use exact calendar date so the OS fires at the right moment
+      // regardless of when the notification was scheduled or device restarts
       trigger = {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: secondsUntilTrigger,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
       };
       break;
     }
