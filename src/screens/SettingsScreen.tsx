@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, ScrollView } from 'react-native';
+import { StyleSheet, View, ScrollView, Platform, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import {
   useTheme,
@@ -155,6 +155,30 @@ export default function SettingsScreen() {
           </Text>
         )}
       </View>
+
+      {/* Benachrichtigungen (Android) */}
+      {Platform.OS === 'android' && (
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+            BENACHRICHTIGUNGEN
+          </Text>
+          <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, lineHeight: 19, marginBottom: 12 }}>
+            Damit Erinnerungen pünktlich ankommen, müssen{'\n'}
+            <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Genaue Alarme</Text> erlaubt und die{' '}
+            <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Akkuoptimierung deaktiviert</Text> sein.{'\n'}
+            Auf Xiaomi/MIUI zusätzlich Autostart aktivieren.
+          </Text>
+          <Button
+            mode="outlined"
+            icon="bell-cog-outline"
+            onPress={() => Linking.openSettings()}
+            style={{ borderRadius: 12 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            App-Systemeinstellungen öffnen
+          </Button>
+        </View>
+      )}
 
       {/* Feel */}
       <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
