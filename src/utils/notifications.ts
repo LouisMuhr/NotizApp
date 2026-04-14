@@ -90,11 +90,16 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       break;
 
     default: {
-      // once — use exact calendar date so the OS fires at the right moment
-      // regardless of when the notification was scheduled or device restarts
+      // once — seconds-from-now so expo-notifications reschedules correctly
+      // after device restarts via RECEIVE_BOOT_COMPLETED
+      const secondsUntilTrigger = Math.max(
+        1,
+        Math.floor((triggerDate.getTime() - Date.now()) / 1000)
+      );
       trigger = {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: triggerDate,
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: secondsUntilTrigger,
+        repeats: false,
       };
       break;
     }
