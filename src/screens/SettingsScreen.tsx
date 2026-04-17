@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, ScrollView, Platform, Linking } from 'react-native';
+import { StyleSheet, View, ScrollView, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import {
   useTheme,
@@ -13,6 +13,7 @@ import {
   Switch,
 } from 'react-native-paper';
 import { useNotes } from '../context/NotesContext';
+import { openExactAlarmSettings } from '../utils/notifications';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId, isDeviceIdFromEnv } from '../sync/deviceId';
@@ -171,7 +172,7 @@ export default function SettingsScreen() {
           <Button
             mode="outlined"
             icon="bell-cog-outline"
-            onPress={() => Linking.openSettings()}
+            onPress={() => openExactAlarmSettings()}
             style={{ borderRadius: 12 }}
             labelStyle={{ fontSize: 13 }}
           >

@@ -29,6 +29,7 @@
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
         "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
         "RECORD_AUDIO"
       ],
       "intentFilters": [
