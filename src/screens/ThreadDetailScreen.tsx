@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
 import { useNotes } from '../context/NotesContext';
 import { Gradients } from '../theme/gradients';
+import { groupNotesByTime } from '../utils/timeGrouping';
+import TimelineSection from '../components/TimelineSection';
 
 interface Props {
   navigation: any;
@@ -50,6 +52,7 @@ export default function ThreadDetailScreen({ route }: Props) {
 
   const lastSynth = thread.lastSynthesizedAt ? formatDateTime(thread.lastSynthesizedAt) : null;
   const threadNotes = notes.filter((n) => thread.noteIds.includes(n.id));
+  const groupedNotes = groupNotesByTime(threadNotes, new Date());
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -111,29 +114,18 @@ export default function ThreadDetailScreen({ route }: Props) {
           </View>
         </View>
 
-        {/* Source notes */}
-        {threadNotes.length > 0 && (
-          <View style={styles.notesSection}>
-            <Text style={[styles.notesSectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+        {/* Timeline */}
+        {groupedNotes.length > 0 && (
+          <View style={styles.timeline}>
+            <Text style={[styles.timelineHeader, { color: theme.colors.onSurfaceVariant }]}>
               Enthaltene Notizen
             </Text>
-            {threadNotes.map((note) => (
-              <View
-                key={note.id}
-                style={[styles.noteCard, { backgroundColor: theme.colors.surfaceVariant }]}
-              >
-                <MaterialCommunityIcons
-                  name="note-text-outline"
-                  size={14}
-                  color={theme.colors.primary}
-                  style={{ marginTop: 2 }}
-                />
-                <Text
-                  style={[styles.noteText, { color: theme.colors.onSurface }]}
-                >
-                  {note.title ? `${note.title}\n${note.content}` : note.content}
-                </Text>
-              </View>
+            {groupedNotes.map((group) => (
+              <TimelineSection
+                key={group.label}
+                groupLabel={group.label}
+                notes={group.notes}
+              />
             ))}
           </View>
         )}
@@ -170,23 +162,15 @@ const styles = StyleSheet.create({
   summaryMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   metaText: { fontSize: 12, opacity: 0.6 },
   metaDot: { marginHorizontal: 5, opacity: 0.4 },
-  notesSection: {
-    gap: 8,
+  timeline: {
+    gap: 16,
   },
-  notesSectionLabel: {
+  timelineHeader: {
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     opacity: 0.7,
-    marginBottom: 2,
+    marginBottom: -4,
   },
-  noteCard: {
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  noteText: { flex: 1, fontSize: 14, lineHeight: 20 },
 });
