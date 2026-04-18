@@ -47,7 +47,7 @@ export default function ShareHandler() {
 
     ReceiveSharingIntent.getReceivedFiles(
       handleFiles,
-      (error: unknown) => console.warn('[share] getReceivedFiles error', error),
+      (_error: unknown) => { /* no-op: fires on normal launch without a share intent */ },
     );
   }, []);
 

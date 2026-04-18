@@ -13,7 +13,7 @@ import {
   Switch,
 } from 'react-native-paper';
 import { useNotes } from '../context/NotesContext';
-import { openExactAlarmSettings } from '../utils/notifications';
+import { openExactAlarmSettings, openBatteryOptimizationSettings, scheduleTestNotification } from '../utils/notifications';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId, isDeviceIdFromEnv } from '../sync/deviceId';
@@ -176,7 +176,25 @@ export default function SettingsScreen() {
             style={{ borderRadius: 12 }}
             labelStyle={{ fontSize: 13 }}
           >
-            App-Systemeinstellungen öffnen
+            Genaue Alarme erlauben
+          </Button>
+          <Button
+            mode="outlined"
+            icon="battery-off-outline"
+            onPress={() => openBatteryOptimizationSettings()}
+            style={{ borderRadius: 12, marginTop: 8 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            Akkuoptimierung deaktivieren
+          </Button>
+          <Button
+            mode="outlined"
+            icon="bell-ring-outline"
+            onPress={() => scheduleTestNotification()}
+            style={{ borderRadius: 12, marginTop: 8 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            Test-Benachrichtigung (5 Sek.)
           </Button>
         </View>
       )}

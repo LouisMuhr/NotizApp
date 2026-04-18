@@ -112,10 +112,55 @@ export async function cancelReminder(notificationId: string): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(notificationId);
 }
 
+export async function scheduleTestNotification(): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Test-Erinnerung',
+      body: 'Benachrichtigungen funktionieren!',
+      ...(Platform.OS === 'android' && { channelId: 'reminders' }),
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: new Date(Date.now() + 15_000),
+    },
+  });
+}
+
+// Fires the given recurrence trigger as if it were "now + delaySeconds".
+// Useful for testing daily/weekly/monthly reminders without waiting.
+export async function scheduleTestRecurring(
+  recurrence: ReminderRecurrence,
+  weekday: number | null,
+  dayOfMonth: number | null,
+  delaySeconds = 10,
+): Promise<string> {
+  const triggerDate = new Date(Date.now() + delaySeconds * 1000);
+  return scheduleReminder({
+    noteId: 'test',
+    title: `Test (${recurrence})`,
+    body: `Wiederkehrende Erinnerung – ${recurrence}`,
+    triggerDate,
+    recurrence,
+    weekday,
+    dayOfMonth,
+  });
+}
+
 export async function openExactAlarmSettings(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
-    await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM');
+    await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM', [
+      { key: 'android.provider.Settings.EXTRA_APP_PACKAGE', value: 'com.notizapp.app' },
+    ]);
+  } catch {
+    await Linking.openSettings();
+  }
+}
+
+export async function openBatteryOptimizationSettings(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
   } catch {
     await Linking.openSettings();
   }
