@@ -11,6 +11,10 @@ import ArchiveScreen from '../screens/ArchiveScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ThreadsScreen from '../screens/ThreadsScreen';
 import ThreadDetailScreen from '../screens/ThreadDetailScreen';
+import SettingsDarstellungScreen from '../screens/SettingsDarstellungScreen';
+import SettingsKategorienScreen from '../screens/SettingsKategorienScreen';
+import SettingsBenachrichtigungenScreen from '../screens/SettingsBenachrichtigungenScreen';
+import SettingsSynchronisationScreen from '../screens/SettingsSynchronisationScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -129,6 +133,26 @@ export default function AppNavigator() {
         name="ThreadDetail"
         component={ThreadDetailScreen}
         options={({ route }: any) => ({ title: route.params?.title ?? 'Thread' })}
+      />
+      <Stack.Screen
+        name="SettingsDarstellung"
+        component={SettingsDarstellungScreen}
+        options={{ title: 'Darstellung' }}
+      />
+      <Stack.Screen
+        name="SettingsKategorien"
+        component={SettingsKategorienScreen}
+        options={{ title: 'Kategorien' }}
+      />
+      <Stack.Screen
+        name="SettingsBenachrichtigungen"
+        component={SettingsBenachrichtigungenScreen}
+        options={{ title: 'Benachrichtigungen' }}
+      />
+      <Stack.Screen
+        name="SettingsSynchronisation"
+        component={SettingsSynchronisationScreen}
+        options={{ title: 'Synchronisation' }}
       />
     </Stack.Navigator>
   );
