@@ -123,15 +123,20 @@ async function sbBatchPost(resource, body, upsert = false) {
   }
 }
 
-async function sbBatchPatch(resource, body) {
-  const url = `${SUPABASE_URL}/rest/v1/${resource}`;
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), Prefer: 'return=minimal' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`PATCH ${resource} (batch) → HTTP ${res.status}: ${await res.text()}`);
+async function sbBatchPatch(resource, items) {
+  // Supabase REST-API unterstützt kein echtes Batch-PATCH mit verschiedenen IDs.
+  // Deshalb: individuelle PATCH-Requests pro Item (gefiltert nach id).
+  for (const item of items) {
+    const { id, ...fields } = item;
+    const url = `${SUPABASE_URL}/rest/v1/${resource}&id=eq.${encodeURIComponent(id)}`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), Prefer: 'return=minimal' },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) {
+      throw new Error(`PATCH ${resource} id=${id} → HTTP ${res.status}: ${await res.text()}`);
+    }
   }
 }
 

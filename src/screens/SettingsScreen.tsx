@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, ScrollView } from 'react-native';
+import { StyleSheet, View, ScrollView, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import {
   useTheme,
@@ -13,6 +13,7 @@ import {
   Switch,
 } from 'react-native-paper';
 import { useNotes } from '../context/NotesContext';
+import { openExactAlarmSettings, openBatteryOptimizationSettings, scheduleTestNotification } from '../utils/notifications';
 import { getCategoryColor, withAlpha } from '../utils/categoryColors';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId, isDeviceIdFromEnv } from '../sync/deviceId';
@@ -155,6 +156,48 @@ export default function SettingsScreen() {
           </Text>
         )}
       </View>
+
+      {/* Benachrichtigungen (Android) */}
+      {Platform.OS === 'android' && (
+        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
+            BENACHRICHTIGUNGEN
+          </Text>
+          <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, lineHeight: 19, marginBottom: 12 }}>
+            Damit Erinnerungen pünktlich ankommen, müssen{'\n'}
+            <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Genaue Alarme</Text> erlaubt und die{' '}
+            <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Akkuoptimierung deaktiviert</Text> sein.{'\n'}
+            Auf Xiaomi/MIUI zusätzlich Autostart aktivieren.
+          </Text>
+          <Button
+            mode="outlined"
+            icon="bell-cog-outline"
+            onPress={() => openExactAlarmSettings()}
+            style={{ borderRadius: 12 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            Genaue Alarme erlauben
+          </Button>
+          <Button
+            mode="outlined"
+            icon="battery-off-outline"
+            onPress={() => openBatteryOptimizationSettings()}
+            style={{ borderRadius: 12, marginTop: 8 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            Akkuoptimierung deaktivieren
+          </Button>
+          <Button
+            mode="outlined"
+            icon="bell-ring-outline"
+            onPress={() => scheduleTestNotification()}
+            style={{ borderRadius: 12, marginTop: 8 }}
+            labelStyle={{ fontSize: 13 }}
+          >
+            Test-Benachrichtigung (5 Sek.)
+          </Button>
+        </View>
+      )}
 
       {/* Feel */}
       <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>

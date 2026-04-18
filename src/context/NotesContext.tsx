@@ -22,6 +22,7 @@ interface NotesContextType {
   togglePin: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
+  rescheduleAllReminders: () => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType>({} as NotesContextType);
@@ -65,7 +66,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       const archiveIds = new Set(loadedArchive.map((n) => n.id));
       // Dedupe by id and exclude anything that lives in the archive
       const seenLocal = new Set<string>();
-      const cleanedLocal = loadedNotes.filter((n) => {
+      let cleanedLocal = loadedNotes.filter((n) => {
         if (archiveIds.has(n.id)) return false;
         if (seenLocal.has(n.id)) return false;
         seenLocal.add(n.id);
@@ -82,6 +83,38 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         await saveCategories(DEFAULT_CATEGORIES);
       }
       setLoading(false);
+
+      // ALARM RECOVERY: nach jedem Kaltstart alle Alarme neu anmelden
+      {
+        const withReminders = cleanedLocal.filter((n) => n.reminderAt !== null);
+        if (withReminders.length > 0) {
+          const updated = [...cleanedLocal];
+          let changed = false;
+          for (const note of withReminders) {
+            if (note.notificationId) {
+              try { await cancelReminder(note.notificationId); } catch { /**/ }
+            }
+            const newId = await scheduleReminder({
+              noteId: note.id,
+              title: note.title,
+              body: note.content,
+              triggerDate: new Date(note.reminderAt!),
+              recurrence: note.reminderRecurrence,
+              weekday: note.reminderWeekday,
+              dayOfMonth: note.reminderDayOfMonth,
+            });
+            if (newId !== note.notificationId) {
+              const idx = updated.findIndex((n) => n.id === note.id);
+              if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: newId }; changed = true; }
+            }
+          }
+          if (changed) {
+            cleanedLocal = updated;
+            setNotes(updated);
+            await saveNotes(updated);
+          }
+        }
+      }
 
       // Sync layer (additive, only if configured)
       if (!isSyncConfigured()) return;
@@ -180,6 +213,39 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       dayOfMonth: note.reminderDayOfMonth,
     });
   }, []);
+
+  const rescheduleAllReminders = useCallback(async () => {
+    const withReminders = notes.filter((n) => n.reminderAt !== null);
+    if (withReminders.length === 0) return;
+    const updated = [...notes];
+    let changed = false;
+    for (const note of withReminders) {
+      if (note.notificationId) {
+        try { await cancelReminder(note.notificationId); } catch { /**/ }
+      }
+      const newId = await scheduleReminder({
+        noteId: note.id,
+        title: note.title,
+        body: note.content,
+        triggerDate: new Date(note.reminderAt!),
+        recurrence: note.reminderRecurrence,
+        weekday: note.reminderWeekday,
+        dayOfMonth: note.reminderDayOfMonth,
+      });
+      if (newId !== note.notificationId) {
+        const idx = updated.findIndex((n) => n.id === note.id);
+        if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: newId }; changed = true; }
+      }
+    }
+    if (!changed) return;
+    setNotes(updated);
+    await saveNotes(updated);
+    if (deviceIdRef.current) {
+      for (const u of updated) {
+        if (notes.find((n) => n.id === u.id)?.notificationId !== u.notificationId) pushRemote(u);
+      }
+    }
+  }, [notes, pushRemote]);
 
   const addNote = useCallback(async (noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>): Promise<Note> => {
     const now = new Date().toISOString();
@@ -320,6 +386,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         togglePin,
         addCategory,
         deleteCategory,
+        rescheduleAllReminders,
       }}
     >
       {children}
