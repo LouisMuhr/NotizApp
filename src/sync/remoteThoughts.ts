@@ -17,6 +17,7 @@ interface ThreadRow {
   status: ThreadStatus | null;
   is_pinned: boolean | null;
   thought_count: number | null;
+  note_ids: string[] | null;
   last_synthesized_at: string | null;
   created_at: string;
   updated_at: string;
@@ -34,6 +35,7 @@ function rowToThread(row: ThreadRow): Thread {
     status: (row.status ?? 'active') as ThreadStatus,
     isPinned: row.is_pinned ?? false,
     noteCount: row.thought_count ?? 0,
+    noteIds: row.note_ids ?? [],
     lastSynthesizedAt: row.last_synthesized_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
