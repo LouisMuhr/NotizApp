@@ -21,6 +21,17 @@ export default function Home() {
       .catch(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedThread(null);
+        setSelectedNote(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const handleNodeClick = useCallback((node: GraphNode) => {
     setSelectedNote(null);
     if (node.type === 'thread') {
