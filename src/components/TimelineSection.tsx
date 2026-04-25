@@ -8,9 +8,10 @@ import TimelineNoteCard from './TimelineNoteCard';
 interface Props {
   groupLabel: string;
   notes: Note[];
+  onNotePress: (noteId: string) => void;
 }
 
-export default function TimelineSection({ groupLabel, notes }: Props) {
+export default function TimelineSection({ groupLabel, notes, onNotePress }: Props) {
   const theme = useTheme();
 
   return (
@@ -27,7 +28,7 @@ export default function TimelineSection({ groupLabel, notes }: Props) {
       </View>
       <View style={styles.cards}>
         {notes.map((note) => (
-          <TimelineNoteCard key={note.id} note={note} />
+          <TimelineNoteCard key={note.id} note={note} onPress={() => onNotePress(note.id)} />
         ))}
       </View>
     </View>

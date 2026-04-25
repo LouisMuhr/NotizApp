@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Pressable } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Note } from '../models/Note';
@@ -7,11 +7,12 @@ import { calculateReadTime, isNewNote, formatRelativeDate } from '../utils/timeG
 
 interface Props {
   note: Note;
+  onPress: () => void;
 }
 
 const PREVIEW_LENGTH = 120;
 
-export default function TimelineNoteCard({ note }: Props) {
+export default function TimelineNoteCard({ note, onPress }: Props) {
   const theme = useTheme();
   const fresh = isNewNote(note.createdAt);
   const readTime = calculateReadTime(note.content);
@@ -24,6 +25,10 @@ export default function TimelineNoteCard({ note }: Props) {
   const accentColor = fresh ? '#3ECFB4' : theme.colors.primary;
 
   return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+    >
     <View
       style={[
         styles.card,
@@ -61,6 +66,7 @@ export default function TimelineNoteCard({ note }: Props) {
         </View>
       </View>
     </View>
+    </Pressable>
   );
 }
 

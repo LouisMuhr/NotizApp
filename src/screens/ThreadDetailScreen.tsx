@@ -25,7 +25,7 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export default function ThreadDetailScreen({ route }: Props) {
+export default function ThreadDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { threads, loading } = useThoughts();
@@ -125,6 +125,7 @@ export default function ThreadDetailScreen({ route }: Props) {
                 key={group.label}
                 groupLabel={group.label}
                 notes={group.notes}
+                onNotePress={(noteId) => navigation.navigate('NoteDetail', { noteId })}
               />
             ))}
           </View>
