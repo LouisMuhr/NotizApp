@@ -1,15 +1,14 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
 import { GraphData, GraphNode } from '@/types';
-
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
 const THREAD_COLOR = '#7B6EF6';
 const NOTE_COLOR = '#3ECFB4';
 const BG_COLOR = '#0F1117';
 const LINK_COLOR = 'rgba(123,110,246,0.35)';
+
 
 interface Props {
   data: GraphData;
@@ -18,24 +17,28 @@ interface Props {
 
 export default function Graph({ data, onNodeClick }: Props) {
   const fgRef = useRef<any>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const update = () => setDimensions({ width: window.innerWidth, height: window.innerHeight });
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
     const isThread = node.type === 'thread';
     const r = isThread ? 14 : 8;
     const color = isThread ? THREAD_COLOR : NOTE_COLOR;
 
-    // Glow
     ctx.shadowColor = color;
     ctx.shadowBlur = isThread ? 18 : 10;
-
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
-
     ctx.shadowBlur = 0;
 
-    // Label for threads only
     if (isThread) {
       ctx.font = '5px Inter, sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -44,38 +47,63 @@ export default function Graph({ data, onNodeClick }: Props) {
     }
   }, []);
 
-  const handleClick = useCallback(
-    (node: any) => {
-      onNodeClick(node as GraphNode);
-      fgRef.current?.centerAt(node.x, node.y, 600);
-      fgRef.current?.zoom(2.5, 600);
-    },
-    [onNodeClick],
-  );
+  const handleWrapperClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const fg = fgRef.current;
+    if (!fg) return;
+
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    // Compare in screen pixels so threshold is consistent at any zoom level
+    const SCREEN_THRESHOLD_PX = 24;
+
+    let nearest: any = null;
+    let minDist = Infinity;
+
+    for (const node of (data as any).nodes) {
+      if (node.x == null || node.y == null) continue;
+      const screenPos = fg.graph2ScreenCoords(node.x, node.y);
+      const d = Math.hypot(screenPos.x - clickX, screenPos.y - clickY);
+      if (d < SCREEN_THRESHOLD_PX && d < minDist) {
+        minDist = d;
+        nearest = node;
+      }
+    }
+
+    if (nearest) {
+      e.stopPropagation();
+      onNodeClick(nearest as GraphNode);
+      fg.centerAt(nearest.x, nearest.y, 600);
+      fg.zoom(2.5, 600);
+    }
+  }, [data, onNodeClick]);
+
+  if (dimensions.width === 0) return null;
 
   return (
-    <ForceGraph2D
-      ref={fgRef}
-      graphData={data as any}
-      backgroundColor={BG_COLOR}
-      nodeCanvasObject={paintNode}
-      nodeCanvasObjectMode={() => 'replace'}
-      linkColor={() => LINK_COLOR}
-      linkWidth={1}
-      linkDirectionalParticles={2}
-      linkDirectionalParticleSpeed={0.004}
-      linkDirectionalParticleColor={() => THREAD_COLOR}
-      onNodeClick={handleClick}
-      nodePointerAreaPaint={(node: any, color, ctx) => {
-        const r = node.type === 'thread' ? 16 : 10;
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-        ctx.fillStyle = color;
-        ctx.fill();
-      }}
-      cooldownTicks={120}
-      d3AlphaDecay={0.02}
-      d3VelocityDecay={0.3}
-    />
+    <div
+      style={{ width: dimensions.width, height: dimensions.height, cursor: 'crosshair' }}
+      onClick={handleWrapperClick}
+    >
+      <ForceGraph2D
+        ref={fgRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        graphData={data as any}
+        backgroundColor={BG_COLOR}
+        nodeCanvasObject={paintNode}
+        nodeCanvasObjectMode={() => 'replace'}
+        nodePointerAreaPaint={() => {}}
+        linkColor={() => LINK_COLOR}
+        linkWidth={1}
+        linkDirectionalParticles={2}
+        linkDirectionalParticleSpeed={0.004}
+        linkDirectionalParticleColor={() => THREAD_COLOR}
+        cooldownTicks={120}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+      />
+    </div>
   );
 }

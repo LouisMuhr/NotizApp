@@ -23,7 +23,8 @@ export async function GET() {
 
   const noteMap = new Map((noteRows ?? []).map((n: any) => [n.id, n]));
 
-  const nodes: GraphNode[] = [];
+  const threadNodes: GraphNode[] = [];
+  const noteNodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   const addedNoteIds = new Set<string>();
 
@@ -41,7 +42,7 @@ export async function GET() {
       updatedAt: row.updated_at,
     };
 
-    nodes.push({ id: row.id, label: row.title, type: 'thread', data: thread });
+    threadNodes.push({ id: row.id, label: row.title, type: 'thread', data: thread });
 
     for (const noteId of row.note_ids ?? []) {
       if (!addedNoteIds.has(noteId) && noteMap.has(noteId)) {
@@ -54,13 +55,14 @@ export async function GET() {
           createdAt: n.created_at,
           updatedAt: n.updated_at,
         };
-        nodes.push({ id: n.id, label: n.title || n.content.slice(0, 40), type: 'note', data: note });
+        noteNodes.push({ id: n.id, label: n.title || n.content.slice(0, 40), type: 'note', data: note });
         addedNoteIds.add(noteId);
       }
       links.push({ source: noteId, target: row.id });
     }
   }
 
-  const data: GraphData = { nodes, links };
+  // Notes first, threads last — threads win on hit-area overlap in the pointer canvas
+  const data: GraphData = { nodes: [...noteNodes, ...threadNodes], links };
   return NextResponse.json(data);
 }
