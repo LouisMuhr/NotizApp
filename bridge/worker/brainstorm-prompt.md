@@ -15,13 +15,12 @@ cd c:/NotizApp/NotizApp && node bridge/worker/brainstorm-worker.mjs fetch
 ```
 
 Du erhältst ein JSON-Objekt mit:
-- `unprocessed_thoughts` — Gedanken wo `processed_at IS NULL` (die du heute bearbeiten sollst)
-- `active_threads` — bestehende Threads mit Titel und Summary
-- `recent_processed_thoughts` — Kontext-Thoughts der letzten 7 Tage (bereits verarbeitet, nur zur Orientierung)
+- `feed_notes` — Notizen mit `feeds_threads=true` (die du heute bearbeiten sollst)
+- `active_threads` — bestehende Threads mit Titel, Summary und `note_ids` (bisherige Notiz-IDs)
 - `device_id`, `fetched_at`
 
-**Stopp-Bedingung:** Wenn `unprocessed_thoughts` leer ist → gib aus:
-> "Keine neuen Gedanken — nichts zu tun."
+**Stopp-Bedingung:** Wenn `feed_notes` leer ist → gib aus:
+> "Keine neuen Notizen — nichts zu tun."
 und beende die Ausführung.
 
 ---
@@ -86,29 +85,27 @@ Erstelle folgende JSON-Struktur (verwende das Schreib-Tool direkt, nicht bash-he
       "id": "<neue-uuid>",
       "title": "Kurzer Thread-Titel",
       "summary": "Zusammenfassung der Gedanken in diesem Thread...",
-      "thought_ids": ["<thought-uuid-1>", "<thought-uuid-2>"]
+      "note_ids": ["<note-uuid-1>", "<note-uuid-2>"]
     }
   ],
   "thread_updates": [
     {
       "id": "<bestehende-thread-uuid>",
-      "summary": "Aktualisierte Summary, die neue Gedanken integriert...",
-      "thought_count": 5,
-      "new_thought_ids": ["<thought-uuid-3>"]
+      "summary": "Aktualisierte Summary, die neue Notizen integriert...",
+      "note_ids": ["<alle-bisherigen-note-ids-des-threads>", "<note-uuid-3>"]
     },
     {
       "id": "<dormant-thread-uuid>",
       "status": "dormant",
       "summary": "<unverändert>"
     }
-  ],
-  "processed_thought_ids": ["<uuid-1>", "<uuid-2>", "<uuid-3>"]
+  ]
 }
 ```
 
-**Kritisch:** 
-- `processed_thought_ids` muss ALLE `unprocessed_thoughts`-IDs enthalten — auch Micro-Thoughts und isolierte Single-Threads
-- Schreibe die JSON direkt mit dem verfügbaren Schreib-Tool (nicht `cat > /tmp/...`), damit Sonderzeichen, Anführungszeichen und Zeilenumbrüche in Thought-Inhalten korrekt escaped werden
+**Kritisch:**
+- `note_ids` bei `thread_updates` muss IMMER die **vollständige Liste** aller Note-IDs des Threads enthalten (bestehende `note_ids` aus `active_threads` + neu hinzugekommene). Der Worker überschreibt, addiert nicht.
+- Schreibe die JSON direkt mit dem verfügbaren Schreib-Tool (nicht `cat > /tmp/...`), damit Sonderzeichen korrekt escaped werden
 - `thread_updates` kann `status="dormant"` enthalten (für Pruning); der Worker übernimmt das Speichern
 
 ---
@@ -127,7 +124,7 @@ als verarbeitet markiert wurden.
 ## Schritt 5 — Abschlussbericht
 
 Gib eine kurze Zusammenfassung aus (max. 6 Zeilen):
-- Wie viele Thoughts verarbeitet (inkl. Micro-Thoughts gefiltert)
+- Wie viele Notizen verarbeitet
 - Wie viele neue Threads erstellt / bestehende aktualisiert
 - Wie viele Threads als dormant markiert (wenn zutreffend)
 - Einen optionalen Satz zu einer interessanten thematischen Verbindung, die du erkannt hast

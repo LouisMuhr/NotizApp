@@ -5,7 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
+import { useNotes } from '../context/NotesContext';
 import { Gradients } from '../theme/gradients';
+import { groupNotesByTime } from '../utils/timeGrouping';
+import TimelineSection from '../components/TimelineSection';
 
 interface Props {
   navigation: any;
@@ -22,10 +25,11 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export default function ThreadDetailScreen({ route }: Props) {
+export default function ThreadDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { threads, loading } = useThoughts();
+  const { notes } = useNotes();
 
   const threadId = route.params?.threadId as string;
   const thread = threads.find((t) => t.id === threadId);
@@ -47,6 +51,8 @@ export default function ThreadDetailScreen({ route }: Props) {
   }
 
   const lastSynth = thread.lastSynthesizedAt ? formatDateTime(thread.lastSynthesizedAt) : null;
+  const threadNotes = notes.filter((n) => thread.noteIds.includes(n.id));
+  const groupedNotes = groupNotesByTime(threadNotes, new Date());
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -108,18 +114,22 @@ export default function ThreadDetailScreen({ route }: Props) {
           </View>
         </View>
 
-        {/* Info hint */}
-        <View style={[styles.hintCard, { backgroundColor: theme.colors.surfaceVariant }]}>
-          <MaterialCommunityIcons
-            name="information-outline"
-            size={16}
-            color={theme.colors.onSurfaceVariant}
-            style={{ marginRight: 8, marginTop: 1 }}
-          />
-          <Text style={[styles.hintText, { color: theme.colors.onSurfaceVariant }]}>
-            Notizen mit aktiviertem Thread-Feed fließen beim nächsten Worker-Lauf automatisch in diesen Thread ein.
-          </Text>
-        </View>
+        {/* Timeline */}
+        {groupedNotes.length > 0 && (
+          <View style={styles.timeline}>
+            <Text style={[styles.timelineHeader, { color: theme.colors.onSurfaceVariant }]}>
+              Enthaltene Notizen
+            </Text>
+            {groupedNotes.map((group) => (
+              <TimelineSection
+                key={group.label}
+                groupLabel={group.label}
+                notes={group.notes}
+                onNotePress={(noteId) => navigation.navigate('NoteDetail', { noteId })}
+              />
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -153,11 +163,15 @@ const styles = StyleSheet.create({
   summaryMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   metaText: { fontSize: 12, opacity: 0.6 },
   metaDot: { marginHorizontal: 5, opacity: 0.4 },
-  hintCard: {
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  timeline: {
+    gap: 16,
   },
-  hintText: { flex: 1, fontSize: 13, lineHeight: 19, opacity: 0.7 },
+  timelineHeader: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    opacity: 0.7,
+    marginBottom: -4,
+  },
 });

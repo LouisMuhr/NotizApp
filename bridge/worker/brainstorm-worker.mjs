@@ -151,7 +151,7 @@ async function cmdFetch() {
       `notes?device_id=eq.${encodeURIComponent(DEVICE_ID)}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`,
     ),
     sbGet(
-      `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,last_synthesized_at`,
+      `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,note_ids,last_synthesized_at`,
     ),
   ]);
 
@@ -221,13 +221,15 @@ async function cmdWrite(arg) {
         stats.threads_deduplicated++;
         continue;
       }
+      const noteIds = t.note_ids ?? t.thought_ids ?? [];
       newThreadsToInsert.push({
         id: t.id ?? randomUUID(),
         device_id: DEVICE_ID,
         title: t.title,
         summary: t.summary ?? '',
         status: 'active',
-        thought_count: t.note_count ?? 0,
+        thought_count: noteIds.length,
+        note_ids: noteIds,
         last_synthesized_at: now,
         created_at: now,
         updated_at: now,
@@ -247,15 +249,22 @@ async function cmdWrite(arg) {
     const threadUpdates = [];
 
     for (const u of results.thread_updates ?? []) {
-      threadUpdates.push({
+      const noteIds = u.note_ids ?? u.new_thought_ids ?? [];
+      const update = {
         id: u.id,
         device_id: DEVICE_ID,
         summary: u.summary,
-        thought_count: u.note_count,
         status: u.status ?? 'active',
         last_synthesized_at: now,
         updated_at: now,
-      });
+      };
+      if (noteIds.length > 0) {
+        update.note_ids = noteIds;
+        update.thought_count = noteIds.length;
+      } else if (u.thought_count != null) {
+        update.thought_count = u.thought_count;
+      }
+      threadUpdates.push(update);
       stats.threads_updated++;
     }
 
@@ -297,14 +306,13 @@ async function cmdAdd(content) {
     content,
     category: 'Allgemein',
     is_pinned: false,
-    checklist: '[]',
+    checklist: [],
     created_at: now,
     updated_at: now,
     reminder_at: null,
     reminder_recurrence: 'once',
     reminder_weekday: null,
     reminder_day_of_month: null,
-    notification_id: null,
     feeds_threads: true,
   };
   await sbPost('notes', row);

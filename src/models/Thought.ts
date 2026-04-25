@@ -11,6 +11,7 @@ export interface Thread {
   status: ThreadStatus;
   isPinned: boolean;
   noteCount: number;
+  noteIds: string[];
   lastSynthesizedAt: string | null;
   createdAt: string;
   updatedAt: string;
