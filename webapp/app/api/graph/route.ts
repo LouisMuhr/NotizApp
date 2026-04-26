@@ -10,7 +10,7 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
-  const [{ data: threadRows }, { data: noteRows }] = await Promise.all([
+  const [{ data: threadRows }, { data: noteRows }, { data: similarityRows }] = await Promise.all([
     supabase
       .from('threads')
       .select('id, title, summary, status, is_pinned, note_ids, last_synthesized_at, created_at, updated_at')
@@ -19,6 +19,9 @@ export async function GET() {
       .from('notes')
       .select('id, title, content, category, created_at, updated_at')
       .eq('feeds_threads', true),
+    supabase
+      .from('thread_similarities')
+      .select('thread_id_1, thread_id_2, label'),
   ]);
 
   const noteMap = new Map((noteRows ?? []).map((n: any) => [n.id, n]));
@@ -62,7 +65,25 @@ export async function GET() {
     }
   }
 
-  // Notes first, threads last — threads win on hit-area overlap in the pointer canvas
-  const data: GraphData = { nodes: [...noteNodes, ...threadNodes], links };
+  const categoryMap = new Map<string, Set<string>>();
+  for (const row of similarityRows ?? []) {
+    if (!row.label) continue;
+    const ids = categoryMap.get(row.label) ?? new Set<string>();
+    ids.add(row.thread_id_1);
+    ids.add(row.thread_id_2);
+    categoryMap.set(row.label, ids);
+  }
+
+  const categoryNodes: GraphNode[] = [];
+  for (const [label, threadIds] of categoryMap) {
+    const categoryId = `category_${label}`;
+    categoryNodes.push({ id: categoryId, label, type: 'category' });
+    for (const threadId of threadIds) {
+      links.push({ source: threadId, target: categoryId, type: 'category', label });
+    }
+  }
+
+  // Notes first, threads next, category nodes last — category nodes win on overlap
+  const data: GraphData = { nodes: [...noteNodes, ...threadNodes, ...categoryNodes], links };
   return NextResponse.json(data);
 }

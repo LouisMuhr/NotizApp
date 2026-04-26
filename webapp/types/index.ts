@@ -23,13 +23,15 @@ export interface Note {
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'thread' | 'note';
-  data: Thread | Note;
+  type: 'thread' | 'note' | 'category';
+  data?: Thread | Note;
 }
 
 export interface GraphLink {
   source: string;
   target: string;
+  type?: 'note-thread' | 'category';
+  label?: string;
 }
 
 export interface GraphData {

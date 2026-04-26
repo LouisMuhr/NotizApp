@@ -6,6 +6,7 @@ import { GraphData, GraphNode } from '@/types';
 
 const THREAD_COLOR = '#7B6EF6';
 const NOTE_COLOR = '#5B5B8A';
+const CATEGORY_COLOR = '#FFB347';
 const BG_COLOR = '#0F1117';
 const LINK_COLOR = 'rgba(123,110,246,0.2)';
 const SCREEN_THRESHOLD_PX = 24;
@@ -77,8 +78,28 @@ export default function Graph({ data, onNodeClick }: Props) {
   }, []);
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D) => {
-    const isThread = node.type === 'thread';
     const isHovered = hoveredNode?.id === node.id;
+
+    if (node.type === 'category') {
+      const r = 18;
+      ctx.shadowColor = CATEGORY_COLOR;
+      ctx.shadowBlur = isHovered ? 28 : 14;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = isHovered ? 'rgba(255,179,71,0.45)' : 'rgba(255,179,71,0.18)';
+      ctx.fill();
+      ctx.strokeStyle = CATEGORY_COLOR;
+      ctx.lineWidth = isHovered ? 2.5 : 1.5;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.font = `bold 11px Inter, sans-serif`;
+      ctx.fillStyle = isHovered ? CATEGORY_COLOR : 'rgba(255,179,71,0.85)';
+      ctx.textAlign = 'center';
+      ctx.fillText(node.label, node.x, node.y + r + 13);
+      return;
+    }
+
+    const isThread = node.type === 'thread';
     const r = isThread ? (isHovered ? 17 : 14) : (isHovered ? 10 : 8);
     const color = isThread ? THREAD_COLOR : NOTE_COLOR;
     const litColor = isThread ? '#9B8EFF' : '#5AEFCE';
@@ -106,9 +127,11 @@ export default function Graph({ data, onNodeClick }: Props) {
     const nearest = findNearestNode(e.clientX, e.clientY, rect);
     if (nearest) {
       e.stopPropagation();
-      onNodeClick(nearest as GraphNode);
+      if (nearest.type !== 'category') {
+        onNodeClick(nearest as GraphNode);
+      }
       fg.centerAt(nearest.x, nearest.y, 600);
-      fg.zoom(2.5, 600);
+      fg.zoom(nearest.type === 'category' ? 1.8 : 2.5, 600);
     }
   }, [findNearestNode, onNodeClick]);
 
@@ -130,11 +153,15 @@ export default function Graph({ data, onNodeClick }: Props) {
         nodeCanvasObject={paintNode}
         nodeCanvasObjectMode={() => 'replace'}
         nodePointerAreaPaint={() => {}}
-        linkColor={() => LINK_COLOR}
-        linkWidth={1}
-        linkDirectionalParticles={2}
+        linkColor={(link: any) =>
+          link.type === 'category' ? 'rgba(255,179,71,0.5)' : LINK_COLOR
+        }
+        linkWidth={(link: any) => link.type === 'category' ? 1.5 : 1}
+        linkLineDash={(link: any) => link.type === 'category' ? [4, 4] : null}
+        linkDirectionalParticles={(link: any) => link.type === 'category' ? 0 : 2}
         linkDirectionalParticleSpeed={0.004}
         linkDirectionalParticleColor={() => THREAD_COLOR}
+        linkLabel={() => ''}
         cooldownTicks={120}
         d3AlphaDecay={0.02}
         d3VelocityDecay={0.3}
