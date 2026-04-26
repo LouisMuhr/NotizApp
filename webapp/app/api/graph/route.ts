@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { GraphData, GraphNode, GraphLink } from '@/types';
+import { GraphData, Thread, Note, Similarity } from '@/types';
 
 export const revalidate = 60;
 
@@ -21,18 +21,17 @@ export async function GET() {
       .eq('feeds_threads', true),
     supabase
       .from('thread_similarities')
-      .select('thread_id_1, thread_id_2, label'),
+      .select('id, thread_id_1, thread_id_2, label'),
   ]);
 
   const noteMap = new Map((noteRows ?? []).map((n: any) => [n.id, n]));
 
-  const threadNodes: GraphNode[] = [];
-  const noteNodes: GraphNode[] = [];
-  const links: GraphLink[] = [];
+  const threads: Thread[] = [];
+  const notes: Note[] = [];
   const addedNoteIds = new Set<string>();
 
   for (const row of threadRows ?? []) {
-    const thread = {
+    threads.push({
       id: row.id,
       title: row.title,
       summary: row.summary ?? '',
@@ -43,47 +42,33 @@ export async function GET() {
       lastSynthesizedAt: row.last_synthesized_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-    };
-
-    threadNodes.push({ id: row.id, label: row.title, type: 'thread', data: thread });
+    });
 
     for (const noteId of row.note_ids ?? []) {
       if (!addedNoteIds.has(noteId) && noteMap.has(noteId)) {
         const n = noteMap.get(noteId)!;
-        const note = {
+        notes.push({
           id: n.id,
+          threadId: row.id,
           title: n.title ?? '',
           content: n.content ?? '',
           category: n.category ?? '',
           createdAt: n.created_at,
           updatedAt: n.updated_at,
-        };
-        noteNodes.push({ id: n.id, label: n.title || n.content.slice(0, 40), type: 'note', data: note });
+        });
         addedNoteIds.add(noteId);
       }
-      links.push({ source: noteId, target: row.id });
     }
   }
 
-  const categoryMap = new Map<string, Set<string>>();
-  for (const row of similarityRows ?? []) {
-    if (!row.label) continue;
-    const ids = categoryMap.get(row.label) ?? new Set<string>();
-    ids.add(row.thread_id_1);
-    ids.add(row.thread_id_2);
-    categoryMap.set(row.label, ids);
-  }
+  const similarities: Similarity[] = (similarityRows ?? []).map((row: any) => ({
+    id: row.id ?? `${row.thread_id_1}_${row.thread_id_2}`,
+    threadId1: row.thread_id_1,
+    threadId2: row.thread_id_2,
+    label: row.label ?? '',
+    explanation: '',
+  }));
 
-  const categoryNodes: GraphNode[] = [];
-  for (const [label, threadIds] of categoryMap) {
-    const categoryId = `category_${label}`;
-    categoryNodes.push({ id: categoryId, label, type: 'category' });
-    for (const threadId of threadIds) {
-      links.push({ source: threadId, target: categoryId, type: 'category', label });
-    }
-  }
-
-  // Notes first, threads next, category nodes last — category nodes win on overlap
-  const data: GraphData = { nodes: [...noteNodes, ...threadNodes, ...categoryNodes], links };
+  const data: GraphData = { threads, notes, similarities };
   return NextResponse.json(data);
 }
