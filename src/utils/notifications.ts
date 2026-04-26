@@ -112,6 +112,10 @@ export async function cancelReminder(notificationId: string): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(notificationId);
 }
 
+export async function cancelAllReminders(): Promise<void> {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
 export async function scheduleTestNotification(): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     content: {

@@ -3,7 +3,7 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
-import { scheduleReminder, cancelReminder } from '../utils/notifications';
+import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getDeviceId } from '../sync/deviceId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
@@ -84,15 +84,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
       setLoading(false);
 
-      // ALARM RECOVERY: nach jedem Kaltstart alle Alarme neu anmelden
+      // ALARM RECOVERY: nach jedem Kaltstart alle Alarme neu anmelden.
+      // cancelAllScheduledNotificationsAsync() zuerst, damit keine Zombie-
+      // Benachrichtigungen aus früheren Starts akkumulieren.
       {
+        await cancelAllReminders();
         const withReminders = cleanedLocal.filter((n) => n.reminderAt !== null);
         if (withReminders.length > 0) {
           const updated = [...cleanedLocal];
           let changed = false;
           for (const note of withReminders) {
-            if (note.notificationId) {
-              try { await cancelReminder(note.notificationId); } catch { /**/ }
+            // Einmalige Erinnerungen die bereits abgelaufen sind nicht neu planen
+            if (note.reminderRecurrence === 'once' && new Date(note.reminderAt!) <= new Date()) {
+              if (note.notificationId !== null) {
+                const idx = updated.findIndex((n) => n.id === note.id);
+                if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: null }; changed = true; }
+              }
+              continue;
             }
             const newId = await scheduleReminder({
               noteId: note.id,
@@ -149,8 +157,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
             if (archiveIds.has(local.id)) continue;
             if (tombstonesRef.current.has(local.id)) continue;
             const existing = byId.get(local.id);
-            if (existing && new Date(local.updatedAt) > new Date(existing.updatedAt)) {
-              byId.set(local.id, local);
+            if (existing) {
+              if (new Date(local.updatedAt) > new Date(existing.updatedAt)) {
+                byId.set(local.id, local);
+              } else {
+                // Remote gewinnt inhaltlich, aber lokale notificationId behalten
+                // (gerade frisch geplant – Remote hat noch den alten Wert)
+                byId.set(local.id, { ...existing, notificationId: local.notificationId });
+              }
             }
             // Lokale Notes die remote nicht existieren werden ignoriert (server-seitig gelöscht).
           }
@@ -215,13 +229,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const rescheduleAllReminders = useCallback(async () => {
+    await cancelAllReminders();
     const withReminders = notes.filter((n) => n.reminderAt !== null);
     if (withReminders.length === 0) return;
     const updated = [...notes];
     let changed = false;
     for (const note of withReminders) {
-      if (note.notificationId) {
-        try { await cancelReminder(note.notificationId); } catch { /**/ }
+      if (note.reminderRecurrence === 'once' && new Date(note.reminderAt!) <= new Date()) {
+        if (note.notificationId !== null) {
+          const idx = updated.findIndex((n) => n.id === note.id);
+          if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: null }; changed = true; }
+        }
+        continue;
       }
       const newId = await scheduleReminder({
         noteId: note.id,
