@@ -1,27 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0F1117;
-  --foreground: #ededed;
+  --bg:      #0E0C09;
+  --s1:      #161210;
+  --s2:      #1E1A16;
+  --s3:      #26211B;
+  --border:  rgba(255, 220, 160, 0.08);
+  --border2: rgba(255, 220, 160, 0.15);
+  --t1:      #F2EDE6;
+  --t2:      #A09080;
+  --t3:      #5C4F42;
+  --amber:   #F4A261;
+  --amber2:  #E8874A;
+  --green:   #A8D8A8;
+  --green2:  #78B878;
+  --purple:  #C8A0D8;
+  --rose:    #E8A0A0;
+  --glow-a:  rgba(244, 162, 97, 0.2);
+  --glow-g:  rgba(168, 216, 168, 0.18);
+
+  /* legacy aliases */
+  --background: var(--bg);
+  --foreground:  var(--t1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-foreground:  var(--t1);
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Inter, system-ui, sans-serif;
+  height: 100%;
   overflow: hidden;
 }
 
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--t1);
+  cursor: default;
+}
+
+/* ── scrollbar ─────────────────────── */
+::-webkit-scrollbar           { width: 3px; }
+::-webkit-scrollbar-thumb     { background: rgba(244, 162, 97, 0.15); border-radius: 2px; }
+::-webkit-scrollbar-track     { background: transparent; }
+
+/* ── panel slide-in animation ──────── */
 @keyframes slide-in {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
 }
 
 .animate-slide-in {
-  animation: slide-in 0.22s ease-out forwards;
+  animation: slide-in 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }

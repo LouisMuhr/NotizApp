@@ -128,3 +128,30 @@ Gib eine kurze Zusammenfassung aus (max. 6 Zeilen):
 - Wie viele neue Threads erstellt / bestehende aktualisiert
 - Wie viele Threads als dormant markiert (wenn zutreffend)
 - Einen optionalen Satz zu einer interessanten thematischen Verbindung, die du erkannt hast
+
+---
+
+## Schritt 6 — Thread-Similarity aktualisieren
+
+Berechne jetzt die übergeordneten Verbindungen zwischen Threads für den Knowledge Graph.
+
+```bash
+cd c:/NotizApp/NotizApp && node bridge/worker/similarity-worker.mjs fetch
+```
+
+Analysiere welche Threads thematisch verwandt sind oder zur selben übergeordneten Kategorie gehören (z.B. mehrere Softwareideen-Threads, Fitness & Gesundheit, etc.). Lieber wenige bedeutungsvolle Verbindungen als viele oberflächliche.
+
+**Ausschlusskriterien — diese Threads nicht verbinden:**
+- Threads die hauptsächlich eine URL oder externen Link enthalten (kein inhaltliches Thema erkennbar)
+- Nur verbinden wenn das inhaltliche Thema übereinstimmt, nicht der Medientyp
+
+Lösche alte Einträge und schreibe neue:
+```bash
+cd c:/NotizApp/NotizApp && node bridge/worker/similarity-worker.mjs clear
+```
+
+```bash
+cd c:/NotizApp/NotizApp && node bridge/worker/similarity-worker.mjs write '[{"thread_id_1":"...","thread_id_2":"...","label":"Oberkategorie"}]'
+```
+
+`label` = kurze übergeordnete Kategorie (1-3 Worte, Deutsch). Falls keine sinnvollen Verbindungen: `'[]'`

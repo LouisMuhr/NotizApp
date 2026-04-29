@@ -14,29 +14,37 @@ export default function NoteOverlay({ note, onClose }: Props) {
 
   return (
     <div
-      className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
       onClick={onClose}
     >
       <div
-        className="bg-[#181B23] border border-[#3ECFB440] rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+        style={{ background: 'rgba(22,18,14,0.98)', border: '1px solid rgba(168,216,168,0.2)', borderRadius: 18, padding: '30px 34px', width: 460, maxWidth: 'calc(100vw - 80px)', boxShadow: '0 30px 70px rgba(0,0,0,0.55), 0 0 50px rgba(168,216,168,0.05)', position: 'relative' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between mb-3">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-[#3ECFB4] opacity-70">
-            Notiz · {note.category || 'Allgemein'} · {date}
-          </span>
-          <button
-            onClick={onClose}
-            className="text-white/40 hover:text-white/80 transition-colors text-xl leading-none ml-3"
-          >
-            ×
-          </button>
+        <button
+          onClick={onClose}
+          style={{ position: 'absolute', top: 16, right: 16, width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--t3)', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.12s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.color = 'var(--t1)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLElement).style.color = 'var(--t3)'; }}
+        >
+          ×
+        </button>
+
+        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--green)', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          NOTIZ
+          {note.category && (
+            <span style={{ background: 'rgba(168,216,168,0.1)', borderRadius: 4, padding: '2px 8px' }}>{note.category}</span>
+          )}
+          <span style={{ color: 'var(--t3)', fontWeight: 400 }}>{date}</span>
         </div>
 
         {note.title && (
-          <h3 className="text-white font-bold text-base mb-2">{note.title}</h3>
+          <h3 style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 22, fontWeight: 500, color: 'var(--t1)', marginBottom: 16, lineHeight: 1.3, letterSpacing: '-0.01em' }}>
+            {note.title}
+          </h3>
         )}
-        <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
+
+        <p style={{ fontSize: 14, lineHeight: 1.75, color: 'rgba(242,237,230,0.5)', fontWeight: 300, whiteSpace: 'pre-wrap' }}>
           {note.content}
         </p>
       </div>
