@@ -138,6 +138,7 @@ interface Props {
   activeSimilarityId: string | null;
   panelOpen: boolean;
   onTooltip: (label: string | null, x: number, y: number) => void;
+  onZoomChange?: (z: number) => void;
 }
 
 export default function Graph(props: Props) {
@@ -151,7 +152,10 @@ export default function Graph(props: Props) {
     noise: null as HTMLCanvasElement | null,
     particles: [] as Particle[],
     layout: null as GraphData | null,
-    layoutData: null as GraphData | null, // the data object the layout was built from
+    layoutData: null as GraphData | null,
+    // camera (fractional offset + zoom, lerped each frame like the mockup)
+    camX: 0, camY: 0, camZ: 1,
+    camXt: 0, camYt: 0, camZt: 1,
   });
 
   // Props mirror — always current, no stale closures
@@ -168,9 +172,19 @@ export default function Graph(props: Props) {
 
     // ── helpers ─────────────────────────────────────────
 
-    function gw() { return canvas.width - (propsRef.current.panelOpen ? 360 : 0); }
-    function GX(f: number) { return f * gw(); }
-    function GY(f: number) { return TOPBAR_H + f * (canvas.height - TOPBAR_H); }
+    // Camera: same lerp as the mockup (camX/camY are fractional offsets, camZ is scale)
+    function lerpCam() {
+      const r = rt.current, s = 0.09;
+      r.camX += (r.camXt - r.camX) * s;
+      r.camY += (r.camYt - r.camY) * s;
+      r.camZ += (r.camZt - r.camZ) * s;
+    }
+
+    function GW() { return canvas.width; }
+    function GH() { return canvas.height - TOPBAR_H; }
+    // Map fractional node position → canvas pixel, applying camera transform
+    function GX(f: number) { return (f - rt.current.camX) * rt.current.camZ * GW(); }
+    function GY(f: number) { return TOPBAR_H + (f - rt.current.camY) * rt.current.camZ * GH(); }
 
     function getLayout(): GraphData {
       const r = rt.current;
@@ -212,19 +226,20 @@ export default function Graph(props: Props) {
 
     function getNodeAt(mx: number, my: number): HitResult | null {
       const layout = getLayout();
-      const { zoom, activeFilter, activeThreadId } = propsRef.current;
+      const { activeFilter, activeThreadId } = propsRef.current;
+      const z = rt.current.camZ;
       for (const s of layout.similarities) {
         if (s.xf === undefined) continue;
-        if (Math.hypot(mx - GX(s.xf), my - GY(s.yf!)) <= 14 * zoom) return { type: 'similarity', id: s.id };
+        if (Math.hypot(mx - GX(s.xf), my - GY(s.yf!)) <= 14 * z) return { type: 'similarity', id: s.id };
       }
       for (const th of layout.threads) {
         if (th.xf === undefined) continue;
-        if (Math.hypot(mx - GX(th.xf), my - GY(th.yf!)) <= THREAD_R * zoom + 4) return { type: 'thread', id: th.id };
+        if (Math.hypot(mx - GX(th.xf), my - GY(th.yf!)) <= THREAD_R * z + 4) return { type: 'thread', id: th.id };
       }
       for (const n of layout.notes) {
         if (n.xf === undefined) continue;
         if (activeFilter !== 'all' && n.category !== activeFilter) continue;
-        const r = (activeThreadId === n.threadId ? 7 : NOTE_R) * zoom;
+        const r = (activeThreadId === n.threadId ? 7 : NOTE_R) * z;
         if (Math.hypot(mx - GX(n.xf), my - GY(n.yf!)) <= r + 6) return { type: 'note', id: n.id };
       }
       return null;
@@ -245,11 +260,12 @@ export default function Graph(props: Props) {
     function onWindowMouseMove(e: MouseEvent) {
       const { drag } = rt.current;
       if (drag) {
-        const GW = gw(), GH = canvas.height;
+        const z = rt.current.camZ;
         const dx = e.clientX - drag.startMouseX, dy = e.clientY - drag.startMouseY;
         if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true;
         if (drag.moved) {
-          moveThread(drag.threadId, drag.startXf + dx / GW, drag.startYf + dy / (GH - TOPBAR_H));
+          // convert pixel delta to fractional delta, accounting for camera zoom
+          moveThread(drag.threadId, drag.startXf + dx / (GW() * z), drag.startYf + dy / (GH() * z));
           propsRef.current.onTooltip(null, 0, 0);
         }
         return;
@@ -277,7 +293,22 @@ export default function Graph(props: Props) {
         savePositions(saved);
       } else {
         const th = getLayout().threads.find(t => t.id === drag.threadId);
-        if (th) propsRef.current.onThreadClick(th);
+        if (th && th.xf !== undefined) {
+          const { activeThreadId } = propsRef.current;
+          if (activeThreadId === th.id) {
+            // deselect → zoom back out
+            rt.current.camXt = 0;
+            rt.current.camYt = 0;
+            rt.current.camZt = 1.0;
+          } else {
+            // zoom toward the clicked thread — same formula as the mockup
+            const targetZ = 1.5;
+            rt.current.camXt = th.xf - 0.28 / targetZ;
+            rt.current.camYt = th.yf! - 0.36 / targetZ;
+            rt.current.camZt = targetZ;
+          }
+          propsRef.current.onThreadClick(th);
+        }
       }
       rt.current.drag = null;
       canvas.style.cursor = 'default';
@@ -310,19 +341,21 @@ export default function Graph(props: Props) {
     // ── draw loop ────────────────────────────────────────
     let raf = 0;
     function draw() {
+      lerpCam();
       const { animT, hovered, drag, noise, particles } = rt.current;
+      const z = rt.current.camZ;
       const layout = getLayout();
-      const { zoom, activeFilter, activeThreadId, activeSimilarityId } = propsRef.current;
-      const W = canvas.width, H = canvas.height, GW = gw();
+      const { activeFilter, activeThreadId, activeSimilarityId } = propsRef.current;
+      const W = canvas.width, H = canvas.height;
 
       ctx.clearRect(0,0,W,H);
       ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
-      const bg = ctx.createRadialGradient(GX(0.42),GY(0.48),0,GX(0.42),GY(0.48),Math.min(GW,H)*0.7);
+      const bg = ctx.createRadialGradient(GX(0.42),GY(0.48),0,GX(0.42),GY(0.48),Math.min(GW(),H)*0.7);
       bg.addColorStop(0,'rgba(70,40,10,0.22)'); bg.addColorStop(1,'rgba(0,0,0,0)');
       ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
       if (noise) { const pat = ctx.createPattern(noise,'repeat'); if (pat) { ctx.fillStyle=pat; ctx.fillRect(0,0,W,H); } }
 
-      ctx.save(); ctx.beginPath(); ctx.rect(0,TOPBAR_H,GW,H-TOPBAR_H); ctx.clip();
+      ctx.save(); ctx.beginPath(); ctx.rect(0,TOPBAR_H,GW(),H-TOPBAR_H); ctx.clip();
 
       function linkLit(simId: string, t1: string, t2: string) {
         if (activeThreadId && (activeThreadId===t1||activeThreadId===t2)) return true;
@@ -356,7 +389,7 @@ export default function Graph(props: Props) {
         const a=layout.threads.find(t=>t.id===sim.threadId1), b=layout.threads.find(t=>t.id===sim.threadId2);
         if (!a||!b||a.xf===undefined||b.xf===undefined) continue;
         const lit=linkLit(sim.id,sim.threadId1,sim.threadId2);
-        const col=lit?C.amber:'rgba(150,100,50,0.4)', al=lit?0.38:0.07, w=lit?1.6*zoom:0.55*zoom;
+        const col=lit?C.amber:'rgba(150,100,50,0.4)', al=lit?0.38:0.07, w=lit?1.6*z:0.55*z;
         const sx=GX(sim.xf),sy=GY(sim.yf!);
         drawCurve(ctx,GX(a.xf),GY(a.yf!),sx,sy,GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),col,al,w);
         drawCurve(ctx,GX(b.xf),GY(b.yf!),sx,sy,GX((b.xf+sim.xf)/2),GY((b.yf!+sim.yf!)/2),col,al,w);
@@ -370,7 +403,7 @@ export default function Graph(props: Props) {
         if (!th||th.xf===undefined) continue;
         const lit=noteLit(note), hovN=hovered?.type==='note'&&hovered.id===note.id;
         drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-          hovN?C.white:lit?C.green:'rgba(100,140,80,0.3)', hovN?0.6:lit?0.3:0.07, hovN?1.4*zoom:lit?1.0*zoom:0.45*zoom);
+          hovN?C.white:lit?C.green:'rgba(100,140,80,0.3)', hovN?0.6:lit?0.3:0.07, hovN?1.4*z:lit?1.0*z:0.45*z);
       }
 
       // particles
@@ -385,7 +418,7 @@ export default function Graph(props: Props) {
           ?bezierPt(p.p*2,GX(a.xf),GY(a.yf!),GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),sx,sy)
           :bezierPt((p.p-.5)*2,sx,sy,GX((sim.xf+b.xf)/2),GY((sim.yf!+b.yf!)/2),GX(b.xf),GY(b.yf!));
         ctx.globalAlpha=0.9*Math.sin(p.p*Math.PI); ctx.fillStyle=C.amberBright;
-        ctx.beginPath(); ctx.arc(pt.x,pt.y,2.2*zoom,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+        ctx.beginPath(); ctx.arc(pt.x,pt.y,2.2*z,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
       }
 
       // note nodes
@@ -400,7 +433,7 @@ export default function Graph(props: Props) {
       for (const sim of layout.similarities) {
         if (sim.xf===undefined) continue;
         const x=GX(sim.xf),y=GY(sim.yf!),lit=simLit(sim),isHov=hovered?.type==='similarity'&&hovered.id===sim.id;
-        const r=(lit?12:SIM_R)*zoom;
+        const r=(lit?12:SIM_R)*z;
         ctx.globalAlpha=lit?0.35:0.12; ctx.strokeStyle=C.amber; ctx.lineWidth=lit?1.4:1; ctx.setLineDash([3,4]);
         ctx.beginPath(); ctx.arc(x,y,r*2.5,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
         const g=ctx.createRadialGradient(x,y,0,x,y,r*5);
@@ -413,10 +446,10 @@ export default function Graph(props: Props) {
         ctx.beginPath(); ctx.moveTo(0,-d*.5); ctx.lineTo(d*.45,0); ctx.lineTo(0,-d*.08); ctx.closePath(); ctx.fill();
         ctx.restore(); ctx.globalAlpha=1;
         const ly=y+r*2.8+8;
-        ctx.font=`${lit?'700':'600'} ${(lit?15:13)*zoom}px Inter,sans-serif`;
+        ctx.font=`${lit?'700':'600'} ${(lit?15:13)*z}px Inter,sans-serif`;
         ctx.fillStyle=lit?C.amberBright:`rgba(244,162,97,${isHov?0.85:0.5})`; ctx.textAlign='center'; ctx.fillText(sim.label,x,ly);
-        ctx.font=`500 ${(lit?11:9.5)*zoom}px Inter,sans-serif`; ctx.fillStyle=`rgba(244,162,97,${lit?0.55:0.22})`;
-        ctx.fillText('✦ KI-Verbindung',x,ly+(lit?17:14)*zoom);
+        ctx.font=`500 ${(lit?11:9.5)*z}px Inter,sans-serif`; ctx.fillStyle=`rgba(244,162,97,${lit?0.55:0.22})`;
+        ctx.fillText('✦ KI-Verbindung',x,ly+(lit?17:14)*z);
       }
 
       // thread nodes
@@ -426,12 +459,12 @@ export default function Graph(props: Props) {
         const isHov=hovered?.type==='thread'&&hovered.id===th.id;
         const simHov=!isHov&&hovered?.type==='similarity'&&(()=>{const s=layout.similarities.find(s=>s.id===hovered!.id);return s&&(s.threadId1===th.id||s.threadId2===th.id);})();
         const lit=isClicked||isHov||!!simHov||isDragging;
-        if (isDragging) { ctx.globalAlpha=0.25; ctx.fillStyle=C.amber; ctx.beginPath(); ctx.arc(GX(th.xf)+4,GY(th.yf!)+6,THREAD_R*zoom*1.1,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
+        if (isDragging) { ctx.globalAlpha=0.25; ctx.fillStyle=C.amber; ctx.beginPath(); ctx.arc(GX(th.xf)+4,GY(th.yf!)+6,THREAD_R*z*1.1,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
         drawOrb(ctx,GX(th.xf),GY(th.yf!),THREAD_R,C.amber,0.1,animT,lit,isHov||!!simHov);
-        const rl=THREAD_R*zoom*(lit?1.08:1);
-        ctx.font=`${lit?'600':'500'} ${(lit?13:11)*zoom}px Inter,sans-serif`;
+        const rl=THREAD_R*z*(lit?1.08:1);
+        ctx.font=`${lit?'600':'500'} ${(lit?13:11)*z}px Inter,sans-serif`;
         ctx.fillStyle=lit?C.amber:`rgba(${hexRgb(C.amber)},0.5)`; ctx.textAlign='center';
-        ctx.fillText(th.title,GX(th.xf),GY(th.yf!)+rl+16*zoom);
+        ctx.fillText(th.title,GX(th.xf),GY(th.yf!)+rl+16*z);
       }
 
       ctx.restore();

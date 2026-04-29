@@ -81,8 +81,6 @@ export default function Home() {
   const noteCount = graphData.notes.length;
   const catCount = new Set(graphData.notes.map(n => n.category).filter(Boolean)).size;
 
-  const panelOpen = !!selectedThread;
-
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
 
@@ -97,8 +95,9 @@ export default function Home() {
           onSimilarityClick={handleSimilarityClick}
           activeThreadId={selectedThread?.id ?? null}
           activeSimilarityId={selectedSim?.id ?? null}
-          panelOpen={panelOpen}
+          panelOpen={false}
           onTooltip={handleTooltip}
+          onZoomChange={(z) => setZoom(z)}
         />
       )}
 
@@ -174,6 +173,9 @@ export default function Home() {
           <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)', flexShrink: 0 }} /> Notiz (klickbar)
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--t2)' }}>
+          <div style={{ width: 11, height: 11, borderRadius: '50%', border: '1.5px dashed var(--purple)', background: 'transparent', flexShrink: 0 }} /> Kategorie
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--t2)' }}>
           <div style={{ width: 11, height: 11, background: 'var(--amber)', transform: 'rotate(45deg)', flexShrink: 0, borderRadius: 2 }} /> KI-Verbindung (klickbar)
         </div>
       </div>
@@ -207,6 +209,8 @@ export default function Home() {
         <ThreadPanel
           thread={selectedThread}
           notes={threadNotes}
+          similarities={graphData.similarities}
+          allThreads={graphData.threads}
           onNoteClick={handleNoteClick}
           onClose={() => setSelectedThread(null)}
         />
