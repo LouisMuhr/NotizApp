@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { GraphData, Thread, Note, Similarity } from '@/types';
+import { GraphHandle } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
 import NoteOverlay from '@/components/NoteOverlay';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
@@ -28,8 +29,9 @@ export default function Home() {
   const [selectedSim, setSelectedSim] = useState<Similarity | null>(null);
 
   const [activeFilter, setActiveFilter] = useState('all');
-  const [zoom, setZoom] = useState(1.0);
   const [tooltip, setTooltip] = useState<{ label: string; x: number; y: number } | null>(null);
+
+  const graphHandle = useRef<GraphHandle | null>(null);
 
   useEffect(() => {
     fetch('/api/graph')
@@ -81,6 +83,8 @@ export default function Home() {
   const noteCount = graphData.notes.length;
   const catCount = new Set(graphData.notes.map(n => n.category).filter(Boolean)).size;
 
+  const btnStyle: React.CSSProperties = { width: 36, height: 36, borderRadius: '50%', background: 'rgba(14,12,9,0.7)', border: '1px solid var(--border)', color: 'var(--t2)', fontSize: 18, fontWeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(12px)', transition: 'all 0.15s', userSelect: 'none' };
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
 
@@ -89,15 +93,13 @@ export default function Home() {
         <Graph
           data={graphData}
           activeFilter={activeFilter}
-          zoom={zoom}
           onThreadClick={handleThreadClick}
           onNoteClick={handleNoteClick}
           onSimilarityClick={handleSimilarityClick}
           activeThreadId={selectedThread?.id ?? null}
           activeSimilarityId={selectedSim?.id ?? null}
-          panelOpen={false}
           onTooltip={handleTooltip}
-          onZoomChange={(z) => setZoom(z)}
+          handleRef={graphHandle}
         />
       )}
 
@@ -113,7 +115,6 @@ export default function Home() {
 
       {/* TOP BAR */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: 'rgba(14,12,9,0.75)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', padding: '0 22px', gap: 0, zIndex: 50, pointerEvents: 'none' }}>
-        {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
           <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #FBCB96, #C05C1A 70%)', boxShadow: '0 0 16px rgba(244,162,97,0.5), 0 0 40px rgba(244,162,97,0.15)', flexShrink: 0 }} />
           <div>
@@ -121,10 +122,7 @@ export default function Home() {
             <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Second Brain</div>
           </div>
         </div>
-
         <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 20px' }} />
-
-        {/* Stats */}
         {!loading && (
           <div style={{ display: 'flex', gap: 8 }}>
             {[
@@ -139,7 +137,6 @@ export default function Home() {
             ))}
           </div>
         )}
-
         <div style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--t3)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span>Klick auf <strong style={{ color: 'var(--amber)' }}>Thread</strong>, <strong style={{ color: 'var(--green)' }}>Notiz</strong> oder <strong style={{ color: 'var(--amber)' }}>◆ KI-Verbindung</strong></span>
           <span style={{ background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 7px', fontSize: 11, color: 'var(--t2)' }}>Esc</span>
@@ -180,21 +177,11 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ZOOM */}
+      {/* ZOOM BUTTONS */}
       <div style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, zIndex: 20 }}>
-        {[
-          { label: '−', action: () => setZoom(z => Math.max(0.5, z - 0.2)) },
-          { label: '⊙', action: () => setZoom(1.0), style: { fontSize: 13, fontWeight: 500 } },
-          { label: '+', action: () => setZoom(z => Math.min(2.0, z + 0.2)) },
-        ].map(({ label, action, style: extra }) => (
-          <button
-            key={label}
-            onClick={action}
-            style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(14,12,9,0.7)', border: '1px solid var(--border)', color: 'var(--t2)', fontSize: 18, fontWeight: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', backdropFilter: 'blur(12px)', transition: 'all 0.15s', userSelect: 'none', ...extra }}
-          >
-            {label}
-          </button>
-        ))}
+        <button onClick={() => graphHandle.current?.zoomBy(-0.2)} style={btnStyle}>−</button>
+        <button onClick={() => graphHandle.current?.zoomReset()} style={{ ...btnStyle, fontSize: 13, fontWeight: 500 }}>⊙</button>
+        <button onClick={() => graphHandle.current?.zoomBy(0.2)} style={btnStyle}>+</button>
       </div>
 
       {/* TOOLTIP */}
@@ -212,7 +199,7 @@ export default function Home() {
           similarities={graphData.similarities}
           allThreads={graphData.threads}
           onNoteClick={handleNoteClick}
-          onClose={() => setSelectedThread(null)}
+          onClose={() => { setSelectedThread(null); graphHandle.current?.zoomReset(); }}
         />
       )}
 

@@ -125,20 +125,26 @@ function buildNoise(): HTMLCanvasElement {
 }
 
 interface Particle { threadId1: string; threadId2: string; simId: string; p: number; s: number }
-interface DragState { threadId: string; startMouseX: number; startMouseY: number; startXf: number; startYf: number; moved: boolean }
+interface DragState {
+  kind: 'thread' | 'pan';
+  threadId?: string; startMouseX: number; startMouseY: number;
+  startXf?: number; startYf?: number;
+  startCamX?: number; startCamY?: number;
+  moved: boolean;
+}
+
+export interface GraphHandle { zoomBy: (delta: number) => void; zoomReset: () => void; }
 
 interface Props {
   data: GraphData;
   activeFilter: string;
-  zoom: number;
   onThreadClick: (t: Thread) => void;
   onNoteClick: (n: Note) => void;
   onSimilarityClick: (s: Similarity) => void;
   activeThreadId: string | null;
   activeSimilarityId: string | null;
-  panelOpen: boolean;
   onTooltip: (label: string | null, x: number, y: number) => void;
-  onZoomChange?: (z: number) => void;
+  handleRef?: React.MutableRefObject<GraphHandle | null>;
 }
 
 export default function Graph(props: Props) {
@@ -162,6 +168,21 @@ export default function Graph(props: Props) {
   const propsRef = useRef(props);
   propsRef.current = props;
 
+  // Expose zoom controls to parent via handleRef
+  useEffect(() => {
+    if (!props.handleRef) return;
+    props.handleRef.current = {
+      zoomBy: (delta: number) => {
+        const r = rt.current;
+        r.camZt = Math.max(0.4, Math.min(3.0, r.camZt + delta));
+      },
+      zoomReset: () => {
+        const r = rt.current;
+        r.camXt = 0; r.camYt = 0; r.camZt = 1;
+      },
+    };
+  });
+
   // One-time setup: animation loop + all event listeners
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -182,9 +203,9 @@ export default function Graph(props: Props) {
 
     function GW() { return canvas.width; }
     function GH() { return canvas.height - TOPBAR_H; }
-    // Map fractional node position → canvas pixel, applying camera transform
-    function GX(f: number) { return (f - rt.current.camX) * rt.current.camZ * GW(); }
-    function GY(f: number) { return TOPBAR_H + (f - rt.current.camY) * rt.current.camZ * GH(); }
+    // Zoom toward canvas center; camX/camY are pan offsets in fractional units
+    function GX(f: number) { return GW() / 2 + (f - 0.5 - rt.current.camX) * rt.current.camZ * GW(); }
+    function GY(f: number) { return TOPBAR_H + GH() / 2 + (f - 0.5 - rt.current.camY) * rt.current.camZ * GH(); }
 
     function getLayout(): GraphData {
       const r = rt.current;
@@ -249,10 +270,16 @@ export default function Graph(props: Props) {
 
     function onMouseDown(e: MouseEvent) {
       const hit = getNodeAt(e.clientX, e.clientY);
-      if (hit?.type !== 'thread') return;
-      const th = getLayout().threads.find(t => t.id === hit.id);
-      if (!th || th.xf === undefined) return;
-      rt.current.drag = { threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
+      if (hit?.type === 'thread') {
+        const th = getLayout().threads.find(t => t.id === hit.id);
+        if (!th || th.xf === undefined) return;
+        rt.current.drag = { kind: 'thread', threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
+      } else if (!hit) {
+        // pan the camera
+        rt.current.drag = { kind: 'pan', startMouseX: e.clientX, startMouseY: e.clientY, startCamX: rt.current.camXt, startCamY: rt.current.camYt, moved: false };
+      } else {
+        return;
+      }
       canvas.style.cursor = 'grabbing';
       e.preventDefault();
     }
@@ -260,12 +287,17 @@ export default function Graph(props: Props) {
     function onWindowMouseMove(e: MouseEvent) {
       const { drag } = rt.current;
       if (drag) {
-        const z = rt.current.camZ;
         const dx = e.clientX - drag.startMouseX, dy = e.clientY - drag.startMouseY;
         if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true;
         if (drag.moved) {
-          // convert pixel delta to fractional delta, accounting for camera zoom
-          moveThread(drag.threadId, drag.startXf + dx / (GW() * z), drag.startYf + dy / (GH() * z));
+          const z = rt.current.camZ;
+          if (drag.kind === 'thread') {
+            moveThread(drag.threadId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
+          } else {
+            // pan: pixel delta → fractional delta (divide by zoom scale)
+            rt.current.camXt = drag.startCamX! - dx / (GW() * z);
+            rt.current.camYt = drag.startCamY! - dy / (GH() * z);
+          }
           propsRef.current.onTooltip(null, 0, 0);
         }
         return;
@@ -287,29 +319,29 @@ export default function Graph(props: Props) {
     function onWindowMouseUp() {
       const { drag } = rt.current;
       if (!drag) return;
-      if (drag.moved) {
-        const saved = loadPositions();
-        for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
-        savePositions(saved);
-      } else {
-        const th = getLayout().threads.find(t => t.id === drag.threadId);
-        if (th && th.xf !== undefined) {
-          const { activeThreadId } = propsRef.current;
-          if (activeThreadId === th.id) {
-            // deselect → zoom back out
-            rt.current.camXt = 0;
-            rt.current.camYt = 0;
-            rt.current.camZt = 1.0;
-          } else {
-            // zoom toward the clicked thread — same formula as the mockup
-            const targetZ = 1.5;
-            rt.current.camXt = th.xf - 0.28 / targetZ;
-            rt.current.camYt = th.yf! - 0.36 / targetZ;
-            rt.current.camZt = targetZ;
+      if (drag.kind === 'thread') {
+        if (drag.moved) {
+          const saved = loadPositions();
+          for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
+          savePositions(saved);
+        } else {
+          const th = getLayout().threads.find(t => t.id === drag.threadId);
+          if (th && th.xf !== undefined) {
+            const { activeThreadId } = propsRef.current;
+            if (activeThreadId === th.id) {
+              rt.current.camXt = 0; rt.current.camYt = 0; rt.current.camZt = 1.0;
+            } else {
+              // Shift thread slightly left of center so the modal has space on the right
+              const targetZ = 1.5;
+              rt.current.camXt = (th.xf - 0.5) - (-0.18);
+              rt.current.camYt = (th.yf! - 0.5);
+              rt.current.camZt = targetZ;
+            }
+            propsRef.current.onThreadClick(th);
           }
-          propsRef.current.onThreadClick(th);
         }
       }
+      // pan drag: camera target already set in mousemove, nothing extra needed
       rt.current.drag = null;
       canvas.style.cursor = 'default';
     }
@@ -327,11 +359,19 @@ export default function Graph(props: Props) {
       else { const s = layout.similarities.find(s => s.id === hit.id); if (s) propsRef.current.onSimilarityClick(s); }
     }
 
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const r = rt.current;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      r.camZt = Math.max(0.4, Math.min(3.0, r.camZt * factor));
+    }
+
     canvas.addEventListener('mousedown',  onMouseDown);
     window.addEventListener('mousemove',  onWindowMouseMove);
     window.addEventListener('mouseup',    onWindowMouseUp);
     canvas.addEventListener('mouseleave', onMouseLeave);
     canvas.addEventListener('click',      onClick);
+    canvas.addEventListener('wheel',      onWheel, { passive: false });
 
     // ── resize ───────────────────────────────────────────
     function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
@@ -481,6 +521,7 @@ export default function Graph(props: Props) {
       window.removeEventListener('mouseup',    onWindowMouseUp);
       canvas.removeEventListener('mouseleave', onMouseLeave);
       canvas.removeEventListener('click',      onClick);
+      canvas.removeEventListener('wheel',      onWheel);
       window.removeEventListener('resize',     resize);
     };
   // runs exactly once after mount — propsRef keeps values current
