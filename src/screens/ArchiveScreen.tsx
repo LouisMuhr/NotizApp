@@ -4,17 +4,18 @@ import { Text, useTheme, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Note } from '../models/Note';
 import { Thread } from '../models/Thought';
-import { getCategoryColor } from '../utils/categoryColors';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { getCategoryAccent } from '../theme/categoryAccents';
+import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
+import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 
 // ---------------------------------------------------------------------------
-// Archived Note Row (unchanged)
+// Archived Note Row
 // ---------------------------------------------------------------------------
 
 interface ArchiveRowProps {
@@ -26,7 +27,7 @@ interface ArchiveRowProps {
 
 function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowProps) {
   const theme = useTheme();
-  const catColor = getCategoryColor(item.category);
+  const accent = getCategoryAccent(item.category);
   const swipeableRef = useRef<Swipeable>(null);
 
   const formatDate = (iso: string) =>
@@ -36,17 +37,13 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
     _progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>,
   ) => {
-    const scale = dragX.interpolate({
-      inputRange: [0, 80],
-      outputRange: [0.5, 1],
-      extrapolate: 'clamp',
-    });
+    const scale = dragX.interpolate({ inputRange: [0, 80], outputRange: [0.5, 1], extrapolate: 'clamp' });
     return (
-      <View style={[styles.swipeAction, styles.leftAction, { backgroundColor: theme.colors.tertiaryContainer }]}>
+      <View style={[styles.swipeAction, styles.leftAction, { backgroundColor: Tokens.amberSoft }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
-          <MaterialCommunityIcons name="restore" size={24} color={theme.colors.tertiary} />
+          <MaterialCommunityIcons name="restore" size={24} color={Tokens.amberDeep} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.tertiary }]}>Wiederherstellen</Text>
+        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>Wiederherstellen</Text>
       </View>
     );
   };
@@ -55,11 +52,7 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
     _progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>,
   ) => {
-    const scale = dragX.interpolate({
-      inputRange: [-80, 0],
-      outputRange: [1, 0.5],
-      extrapolate: 'clamp',
-    });
+    const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0.5], extrapolate: 'clamp' });
     return (
       <View style={[styles.swipeAction, styles.rightAction, { backgroundColor: theme.colors.errorContainer }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
@@ -77,13 +70,8 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
       renderRightActions={renderRightActions}
       onSwipeableOpen={(direction) => {
         swipeableRef.current?.close();
-        if (direction === 'left') {
-          haptics.light();
-          onRestore();
-        } else if (direction === 'right') {
-          haptics.medium();
-          onRequestDelete();
-        }
+        if (direction === 'left') { haptics.light(); onRestore(); }
+        else if (direction === 'right') { haptics.medium(); onRequestDelete(); }
       }}
       overshootLeft={false}
       overshootRight={false}
@@ -93,24 +81,25 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
         onPress={onPress}
         style={({ pressed }) => [
           styles.card,
-          { backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface },
+          Insets.cardBorder,
+          { backgroundColor: pressed ? Tokens.paperEdge : Tokens.paperDeep },
         ]}
       >
-        <View style={[styles.accent, { backgroundColor: catColor, opacity: 0.5 }]} />
+        <View style={[styles.accentStrip, { backgroundColor: accent.soft }]} />
         <View style={styles.body}>
-          <Text style={[styles.title, { color: theme.colors.onSurface }]} numberOfLines={1}>
+          <Text style={styles.title} numberOfLines={1}>
             {item.title || 'Ohne Titel'}
           </Text>
           {item.content ? (
-            <Text style={[styles.preview, { color: theme.colors.onSurfaceVariant }]} numberOfLines={2}>
+            <Text style={styles.preview} numberOfLines={2}>
               {item.content}
             </Text>
           ) : null}
           <View style={styles.footer}>
-            <Text style={[styles.categoryLabel, { color: catColor }]}>{item.category}</Text>
-            <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>
-              {formatDate(item.updatedAt)}
-            </Text>
+            <View style={[styles.categoryChip, { backgroundColor: accent.soft }]}>
+              <Text style={[styles.categoryLabel, { color: accent.deep }]}>{item.category}</Text>
+            </View>
+            <Text style={styles.dateText}>{formatDate(item.updatedAt)}</Text>
           </View>
         </View>
       </Pressable>
@@ -122,16 +111,6 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
 // Archived Thread Row
 // ---------------------------------------------------------------------------
 
-const THREAD_GRADIENTS: Array<readonly [string, string]> = [
-  Gradients.primary,
-  Gradients.secondary,
-  Gradients.tertiary,
-  Gradients.lavender,
-  Gradients.sky,
-  Gradients.emerald,
-  Gradients.pink,
-];
-
 interface ArchivedThreadRowProps {
   thread: Thread;
   index: number;
@@ -139,10 +118,9 @@ interface ArchivedThreadRowProps {
   onRequestDelete: () => void;
 }
 
-function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: ArchivedThreadRowProps) {
+function ArchivedThreadRow({ thread, onRestore, onRequestDelete }: ArchivedThreadRowProps) {
   const theme = useTheme();
   const swipeableRef = useRef<Swipeable>(null);
-  const gradient = THREAD_GRADIENTS[index % THREAD_GRADIENTS.length];
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
@@ -151,17 +129,13 @@ function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: Archiv
     _progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>,
   ) => {
-    const scale = dragX.interpolate({
-      inputRange: [0, 80],
-      outputRange: [0.5, 1],
-      extrapolate: 'clamp',
-    });
+    const scale = dragX.interpolate({ inputRange: [0, 80], outputRange: [0.5, 1], extrapolate: 'clamp' });
     return (
-      <View style={[styles.swipeAction, styles.leftAction, { backgroundColor: theme.colors.tertiaryContainer }]}>
+      <View style={[styles.swipeAction, styles.leftAction, { backgroundColor: Tokens.amberSoft }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
-          <MaterialCommunityIcons name="restore" size={24} color={theme.colors.tertiary} />
+          <MaterialCommunityIcons name="restore" size={24} color={Tokens.amberDeep} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.tertiary }]}>Wiederherstellen</Text>
+        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>Wiederherstellen</Text>
       </View>
     );
   };
@@ -170,11 +144,7 @@ function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: Archiv
     _progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>,
   ) => {
-    const scale = dragX.interpolate({
-      inputRange: [-80, 0],
-      outputRange: [1, 0.5],
-      extrapolate: 'clamp',
-    });
+    const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0.5], extrapolate: 'clamp' });
     return (
       <View style={[styles.swipeAction, styles.rightAction, { backgroundColor: theme.colors.errorContainer }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
@@ -192,13 +162,8 @@ function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: Archiv
       renderRightActions={renderRightActions}
       onSwipeableOpen={(direction) => {
         swipeableRef.current?.close();
-        if (direction === 'left') {
-          haptics.light();
-          onRestore();
-        } else if (direction === 'right') {
-          haptics.medium();
-          onRequestDelete();
-        }
+        if (direction === 'left') { haptics.light(); onRestore(); }
+        else if (direction === 'right') { haptics.medium(); onRequestDelete(); }
       }}
       overshootLeft={false}
       overshootRight={false}
@@ -207,39 +172,28 @@ function ArchivedThreadRow({ thread, index, onRestore, onRequestDelete }: Archiv
       <Pressable
         style={({ pressed }) => [
           styles.card,
-          { backgroundColor: pressed ? theme.colors.surfaceVariant : theme.colors.surface },
+          Insets.cardBorder,
+          { backgroundColor: pressed ? Tokens.paperEdge : Tokens.paperDeep },
         ]}
       >
-        <LinearGradient
-          colors={gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[styles.accent, { opacity: 0.5 }]}
-        />
+        <View style={[styles.accentStrip, { backgroundColor: Tokens.amberSoft }]} />
         <View style={styles.body}>
-          <Text style={[styles.title, { color: theme.colors.onSurface }]} numberOfLines={1}>
+          <Text style={styles.title} numberOfLines={1}>
             {thread.title}
           </Text>
           {thread.summary ? (
-            <Text style={[styles.preview, { color: theme.colors.onSurfaceVariant }]} numberOfLines={2}>
+            <Text style={styles.preview} numberOfLines={2}>
               {thread.summary}
             </Text>
           ) : null}
           <View style={styles.footer}>
             <View style={styles.threadMeta}>
-              <MaterialCommunityIcons
-                name="note-text-outline"
-                size={13}
-                color={theme.colors.onSurfaceVariant}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[styles.categoryLabel, { color: theme.colors.onSurfaceVariant }]}>
+              <MaterialCommunityIcons name="creation" size={13} color={Tokens.amber} style={{ marginRight: 4 }} />
+              <Text style={styles.categoryLabel2}>
                 {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
               </Text>
             </View>
-            <Text style={[styles.dateText, { color: theme.colors.onSurfaceVariant }]}>
-              {formatDate(thread.updatedAt)}
-            </Text>
+            <Text style={styles.dateText}>{formatDate(thread.updatedAt)}</Text>
           </View>
         </View>
       </Pressable>
@@ -266,7 +220,6 @@ export default function ArchiveScreen() {
   const { threads, restoreThread, deleteThreadPermanently } = useThoughts();
 
   const archivedThreads = threads.filter((t) => t.status === 'archived');
-
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const handleDelete = useCallback(async () => {
@@ -285,49 +238,32 @@ export default function ArchiveScreen() {
     ? `Thread „${deleteTarget.item.title}" wird unwiderruflich gelöscht.`
     : `„${(deleteTarget?.item as Note)?.title || 'Ohne Titel'}" wird unwiderruflich gelöscht.`;
 
-  // Build a flat list mixing both types to avoid SectionList union issues
   const items: ArchiveItem[] = [
     ...archivedThreads.map((t, i) => ({ type: 'thread' as const, thread: t, index: i })),
     ...archivedNotes.map((n) => ({ type: 'note' as const, note: n })),
   ];
 
-  // Show section headers inline
   const hasThreads = archivedThreads.length > 0;
   const hasNotes = archivedNotes.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
-          Archiv
+        <Text style={styles.headerEyebrow}>
+          {totalCount === 0 ? 'Leer' : `${totalCount} Elemente`}
         </Text>
-        <Text style={[styles.headerSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-          {totalCount === 0
-            ? 'Leer'
-            : `${archivedNotes.length} ${archivedNotes.length === 1 ? 'Notiz' : 'Notizen'}, ${archivedThreads.length} ${archivedThreads.length === 1 ? 'Thread' : 'Threads'}`}
-        </Text>
+        <Text style={styles.headerTitle}>Archiv</Text>
       </View>
 
       {totalCount === 0 ? (
         <View style={styles.center}>
-          <LinearGradient
-            colors={Gradients.lavender}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.emptyIconWrap}
-          >
-            <MaterialCommunityIcons name="archive-outline" size={48} color="#FFFFFF" />
-          </LinearGradient>
-          <Text
-            variant="titleMedium"
-            style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
-          >
+          <View style={[styles.emptyIconWrap, { backgroundColor: Tokens.amberSoft }]}>
+            <MaterialCommunityIcons name="archive-outline" size={48} color={Tokens.amberDeep} />
+          </View>
+          <Text variant="titleMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
             Archiv ist leer
           </Text>
-          <Text
-            variant="bodySmall"
-            style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text variant="bodySmall" style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}>
             Gelöschte Notizen und archivierte Threads landen hier
           </Text>
         </View>
@@ -336,7 +272,6 @@ export default function ArchiveScreen() {
           data={items}
           keyExtractor={(item) => (item.type === 'thread' ? `t-${item.thread.id}` : `n-${item.note.id}`)}
           renderItem={({ item, index }) => {
-            // Section headers
             const showThreadHeader = hasThreads && index === 0;
             const showNoteHeader = hasNotes && item.type === 'note' && (index === 0 || items[index - 1]?.type === 'thread');
 
@@ -344,16 +279,12 @@ export default function ArchiveScreen() {
               <>
                 {showThreadHeader && (
                   <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
-                      Threads
-                    </Text>
+                    <Text style={styles.sectionTitle}>Threads</Text>
                   </View>
                 )}
                 {showNoteHeader && (
                   <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, { color: theme.colors.onSurfaceVariant }]}>
-                      Notizen
-                    </Text>
+                    <Text style={styles.sectionTitle}>Notizen</Text>
                   </View>
                 )}
                 {item.type === 'thread' ? (
@@ -379,20 +310,15 @@ export default function ArchiveScreen() {
         />
       )}
 
-      {/* Permanent Delete Confirmation */}
       <Portal>
         <Dialog
           visible={!!deleteTarget}
           onDismiss={() => setDeleteTarget(null)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>
-            Endgültig löschen?
-          </Dialog.Title>
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>Endgültig löschen?</Dialog.Title>
           <Dialog.Content>
-            <Text style={{ color: theme.colors.onSurfaceVariant }}>
-              {deleteLabel}
-            </Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{deleteLabel}</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDeleteTarget(null)} textColor={theme.colors.onSurfaceVariant}>
@@ -415,23 +341,23 @@ export default function ArchiveScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 4,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  headerEyebrow: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.84,
+    textTransform: 'uppercase',
+    color: Tokens.inkFaint,
+    marginBottom: 2,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    opacity: 0.6,
+  headerTitle: {
+    ...Type.h1,
+    color: Tokens.ink,
   },
   center: {
     flex: 1,
@@ -449,8 +375,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     marginTop: 22,
     textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 18,
+    fontFamily: Fonts.serif,
   },
   emptySubtitle: {
     marginTop: 6,
@@ -463,11 +388,11 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.84,
     textTransform: 'uppercase',
-    opacity: 0.6,
+    color: Tokens.inkFaint,
   },
   list: {
     paddingBottom: 100,
@@ -476,12 +401,12 @@ const styles = StyleSheet.create({
   swipeContainer: {
     marginHorizontal: 16,
     marginVertical: 5,
-    borderRadius: 16,
+    borderRadius: Radii.lg,
     overflow: 'hidden',
   },
   card: {
     flexDirection: 'row',
-    borderRadius: 16,
+    borderRadius: Radii.lg,
     overflow: 'hidden',
   },
   swipeAction: {
@@ -490,66 +415,70 @@ const styles = StyleSheet.create({
     width: 100,
   },
   leftAction: {
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
+    borderTopLeftRadius: Radii.lg,
+    borderBottomLeftRadius: Radii.lg,
   },
   rightAction: {
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
+    borderTopRightRadius: Radii.lg,
+    borderBottomRightRadius: Radii.lg,
   },
   swipeLabel: {
+    fontFamily: Fonts.sansSemibold,
     fontSize: 10,
-    fontWeight: '700',
     marginTop: 4,
     textAlign: 'center',
   },
-  accent: {
+  accentStrip: {
     width: 4,
   },
   body: {
     flex: 1,
     paddingVertical: 14,
     paddingHorizontal: 16,
+    gap: 4,
   },
   title: {
-    fontWeight: '700',
-    fontSize: 15,
-    letterSpacing: 0.15,
+    fontFamily: Fonts.serif,
+    fontSize: 16,
+    color: Tokens.ink,
   },
   preview: {
-    marginTop: 4,
+    fontFamily: Fonts.sans,
     fontSize: 13,
-    lineHeight: 19,
-    opacity: 0.75,
+    lineHeight: 18,
+    color: Tokens.inkDim,
+    opacity: 0.85,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  categoryLabel: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  categoryLabel2: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 12,
+    color: Tokens.inkDim,
   },
   threadMeta: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  categoryLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
   dateText: {
+    fontFamily: Fonts.sans,
     fontSize: 11,
-    opacity: 0.5,
+    color: Tokens.inkFaint,
   },
-  dialog: {
-    borderRadius: 24,
-  },
-  dialogActions: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
+  dialog: { borderRadius: 24 },
 });

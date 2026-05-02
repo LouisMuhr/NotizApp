@@ -3,7 +3,8 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-
 import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-
+import { Tokens } from '../theme/theme';
+import { Type, Fonts } from '../theme/typography';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -27,10 +28,10 @@ function NavRow({
     <>
       <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
         <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
-          <MaterialCommunityIcons name={icon} size={19} color="#fff" />
+          <MaterialCommunityIcons name={icon} size={19} color={Tokens.paper} />
         </View>
         <View style={styles.rowText}>
-          <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontWeight: '500' }}>
+          <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontFamily: Fonts.sansMedium }}>
             {label}
           </Text>
           {sublabel ? (
@@ -46,7 +47,7 @@ function NavRow({
         />
       </TouchableOpacity>
       {showDivider && (
-        <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
+        <View style={[styles.divider, { backgroundColor: Tokens.rule }]} />
       )}
     </>
   );
@@ -67,9 +68,9 @@ function InfoRow({
   return (
     <View style={styles.row}>
       <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
-        <MaterialCommunityIcons name={icon} size={19} color="#fff" />
+        <MaterialCommunityIcons name={icon} size={19} color={Tokens.paper} />
       </View>
-      <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontWeight: '500', flex: 1 }}>
+      <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontFamily: Fonts.sansMedium, flex: 1 }}>
         {label}
       </Text>
       <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 14 }}>{value}</Text>
@@ -82,11 +83,11 @@ export default function SettingsScreen() {
   const navigation = useNavigation<any>();
 
   const colors = {
-    purple: '#7B6EF6',
-    teal: '#3ECFB4',
-    orange: '#FFB347',
-    blue: '#4A90D9',
-    gray: '#6B7280',
+    amber: Tokens.amberDeep,
+    amberMid: Tokens.amber,
+    ink: Tokens.ink,
+    inkDim: Tokens.inkDim,
+    inkFaint: Tokens.inkFaint,
   };
 
   return (
@@ -94,6 +95,11 @@ export default function SettingsScreen() {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.content}
     >
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Einstellungen</Text>
+      </View>
+
       {/* ── Allgemein ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         Allgemein
@@ -101,7 +107,7 @@ export default function SettingsScreen() {
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="palette-outline"
-          iconBg={colors.purple}
+          iconBg={colors.amber}
           label="Darstellung"
           sublabel="Vibration & Feedback"
           onPress={() => navigation.navigate('SettingsDarstellung')}
@@ -116,7 +122,7 @@ export default function SettingsScreen() {
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="tag-outline"
-          iconBg={colors.teal}
+          iconBg={colors.amberMid}
           label="Kategorien"
           sublabel="Kategorien verwalten"
           onPress={() => navigation.navigate('SettingsKategorien')}
@@ -133,7 +139,7 @@ export default function SettingsScreen() {
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
             <NavRow
               icon="bell-outline"
-              iconBg={colors.orange}
+              iconBg={colors.ink}
               label="Benachrichtigungen"
               sublabel="Alarme & Akkuoptimierung"
               onPress={() => navigation.navigate('SettingsBenachrichtigungen')}
@@ -150,7 +156,7 @@ export default function SettingsScreen() {
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="cloud-sync-outline"
-          iconBg={colors.blue}
+          iconBg={colors.inkDim}
           label="Synchronisation"
           sublabel="Claude-Bridge & Device-ID"
           onPress={() => navigation.navigate('SettingsSynchronisation')}
@@ -165,7 +171,7 @@ export default function SettingsScreen() {
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <InfoRow
           icon="application-outline"
-          iconBg={colors.gray}
+          iconBg={colors.inkFaint}
           label="Version"
           value="1.0.0"
         />
@@ -176,15 +182,29 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100, gap: 6 },
+  header: {
+    paddingBottom: 8,
+    paddingTop: 4,
+  },
+  headerTitle: {
+    ...Type.h1,
+    color: Tokens.ink,
+  },
   sectionHeader: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.84,
+    textTransform: 'uppercase',
     marginTop: 10,
     marginBottom: 4,
     marginLeft: 4,
   },
-  card: { borderRadius: 20, overflow: 'hidden' },
+  card: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Tokens.paperEdge,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -200,5 +220,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowText: { flex: 1 },
-  divider: { height: 1, marginLeft: 62, opacity: 0.35 },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 62 },
 });

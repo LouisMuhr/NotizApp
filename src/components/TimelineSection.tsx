@@ -1,9 +1,11 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Note } from '../models/Note';
 import TimelineNoteCard from './TimelineNoteCard';
+import { Tokens } from '../theme/theme';
+import { Fonts } from '../theme/typography';
+import { Text } from 'react-native-paper';
 
 interface Props {
   groupLabel: string;
@@ -12,17 +14,15 @@ interface Props {
 }
 
 export default function TimelineSection({ groupLabel, notes, onNotePress }: Props) {
-  const theme = useTheme();
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <MaterialCommunityIcons
           name="calendar-outline"
           size={13}
-          color={theme.colors.primary}
+          color={Tokens.amber}
         />
-        <Text style={[styles.label, { color: theme.colors.primary }]}>
+        <Text style={styles.label}>
           {groupLabel}
         </Text>
       </View>
@@ -45,10 +45,11 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   label: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
     textTransform: 'uppercase',
-    letterSpacing: 0.9,
+    letterSpacing: 0.84,
+    color: Tokens.amber,
     opacity: 0.85,
   },
   cards: {

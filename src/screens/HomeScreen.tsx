@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { StyleSheet, View, FlatList, Pressable, Animated, Easing } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
@@ -9,7 +8,9 @@ import { FilterOptions } from '../models/Note';
 import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
 import QuickCaptureFAB from '../components/QuickCaptureFAB';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { Radii, Shadows } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
+import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 
 interface Props {
@@ -29,7 +30,6 @@ export default function HomeScreen({ navigation }: Props) {
   });
 
   const filteredNotes = useMemo(() => {
-    // Dedupe by id defensively to avoid duplicate React keys
     const seen = new Set<string>();
     let result = notes.filter((n) => {
       if (seen.has(n.id)) return false;
@@ -50,7 +50,6 @@ export default function HomeScreen({ navigation }: Props) {
     }
 
     result.sort((a, b) => {
-      // Pinned notes always come first
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
 
@@ -79,21 +78,20 @@ export default function HomeScreen({ navigation }: Props) {
     return result;
   }, [notes, filters]);
 
-  // FAB pulse animation (subtle "alive" feel)
   const fabPulse = useRef(new Animated.Value(1)).current;
   const fabScale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(fabPulse, {
-          toValue: 1.06,
-          duration: 1400,
+          toValue: 1.04,
+          duration: 1600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(fabPulse, {
           toValue: 1,
-          duration: 1400,
+          duration: 1600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -112,32 +110,20 @@ export default function HomeScreen({ navigation }: Props) {
   }
 
   const fabPressIn = () => {
-    Animated.spring(fabScale, {
-      toValue: 0.9,
-      friction: 5,
-      tension: 220,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(fabScale, { toValue: 0.9, friction: 5, tension: 220, useNativeDriver: true }).start();
   };
   const fabPressOut = () => {
-    Animated.spring(fabScale, {
-      toValue: 1,
-      friction: 4,
-      tension: 220,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(fabScale, { toValue: 1, friction: 4, tension: 220, useNativeDriver: true }).start();
   };
+
+  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
-      {/* Custom header with subtle gradient halo */}
+      {/* Header — Serif h1 "Notizen", Datum als Eyebrow */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
-          Notizen
-        </Text>
-        <Text style={[styles.headerSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-          {notes.length} {notes.length === 1 ? 'Notiz' : 'Notizen'}
-        </Text>
+        <Text style={styles.headerEyebrow}>{today}</Text>
+        <Text style={styles.headerTitle}>Notizen</Text>
       </View>
 
       <FilterBar
@@ -148,18 +134,13 @@ export default function HomeScreen({ navigation }: Props) {
 
       {filteredNotes.length === 0 ? (
         <View style={styles.center}>
-          <LinearGradient
-            colors={Gradients.primary}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.emptyIconWrap}
-          >
+          <View style={[styles.emptyIconWrap, { backgroundColor: Tokens.amberSoft }]}>
             <MaterialCommunityIcons
               name={notes.length === 0 ? 'notebook-plus-outline' : 'file-search-outline'}
               size={48}
-              color="#FFFFFF"
+              color={Tokens.amberDeep}
             />
-          </LinearGradient>
+          </View>
           <Text
             variant="titleMedium"
             style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
@@ -191,10 +172,11 @@ export default function HomeScreen({ navigation }: Props) {
         />
       )}
 
+      {/* FAB — Solid Amber, kein Gradient */}
       <Animated.View
         style={[
           styles.fabWrap,
-          Shadows.glow(Gradients.primary[0]),
+          Shadows.softWarm,
           { transform: [{ scale: fabPulse }] },
         ]}
       >
@@ -206,23 +188,14 @@ export default function HomeScreen({ navigation }: Props) {
             }}
             onPressIn={fabPressIn}
             onPressOut={fabPressOut}
-            style={styles.fabPressable}
+            style={[styles.fabPressable, { backgroundColor: Tokens.amberDeep }]}
           >
-            <LinearGradient
-              colors={Gradients.primary}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.fabGradient}
-            >
-              <MaterialCommunityIcons name="plus" size={30} color="#FFFFFF" />
-            </LinearGradient>
+            <MaterialCommunityIcons name="plus" size={30} color={Tokens.paper} />
           </Pressable>
         </Animated.View>
       </Animated.View>
 
-      {/* Brainstorm-FAB: Tap = Voice, Long-Press = Text */}
       <QuickCaptureFAB />
-
     </View>
   );
 }
@@ -236,15 +209,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 4,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  headerEyebrow: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.84,
+    textTransform: 'uppercase',
+    color: Tokens.inkFaint,
+    marginBottom: 2,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    opacity: 0.6,
+  headerTitle: {
+    ...Type.h1,
+    color: Tokens.ink,
   },
   center: {
     flex: 1,
@@ -262,8 +237,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     marginTop: 22,
     textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 18,
+    fontFamily: Fonts.serif,
   },
   emptySubtitle: {
     marginTop: 6,
@@ -281,17 +255,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   fabPressable: {
-    borderRadius: 22,
-    overflow: 'hidden',
-  },
-  fabGradient: {
     width: 64,
     height: 64,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dialog: {
-    borderRadius: 24,
   },
 });

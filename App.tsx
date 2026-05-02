@@ -1,7 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
+import { useFonts } from 'expo-font';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
+import {
+  InstrumentSerif_400Regular,
+  InstrumentSerif_400Regular_Italic,
+} from '@expo-google-fonts/instrument-serif';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -9,7 +20,7 @@ import * as Notifications from 'expo-notifications';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { NotesProvider } from './src/context/NotesContext';
 import { ThoughtsProvider } from './src/context/ThoughtsContext';
-import { AppTheme } from './src/theme/theme';
+import { AppTheme, Tokens } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import ShareHandler from './src/components/ShareHandler';
 import { requestNotificationPermissions } from './src/utils/notifications';
@@ -18,14 +29,14 @@ import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 
 const navTheme = {
-  ...DarkTheme,
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
-    background: AppTheme.colors.background,
-    card: AppTheme.colors.surface,
-    text: AppTheme.colors.onSurface,
-    primary: AppTheme.colors.primary,
-    border: AppTheme.colors.outline,
+    ...DefaultTheme.colors,
+    background: Tokens.paper,
+    card: Tokens.paper,
+    text: Tokens.ink,
+    primary: Tokens.amberDeep,
+    border: Tokens.rule,
   },
 };
 
@@ -71,6 +82,17 @@ function NotificationBootstrap() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    InstrumentSerif_400Regular,
+    InstrumentSerif_400Regular_Italic,
+  });
+
+  if (!fontsLoaded) return null;
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -82,7 +104,7 @@ export default function App() {
                   <NotificationBootstrap />
                   <ShareHandler />
                   <AppNavigator />
-                  <StatusBar style="light" />
+                  <StatusBar style="dark" />
                 </ThoughtsProvider>
               </NotesProvider>
             </NavigationContainer>
