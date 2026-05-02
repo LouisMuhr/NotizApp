@@ -155,9 +155,13 @@ single-user/anon-key setups; replace for multi-user deployments.
 `threads` has an `is_pinned` column (Slice 5 migration — run once in SQL editor).
 
 ### Theme
-`src/theme/theme.ts` – extends `MD3DarkTheme` from react-native-paper.
-Deep navy backgrounds (`#0F1117` / `#181B23`), soft indigo primary (`#7B6EF6`),
-mint secondary (`#3ECFB4`), amber tertiary (`#FFB347`).
+`src/theme/theme.ts` — extends `MD3LightTheme` (war: Dark).
+Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als
+einzige Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body)
+über `expo-font` in App.tsx geladen.
+Kategorien werden durch Hue-Rotation in `src/theme/categoryAccents.ts`
+unterschieden — keine bunten Gradients mehr.
+Neue Dateien: `src/theme/typography.ts` (Type-Presets), `src/theme/categoryAccents.ts`.
 
 ### Brainstorm Worker
 `bridge/worker/brainstorm-worker.mjs` – standalone Node.js ESM CLI (no bundler,

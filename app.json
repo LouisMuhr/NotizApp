@@ -35,7 +35,11 @@
       "intentFilters": [
         {
           "action": "android.intent.action.SEND",
-          "data": [{ "mimeType": "text/plain" }],
+          "data": [
+            {
+              "mimeType": "text/plain"
+            }
+          ],
           "category": "android.intent.category.DEFAULT"
         }
       ]
@@ -66,7 +70,8 @@
             "NSExtensionActivationSupportsText": true
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

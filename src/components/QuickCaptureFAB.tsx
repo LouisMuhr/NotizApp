@@ -5,9 +5,9 @@
 
 import React, { useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { Radii, Shadows } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
 import * as haptics from '../utils/haptics';
 import VoiceCaptureSheet from './VoiceCaptureSheet';
 
@@ -47,7 +47,7 @@ export default function QuickCaptureFAB() {
 
   return (
     <>
-      <View style={[styles.wrap, Shadows.glow(Gradients.secondary[0])]}>
+      <View style={[styles.wrap, Shadows.softWarm]}>
         <Animated.View style={{ transform: [{ scale: fabScale }] }}>
           <Pressable
             onPress={openVoice}
@@ -55,16 +55,9 @@ export default function QuickCaptureFAB() {
             onPressIn={pressIn}
             onPressOut={pressOut}
             delayLongPress={400}
-            style={styles.pressable}
+            style={[styles.fab, { backgroundColor: Tokens.ink }]}
           >
-            <LinearGradient
-              colors={Gradients.secondary}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.gradient}
-            >
-              <MaterialCommunityIcons name="microphone" size={26} color="#FFFFFF" />
-            </LinearGradient>
+            <MaterialCommunityIcons name="pencil-outline" size={24} color={Tokens.paper} />
           </Pressable>
         </Animated.View>
       </View>
@@ -85,11 +78,7 @@ const styles = StyleSheet.create({
     bottom: 165,
     borderRadius: Radii.md,
   },
-  pressable: {
-    borderRadius: Radii.md,
-    overflow: 'hidden',
-  },
-  gradient: {
+  fab: {
     width: 54,
     height: 54,
     borderRadius: Radii.md,

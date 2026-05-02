@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { StyleSheet, View, ScrollView } from 'react-native';
 import { Chip, Searchbar, Menu, IconButton, useTheme } from 'react-native-paper';
 import { FilterOptions, SortField, SortOrder } from '../models/Note';
-import { getCategoryColor, withAlpha } from '../utils/categoryColors';
+import { getCategoryAccent } from '../theme/categoryAccents';
+import { Tokens } from '../theme/theme';
 
 interface Props {
   filters: FilterOptions;
@@ -73,6 +74,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chipRow}
       >
+        {/* "Alle"-Chip */}
         <Chip
           selected={filters.category === null}
           onPress={() => onFiltersChange({ ...filters, category: null })}
@@ -80,12 +82,12 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
           style={[
             styles.chip,
             filters.category === null
-              ? { backgroundColor: theme.colors.primaryContainer }
+              ? { backgroundColor: Tokens.amberSoft }
               : { backgroundColor: 'transparent' },
           ]}
           textStyle={[
             styles.chipText,
-            { color: filters.category === null ? theme.colors.primary : theme.colors.onSurfaceVariant },
+            { color: filters.category === null ? Tokens.amberDeep : theme.colors.onSurfaceVariant },
           ]}
         >
           Alle
@@ -93,7 +95,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
 
         {categories.map((cat) => {
           const isActive = filters.category === cat;
-          const color = getCategoryColor(cat);
+          const accent = getCategoryAccent(cat);
           return (
             <Chip
               key={cat}
@@ -108,12 +110,12 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
               style={[
                 styles.chip,
                 isActive
-                  ? { backgroundColor: withAlpha(color, 0.15) }
+                  ? { backgroundColor: accent.soft }
                   : { backgroundColor: 'transparent' },
               ]}
               textStyle={[
                 styles.chipText,
-                { color: isActive ? color : theme.colors.onSurfaceVariant },
+                { color: isActive ? accent.deep : theme.colors.onSurfaceVariant },
               ]}
             >
               {cat}

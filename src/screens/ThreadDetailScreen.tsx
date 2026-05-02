@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View, ScrollView } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
 import { useNotes } from '../context/NotesContext';
-import { Gradients } from '../theme/gradients';
+import { Insets, Shadows } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
+import { Type, Fonts } from '../theme/typography';
 import { groupNotesByTime } from '../utils/timeGrouping';
 import TimelineSection from '../components/TimelineSection';
 
@@ -60,27 +61,18 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Summary card */}
-        <View style={[styles.summaryCard, { backgroundColor: theme.colors.surfaceVariant }]}>
-          <LinearGradient
-            colors={Gradients.primary}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.summaryIconWrap}
-          >
-            <MaterialCommunityIcons name="brain" size={20} color="#FFFFFF" />
-          </LinearGradient>
+        {/* Summary card — Papier-Stil */}
+        <View style={[styles.summaryCard, Insets.cardBorder, Shadows.softWarm]}>
+          <View style={[styles.summaryIconWrap, { backgroundColor: Tokens.amberSoft }]}>
+            <MaterialCommunityIcons name="creation" size={20} color={Tokens.amberDeep} />
+          </View>
 
-          <Text style={[styles.summaryLabel, { color: theme.colors.onSurfaceVariant }]}>
-            KI-Zusammenfassung
-          </Text>
+          <Text style={styles.summaryLabel}>KI-Zusammenfassung</Text>
 
           {thread.summary ? (
-            <Text style={[styles.summaryText, { color: theme.colors.onSurface }]}>
-              {thread.summary}
-            </Text>
+            <Text style={styles.summaryText}>{thread.summary}</Text>
           ) : (
-            <Text style={[styles.summaryEmpty, { color: theme.colors.onSurfaceVariant }]}>
+            <Text style={styles.summaryEmpty}>
               Noch keine Zusammenfassung vorhanden.{'\n'}
               Der Worker wird sie beim nächsten Lauf erstellen.
             </Text>
@@ -91,24 +83,22 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
             <MaterialCommunityIcons
               name="note-text-outline"
               size={13}
-              color={theme.colors.onSurfaceVariant}
+              color={Tokens.inkFaint}
               style={{ marginRight: 4 }}
             />
-            <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
+            <Text style={styles.metaText}>
               {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
             </Text>
             {lastSynth && (
               <>
-                <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>·</Text>
+                <Text style={styles.metaDot}>·</Text>
                 <MaterialCommunityIcons
                   name="sync"
                   size={12}
-                  color={theme.colors.onSurfaceVariant}
+                  color={Tokens.inkFaint}
                   style={{ marginRight: 3 }}
                 />
-                <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
-                  {lastSynth}
-                </Text>
+                <Text style={styles.metaText}>{lastSynth}</Text>
               </>
             )}
           </View>
@@ -117,9 +107,7 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
         {/* Timeline */}
         {groupedNotes.length > 0 && (
           <View style={styles.timeline}>
-            <Text style={[styles.timelineHeader, { color: theme.colors.onSurfaceVariant }]}>
-              Enthaltene Notizen
-            </Text>
+            <Text style={styles.timelineHeader}>Enthaltene Notizen</Text>
             {groupedNotes.map((group) => (
               <TimelineSection
                 key={group.label}
@@ -140,9 +128,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { padding: 16, gap: 16 },
   summaryCard: {
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 18,
     gap: 10,
+    backgroundColor: Tokens.paperDeep,
   },
   summaryIconWrap: {
     width: 40,
@@ -152,26 +141,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   summaryLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    opacity: 0.7,
+    letterSpacing: 0.84,
+    color: Tokens.inkFaint,
   },
-  summaryText: { fontSize: 15, lineHeight: 22 },
-  summaryEmpty: { fontSize: 13, fontStyle: 'italic', opacity: 0.5, lineHeight: 20 },
+  summaryText: {
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    color: Tokens.ink,
+  },
+  summaryEmpty: {
+    fontFamily: Fonts.serifItalic,
+    fontSize: 14,
+    color: Tokens.inkFaint,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
   summaryMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  metaText: { fontSize: 12, opacity: 0.6 },
-  metaDot: { marginHorizontal: 5, opacity: 0.4 },
+  metaText: { fontFamily: Fonts.sans, fontSize: 12, color: Tokens.inkFaint },
+  metaDot: { marginHorizontal: 5, color: Tokens.inkFaint, opacity: 0.4 },
   timeline: {
     gap: 16,
   },
   timelineHeader: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    opacity: 0.7,
+    letterSpacing: 0.84,
+    color: Tokens.inkFaint,
     marginBottom: -4,
   },
 });

@@ -7,14 +7,15 @@ import {
   Animated,
 } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Thread } from '../models/Thought';
-import GradientCard from '../components/GradientCard';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
+import { Type, Fonts } from '../theme/typography';
+import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
 
 interface Props {
@@ -33,21 +34,6 @@ function formatRelativeTime(iso: string): string {
   return `vor ${days} Tagen`;
 }
 
-// Deterministic gradient per thread (cycles through the palette)
-const THREAD_GRADIENTS: Array<readonly [string, string]> = [
-  Gradients.primary,
-  Gradients.secondary,
-  Gradients.tertiary,
-  Gradients.lavender,
-  Gradients.sky,
-  Gradients.emerald,
-  Gradients.pink,
-];
-
-function getThreadGradient(index: number): readonly [string, string] {
-  return THREAD_GRADIENTS[index % THREAD_GRADIENTS.length];
-}
-
 interface ThreadCardProps {
   thread: Thread;
   index: number;
@@ -60,8 +46,8 @@ interface ThreadCardProps {
 
 function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
   const theme = useTheme();
-  const gradient = getThreadGradient(index);
   const swipeableRef = useRef<Swipeable>(null);
+  const accent = getCategoryAccent(thread.title);
 
   const lastUpdated = formatRelativeTime(thread.updatedAt);
 
@@ -75,21 +61,11 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
       extrapolate: 'clamp',
     });
     return (
-      <View
-        style={[
-          styles.swipeAction,
-          styles.archiveAction,
-          { backgroundColor: theme.colors.tertiaryContainer },
-        ]}
-      >
+      <View style={[styles.swipeAction, styles.archiveAction, { backgroundColor: Tokens.amberSoft }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
-          <MaterialCommunityIcons
-            name="archive-outline"
-            size={26}
-            color={theme.colors.tertiary}
-          />
+          <MaterialCommunityIcons name="archive-outline" size={26} color={Tokens.amberDeep} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.tertiary }]}>
+        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>
           Archivieren
         </Text>
       </View>
@@ -106,21 +82,15 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
       extrapolate: 'clamp',
     });
     return (
-      <View
-        style={[
-          styles.swipeAction,
-          styles.pinAction,
-          { backgroundColor: theme.colors.secondaryContainer },
-        ]}
-      >
+      <View style={[styles.swipeAction, styles.pinAction, { backgroundColor: Tokens.paperDeep }]}>
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons
             name={thread.isPinned ? 'pin-off-outline' : 'pin-outline'}
             size={26}
-            color={theme.colors.secondary}
+            color={Tokens.ink}
           />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.secondary }]}>
+        <Text style={[styles.swipeLabel, { color: Tokens.ink }]}>
           {thread.isPinned ? 'Lösen' : 'Fixieren'}
         </Text>
       </View>
@@ -163,18 +133,9 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
         }}
         style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
       >
-        <GradientCard
-          colors={['#1E2130', '#181B26'] as unknown as readonly [string, string]}
-          style={styles.card}
-          glow={false}
-        >
-          {/* Accent bar on the left */}
-          <LinearGradient
-            colors={gradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.accentBar}
-          />
+        <View style={[styles.card, Insets.cardBorder, Shadows.softWarm]}>
+          {/* Accent-Streifen links */}
+          <View style={[styles.accentBar, { backgroundColor: accent.soft }]} />
 
           <View style={styles.cardContent}>
             {/* Header row */}
@@ -183,35 +144,28 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
                 <MaterialCommunityIcons
                   name="pin"
                   size={14}
-                  color={theme.colors.secondary}
+                  color={Tokens.amberDeep}
                   style={styles.pinIcon}
                 />
               )}
-              <Text
-                style={[styles.threadTitle, { color: theme.colors.onSurface }]}
-                numberOfLines={1}
-              >
+              <Text style={styles.threadTitle} numberOfLines={1}>
                 {thread.title}
               </Text>
               {newCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: gradient[0] }]}>
-                  <Text style={styles.badgeText}>{newCount} neu</Text>
+                <View style={[styles.badge, { backgroundColor: Tokens.amberSoft }]}>
+                  <Text style={[styles.badgeText, { color: Tokens.amberDeep }]}>{newCount} neu</Text>
                 </View>
               )}
+              <MaterialCommunityIcons name="creation" size={14} color={Tokens.amber} />
             </View>
 
             {/* Summary preview */}
             {thread.summary ? (
-              <Text
-                style={[styles.summary, { color: theme.colors.onSurfaceVariant }]}
-                numberOfLines={2}
-              >
+              <Text style={styles.summary} numberOfLines={2}>
                 {thread.summary}
               </Text>
             ) : (
-              <Text
-                style={[styles.summaryEmpty, { color: theme.colors.onSurfaceVariant }]}
-              >
+              <Text style={styles.summaryEmpty}>
                 Noch keine Zusammenfassung — Worker läuft bald.
               </Text>
             )}
@@ -221,19 +175,17 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
               <MaterialCommunityIcons
                 name="thought-bubble-outline"
                 size={13}
-                color={theme.colors.onSurfaceVariant}
+                color={Tokens.inkFaint}
                 style={{ marginRight: 4 }}
               />
-              <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
+              <Text style={styles.metaText}>
                 {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
               </Text>
-              <Text style={[styles.metaDot, { color: theme.colors.onSurfaceVariant }]}>·</Text>
-              <Text style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>
-                {lastUpdated}
-              </Text>
+              <Text style={styles.metaDot}>·</Text>
+              <Text style={styles.metaText}>{lastUpdated}</Text>
             </View>
           </View>
-        </GradientCard>
+        </View>
       </Pressable>
     </Swipeable>
   );
@@ -247,7 +199,6 @@ export default function ThreadsScreen({ navigation }: Props) {
   const activeThreads = threads
     .filter((t) => t.status === 'active')
     .sort((a, b) => {
-      // Pinned threads first, then by updatedAt descending
       if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
@@ -271,40 +222,21 @@ export default function ThreadsScreen({ navigation }: Props) {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.colors.onSurface }]}>
-          Threads
+        <Text style={styles.headerEyebrow}>
+          {activeThreads.length === 0 ? 'Noch keine Threads' : `${activeThreads.length} aktiv`}
         </Text>
-        <Text style={[styles.headerSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-          {activeThreads.length === 0
-            ? 'Noch keine Threads'
-            : `${activeThreads.length} ${activeThreads.length === 1 ? 'Thread' : 'Threads'}`}
-        </Text>
+        <Text style={styles.headerTitle}>Threads</Text>
       </View>
 
       {activeThreads.length === 0 ? (
         <View style={styles.center}>
-          <LinearGradient
-            colors={Gradients.primary}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.emptyIconWrap}
-          >
-            <MaterialCommunityIcons
-              name="thought-bubble-outline"
-              size={48}
-              color="#FFFFFF"
-            />
-          </LinearGradient>
-          <Text
-            variant="titleMedium"
-            style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
-          >
+          <View style={[styles.emptyIconWrap, { backgroundColor: Tokens.amberSoft }]}>
+            <MaterialCommunityIcons name="creation" size={48} color={Tokens.amberDeep} />
+          </View>
+          <Text variant="titleMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
             Noch keine Threads
           </Text>
-          <Text
-            variant="bodySmall"
-            style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
-          >
+          <Text variant="bodySmall" style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}>
             Notizen mit aktiviertem Thread-Feed werden{'\n'}
             vom Worker zu Threads zusammengefasst.
           </Text>
@@ -342,15 +274,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 4,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  headerEyebrow: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 10.5,
+    letterSpacing: 0.84,
+    textTransform: 'uppercase',
+    color: Tokens.inkFaint,
+    marginBottom: 2,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-    opacity: 0.6,
+  headerTitle: {
+    ...Type.h1,
+    color: Tokens.ink,
   },
   center: {
     flex: 1,
@@ -368,8 +302,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     marginTop: 22,
     textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 18,
+    fontFamily: Fonts.serif,
   },
   emptySubtitle: {
     marginTop: 6,
@@ -381,11 +314,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   separator: {
-    height: 10,
+    height: 8,
   },
   swipeContainer: {
     marginHorizontal: 16,
-    borderRadius: 18,
+    borderRadius: Radii.lg,
     overflow: 'hidden',
   },
   swipeAction: {
@@ -394,20 +327,20 @@ const styles = StyleSheet.create({
     width: 92,
   },
   archiveAction: {
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 18,
+    borderTopRightRadius: Radii.lg,
+    borderBottomRightRadius: Radii.lg,
   },
   pinAction: {
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
+    borderTopLeftRadius: Radii.lg,
+    borderBottomLeftRadius: Radii.lg,
   },
   swipeLabel: {
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: Fonts.sansSemibold,
     marginTop: 4,
   },
   cardPressable: {
-    borderRadius: 18,
+    borderRadius: Radii.lg,
   },
   cardPressed: {
     opacity: 0.85,
@@ -416,7 +349,8 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     overflow: 'hidden',
-    borderRadius: 18,
+    borderRadius: Radii.lg,
+    backgroundColor: Tokens.paperDeep,
   },
   accentBar: {
     width: 4,
@@ -438,9 +372,8 @@ const styles = StyleSheet.create({
   },
   threadTitle: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+    ...Type.noteTitle,
+    color: Tokens.ink,
   },
   badge: {
     borderRadius: 999,
@@ -448,19 +381,20 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   badgeText: {
+    fontFamily: Fonts.sansSemibold,
     fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   summary: {
+    fontFamily: Fonts.sans,
     fontSize: 13,
     lineHeight: 18,
-    opacity: 0.8,
+    color: Tokens.inkDim,
   },
   summaryEmpty: {
-    fontSize: 12,
+    fontFamily: Fonts.serifItalic,
+    fontSize: 13,
+    color: Tokens.inkFaint,
     fontStyle: 'italic',
-    opacity: 0.4,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -468,11 +402,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   metaText: {
+    fontFamily: Fonts.sans,
     fontSize: 12,
-    opacity: 0.6,
+    color: Tokens.inkFaint,
   },
   metaDot: {
     marginHorizontal: 5,
+    color: Tokens.inkFaint,
     opacity: 0.4,
   },
 });
