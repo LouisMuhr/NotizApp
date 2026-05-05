@@ -5,7 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
-import { deleteAnonUser } from '../sync/deleteAnonUser';
+import { migrateAndDeleteAnonUser } from '../sync/deleteAnonUser';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 
@@ -82,7 +82,7 @@ export default function SettingsKontoScreen() {
       setInputEmail('');
       setInputPassword('');
       setAccountState('signed-in');
-      if (anonUid) deleteAnonUser(anonUid);
+      if (anonUid) migrateAndDeleteAnonUser(anonUid, data.user.id);
     }
   };
 
