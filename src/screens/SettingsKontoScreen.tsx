@@ -2,13 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { useTheme, Text, TextInput, Button, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabase } from '../sync/supabaseClient';
+import { clearUserIdCache } from '../sync/userId';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 
+const SIGNED_OUT_KEY = '@notizapp_signed_out_uid';
+
+type AccountState = 'loading' | 'anonymous' | 'signed-in' | 'signed-out';
+
 export default function SettingsKontoScreen() {
   const theme = useTheme();
-  const [isAnonymous, setIsAnonymous] = useState<boolean | null>(null);
+  const [accountState, setAccountState] = useState<AccountState>('loading');
   const [email, setEmail] = useState('');
   const [inputEmail, setInputEmail] = useState('');
   const [inputPassword, setInputPassword] = useState('');
@@ -21,10 +27,60 @@ export default function SettingsKontoScreen() {
       const supabase = getSupabase();
       if (!supabase) return;
       const { data: { user } } = await supabase.auth.getUser();
-      setIsAnonymous(user?.is_anonymous ?? true);
-      setEmail(user?.email ?? '');
+      if (!user || user.is_anonymous) {
+        const signedOutUid = await AsyncStorage.getItem(SIGNED_OUT_KEY);
+        if (signedOutUid && user && signedOutUid === user.id) {
+          // gleicher anonymer User wie beim Abmelden → Anmelde-Formular zeigen
+          setAccountState('signed-out');
+        } else {
+          // neuer anonymer User oder kein Flag → Konto sichern zeigen
+          if (signedOutUid) await AsyncStorage.removeItem(SIGNED_OUT_KEY);
+          setAccountState('anonymous');
+        }
+      } else {
+        setAccountState('signed-in');
+        setEmail(user.email ?? '');
+      }
     })();
   }, []);
+
+  const handleSignOut = async () => {
+    setLoading(true);
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    await supabase.auth.signOut();
+    clearUserIdCache();
+    if (currentUser) await AsyncStorage.setItem(SIGNED_OUT_KEY, currentUser.id);
+    setLoading(false);
+    setEmail('');
+    setAccountState('signed-out');
+  };
+
+  const handleSignIn = async () => {
+    if (!inputEmail.trim() || !inputPassword) {
+      setSnack('Bitte E-Mail und Passwort eingeben.');
+      return;
+    }
+    setLoading(true);
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: inputEmail.trim(),
+      password: inputPassword,
+    });
+    setLoading(false);
+    if (error) {
+      setSnack('Fehler: ' + error.message);
+    } else {
+      clearUserIdCache();
+      await AsyncStorage.removeItem(SIGNED_OUT_KEY);
+      setEmail(data.user?.email ?? '');
+      setInputEmail('');
+      setInputPassword('');
+      setAccountState('signed-in');
+    }
+  };
 
   const handleUpgrade = async () => {
     if (!inputEmail.trim() || !inputPassword) {
@@ -50,7 +106,7 @@ export default function SettingsKontoScreen() {
     if (error) {
       setSnack('Fehler: ' + error.message);
     } else {
-      setIsAnonymous(false);
+      setAccountState('signed-in');
       setEmail(inputEmail.trim());
       setInputEmail('');
       setInputPassword('');
@@ -86,7 +142,7 @@ export default function SettingsKontoScreen() {
     }
   };
 
-  if (isAnonymous === null) {
+  if (accountState === 'loading') {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
@@ -96,7 +152,7 @@ export default function SettingsKontoScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      {isAnonymous ? (
+      {accountState === 'anonymous' && (
         <>
           <View style={[styles.banner, { backgroundColor: Tokens.amberDeep + '22', borderColor: Tokens.amberDeep + '55' }]}>
             <MaterialCommunityIcons name="alert-circle-outline" size={20} color={Tokens.amberDeep} />
@@ -144,8 +200,42 @@ export default function SettingsKontoScreen() {
               Konto sichern
             </Button>
           </View>
+
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+            Bereits ein Konto?
+          </Text>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <TextInput
+              label="E-Mail"
+              value={inputEmail}
+              onChangeText={setInputEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              mode="outlined"
+              style={styles.input}
+            />
+            <TextInput
+              label="Passwort"
+              value={inputPassword}
+              onChangeText={setInputPassword}
+              secureTextEntry
+              mode="outlined"
+              style={styles.input}
+            />
+            <Button
+              mode="outlined"
+              onPress={handleSignIn}
+              loading={loading}
+              disabled={loading}
+              style={styles.button}
+            >
+              Anmelden
+            </Button>
+          </View>
         </>
-      ) : (
+      )}
+
+      {accountState === 'signed-in' && (
         <>
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
             Konto
@@ -194,6 +284,58 @@ export default function SettingsKontoScreen() {
               style={styles.button}
             >
               Passwort ändern
+            </Button>
+          </View>
+
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+            Sitzung
+          </Text>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <Button
+              mode="outlined"
+              onPress={handleSignOut}
+              loading={loading}
+              disabled={loading}
+              textColor={theme.colors.error}
+              style={[styles.button, { borderColor: theme.colors.error + '55' }]}
+            >
+              Abmelden
+            </Button>
+          </View>
+        </>
+      )}
+
+      {accountState === 'signed-out' && (
+        <>
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+            Anmelden
+          </Text>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <TextInput
+              label="E-Mail"
+              value={inputEmail}
+              onChangeText={setInputEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              mode="outlined"
+              style={styles.input}
+            />
+            <TextInput
+              label="Passwort"
+              value={inputPassword}
+              onChangeText={setInputPassword}
+              secureTextEntry
+              mode="outlined"
+              style={styles.input}
+            />
+            <Button
+              mode="contained"
+              onPress={handleSignIn}
+              loading={loading}
+              disabled={loading}
+              style={styles.button}
+            >
+              Anmelden
             </Button>
           </View>
         </>
