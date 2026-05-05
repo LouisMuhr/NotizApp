@@ -23,6 +23,7 @@ interface NotesContextType {
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
   rescheduleAllReminders: () => Promise<void>;
+  resyncForUser: (userId: string) => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType>({} as NotesContextType);
@@ -32,8 +33,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
-  const deviceIdRef = useRef<string | null>(null); // holds auth user_id after sign-in
+  const deviceIdRef = useRef<string | null>(null);
   const tombstonesRef = useRef<Set<string>>(new Set());
+  const startSyncRef = useRef<((userId: string, remoteOnly?: boolean) => Promise<void>) | null>(null);
 
   const addTombstones = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
@@ -50,7 +52,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
-    let authUnsub: (() => void) | undefined;
     let cancelled = false;
 
     (async () => {
@@ -128,7 +129,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       // Sync layer (additive, only if configured)
       if (!isSyncConfigured()) return;
 
-      const startSync = async (userId: string, localNotes: Note[]) => {
+      const startSync = async (userId: string, localNotes: Note[], remoteOnly = false) => {
         deviceIdRef.current = userId;
         const purgeIds = [
           ...Array.from(archiveIds),
@@ -146,15 +147,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
             if (tombstonesRef.current.has(r.id)) continue;
             byId.set(r.id, r);
           }
-          for (const local of localNotes) {
-            if (archiveIds.has(local.id)) continue;
-            if (tombstonesRef.current.has(local.id)) continue;
-            const existing = byId.get(local.id);
-            if (existing) {
-              if (new Date(local.updatedAt) > new Date(existing.updatedAt)) {
-                byId.set(local.id, local);
-              } else {
-                byId.set(local.id, { ...existing, notificationId: local.notificationId });
+          if (!remoteOnly) {
+            for (const local of localNotes) {
+              if (archiveIds.has(local.id)) continue;
+              if (tombstonesRef.current.has(local.id)) continue;
+              const existing = byId.get(local.id);
+              if (existing) {
+                if (new Date(local.updatedAt) > new Date(existing.updatedAt)) {
+                  byId.set(local.id, local);
+                } else {
+                  byId.set(local.id, { ...existing, notificationId: local.notificationId });
+                }
               }
             }
           }
@@ -177,6 +180,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         });
       };
 
+      startSyncRef.current = (userId: string, remoteOnly = false) =>
+        startSync(userId, cleanedLocal, remoteOnly);
+
       try {
         const deviceId = await getUserId();
         if (!deviceId) return;
@@ -185,26 +191,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         console.warn('[sync] init failed', e);
       }
 
-      // Re-sync when user signs in
-      const supabase = getSupabase();
-      if (supabase) {
-        const { data } = supabase.auth.onAuthStateChange((event, session) => {
-          if (event === 'SIGNED_IN' && session?.user) {
-            clearUserIdCache();
-            startSync(session.user.id, cleanedLocal).catch((e) =>
-              console.warn('[sync] re-sync after sign-in failed', e),
-            );
-          }
-        });
-        authUnsub = data.subscription.unsubscribe;
-      }
-
     })();
 
     return () => {
       cancelled = true;
       if (unsubscribe) unsubscribe();
-      if (authUnsub) authUnsub();
     };
   }, []);
 
@@ -403,6 +394,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await saveCategories(updated);
   }, [categories]);
 
+  const resyncForUser = useCallback(async (userId: string) => {
+    clearUserIdCache();
+    if (startSyncRef.current) {
+      await startSyncRef.current(userId, true);
+    }
+  }, []);
+
   return (
     <NotesContext.Provider
       value={{
@@ -419,6 +417,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         addCategory,
         deleteCategory,
         rescheduleAllReminders,
+        resyncForUser,
       }}
     >
       {children}
