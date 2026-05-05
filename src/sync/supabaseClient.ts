@@ -28,22 +28,13 @@ export function isSyncConfigured(): boolean {
 
 export async function ensureAuth(): Promise<string | null> {
   const supabase = getSupabase();
-  if (!supabase) {
-    console.warn('[auth] ensureAuth: supabase not configured');
-    return null;
-  }
-  console.log('[auth] ensureAuth: checking existing session...');
+  if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    console.log('[auth] existing user:', user.id, 'anon:', user.is_anonymous);
-    return user.id;
-  }
-  console.log('[auth] no session, calling signInAnonymously...');
+  if (user) return user.id;
   const { data, error } = await supabase.auth.signInAnonymously();
   if (error) {
     console.warn('[auth] signInAnonymously failed', error.message);
     return null;
   }
-  console.log('[auth] signed in anonymously:', data.user?.id);
   return data.user?.id ?? null;
 }

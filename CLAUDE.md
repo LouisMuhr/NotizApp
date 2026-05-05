@@ -180,3 +180,4 @@ Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` aus `bridge/worker/.env`
 - **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
 - **No test files** — rely on manual device testing and TypeScript.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
+- **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
