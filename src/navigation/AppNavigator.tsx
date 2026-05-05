@@ -15,6 +15,7 @@ import SettingsDarstellungScreen from '../screens/SettingsDarstellungScreen';
 import SettingsKategorienScreen from '../screens/SettingsKategorienScreen';
 import SettingsBenachrichtigungenScreen from '../screens/SettingsBenachrichtigungenScreen';
 import SettingsSynchronisationScreen from '../screens/SettingsSynchronisationScreen';
+import SettingsKontoScreen from '../screens/SettingsKontoScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -153,6 +154,11 @@ export default function AppNavigator() {
         name="SettingsSynchronisation"
         component={SettingsSynchronisationScreen}
         options={{ title: 'Synchronisation' }}
+      />
+      <Stack.Screen
+        name="SettingsKonto"
+        component={SettingsKontoScreen}
+        options={{ title: 'Konto' }}
       />
     </Stack.Navigator>
   );

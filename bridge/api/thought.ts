@@ -20,16 +20,16 @@ export default async function handler(req: any, res: any) {
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-    const DEVICE_ID = process.env.DEVICE_ID;
+    const BRIDGE_USER_ID = process.env.BRIDGE_USER_ID;
     const BEARER = process.env.MCP_BEARER_TOKEN;
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !DEVICE_ID || !BEARER) {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !BRIDGE_USER_ID || !BEARER) {
       res.status(500).json({
         error: 'missing env',
         have: {
           SUPABASE_URL: !!SUPABASE_URL,
           SUPABASE_SERVICE_KEY: !!SUPABASE_SERVICE_KEY,
-          DEVICE_ID: !!DEVICE_ID,
+          BRIDGE_USER_ID: !!BRIDGE_USER_ID,
           MCP_BEARER_TOKEN: !!BEARER,
         },
       });
@@ -67,7 +67,7 @@ export default async function handler(req: any, res: any) {
     const now = new Date().toISOString();
     const row = {
       id: randomUUID(),
-      device_id: DEVICE_ID,
+      user_id: BRIDGE_USER_ID,
       content,
       source: body.source || 'bridge',
       raw_audio_url: null,

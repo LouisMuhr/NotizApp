@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
-import { isSyncConfigured } from '../sync/supabaseClient';
-import { getDeviceId } from '../sync/deviceId';
+import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
+import { getUserId, clearUserIdCache } from '../sync/userId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import * as haptics from '../utils/haptics';
 
@@ -32,7 +32,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
-  const deviceIdRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null); // holds auth user_id after sign-in
   const tombstonesRef = useRef<Set<string>>(new Set());
 
   const addTombstones = useCallback(async (ids: string[]) => {
@@ -50,6 +50,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
+    let authUnsub: (() => void) | undefined;
     let cancelled = false;
 
     (async () => {
@@ -126,34 +127,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
       // Sync layer (additive, only if configured)
       if (!isSyncConfigured()) return;
-      try {
-        const deviceId = await getDeviceId();
-        deviceIdRef.current = deviceId;
-        // Clean up remote: drop everything that has been archived or tombstoned locally
+
+      const startSync = async (userId: string, localNotes: Note[]) => {
+        deviceIdRef.current = userId;
         const purgeIds = [
           ...Array.from(archiveIds),
           ...Array.from(tombstonesRef.current),
         ];
         if (purgeIds.length > 0) {
-          try {
-            await deleteRemote(deviceId, purgeIds);
-          } catch (e) {
-            console.warn('[sync] purge failed', e);
-          }
+          try { await deleteRemote(userId, purgeIds); } catch (e) { console.warn('[sync] purge failed', e); }
         }
-        const remote = await pullRemote(deviceId);
+        const remote = await pullRemote(userId);
         if (cancelled) return;
         if (remote !== null) {
-          // Remote ist die authoritative Quelle: Notes die remote nicht existieren
-          // wurden auf dem Server gelöscht und sollen nicht aus dem lokalen Cache
-          // wieder auftauchen.
           const byId = new Map<string, Note>();
           for (const r of remote) {
             if (archiveIds.has(r.id)) continue;
             if (tombstonesRef.current.has(r.id)) continue;
             byId.set(r.id, r);
           }
-          for (const local of cleanedLocal) {
+          for (const local of localNotes) {
             if (archiveIds.has(local.id)) continue;
             if (tombstonesRef.current.has(local.id)) continue;
             const existing = byId.get(local.id);
@@ -161,12 +154,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
               if (new Date(local.updatedAt) > new Date(existing.updatedAt)) {
                 byId.set(local.id, local);
               } else {
-                // Remote gewinnt inhaltlich, aber lokale notificationId behalten
-                // (gerade frisch geplant – Remote hat noch den alten Wert)
                 byId.set(local.id, { ...existing, notificationId: local.notificationId });
               }
             }
-            // Lokale Notes die remote nicht existieren werden ignoriert (server-seitig gelöscht).
           }
           const merged = Array.from(byId.values()).sort(
             (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -174,7 +164,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           setNotes(merged);
           await saveNotes(merged);
         }
-        unsubscribe = subscribeRemote(deviceId, (incoming) => {
+        if (unsubscribe) unsubscribe();
+        unsubscribe = subscribeRemote(userId, (incoming) => {
           if (archiveIds.has(incoming.id)) return;
           if (tombstonesRef.current.has(incoming.id)) return;
           setNotes((prev) => {
@@ -184,14 +175,36 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
         });
+      };
+
+      try {
+        const deviceId = await getUserId();
+        if (!deviceId) return;
+        await startSync(deviceId, cleanedLocal);
       } catch (e) {
         console.warn('[sync] init failed', e);
       }
+
+      // Re-sync when user signs in
+      const supabase = getSupabase();
+      if (supabase) {
+        const { data } = supabase.auth.onAuthStateChange((event, session) => {
+          if (event === 'SIGNED_IN' && session?.user) {
+            clearUserIdCache();
+            startSync(session.user.id, cleanedLocal).catch((e) =>
+              console.warn('[sync] re-sync after sign-in failed', e),
+            );
+          }
+        });
+        authUnsub = data.subscription.unsubscribe;
+      }
+
     })();
 
     return () => {
       cancelled = true;
       if (unsubscribe) unsubscribe();
+      if (authUnsub) authUnsub();
     };
   }, []);
 

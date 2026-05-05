@@ -149,6 +149,21 @@ export default function SettingsScreen() {
         </>
       )}
 
+      {/* ── Konto ── */}
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        Konto
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <NavRow
+          icon="account-circle-outline"
+          iconBg={colors.amberMid}
+          label="Konto & Sicherheit"
+          sublabel="E-Mail, Passwort, Abmelden"
+          onPress={() => navigation.navigate('SettingsKonto')}
+          showDivider={false}
+        />
+      </View>
+
       {/* ── Verbindung ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         Verbindung
@@ -158,7 +173,7 @@ export default function SettingsScreen() {
           icon="cloud-sync-outline"
           iconBg={colors.inkDim}
           label="Synchronisation"
-          sublabel="Claude-Bridge & Device-ID"
+          sublabel="Claude-Bridge & Nutzer-ID"
           onPress={() => navigation.navigate('SettingsSynchronisation')}
           showDivider={false}
         />

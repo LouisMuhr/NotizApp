@@ -38,10 +38,10 @@ loadDotEnv(resolve(__dirname, '../../.env'));
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const DEVICE_ID    = process.env.DEVICE_ID || process.env.EXPO_PUBLIC_DEVICE_ID;
+const BRIDGE_USER_ID = process.env.BRIDGE_USER_ID || process.env.DEVICE_ID;
 
-if (!SUPABASE_URL || !SERVICE_KEY || !DEVICE_ID) {
-  console.error('[similarity-worker] Fehlende Credentials (SUPABASE_URL, SUPABASE_SERVICE_KEY, DEVICE_ID).');
+if (!SUPABASE_URL || !SERVICE_KEY || !BRIDGE_USER_ID) {
+  console.error('[similarity-worker] Fehlende Credentials (SUPABASE_URL, SUPABASE_SERVICE_KEY, BRIDGE_USER_ID).');
   process.exit(1);
 }
 
@@ -79,9 +79,9 @@ async function sbDelete(resource) {
 
 async function cmdFetch() {
   const threads = await sbGet(
-    `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&status=eq.active&select=id,title,summary&order=updated_at.desc`,
+    `threads?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}&status=eq.active&select=id,title,summary&order=updated_at.desc`,
   );
-  process.stdout.write(JSON.stringify({ threads, device_id: DEVICE_ID }, null, 2) + '\n');
+  process.stdout.write(JSON.stringify({ threads, user_id: BRIDGE_USER_ID }, null, 2) + '\n');
 }
 
 async function cmdWrite(arg) {
@@ -105,7 +105,7 @@ async function cmdWrite(arg) {
   }
 
   const rows = pairs.map(({ thread_id_1, thread_id_2, label }) => ({
-    device_id: DEVICE_ID,
+    user_id: BRIDGE_USER_ID,
     thread_id_1,
     thread_id_2,
     label: label ?? '',
@@ -116,7 +116,7 @@ async function cmdWrite(arg) {
 }
 
 async function cmdClear() {
-  await sbDelete(`thread_similarities?device_id=eq.${encodeURIComponent(DEVICE_ID)}`);
+  await sbDelete(`thread_similarities?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}`);
   console.log('[similarity-worker] Alle Einträge gelöscht.');
 }
 

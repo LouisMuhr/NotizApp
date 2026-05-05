@@ -4,7 +4,7 @@ import { useTheme, Text, IconButton, Snackbar } from 'react-native-paper';
 import * as Clipboard from 'expo-clipboard';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isSyncConfigured } from '../sync/supabaseClient';
-import { getDeviceId, isDeviceIdFromEnv } from '../sync/deviceId';
+import { getUserId } from '../sync/userId';
 import { withAlpha } from '../utils/categoryColors';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -41,17 +41,17 @@ function InfoRow({
 
 export default function SettingsSynchronisationScreen() {
   const theme = useTheme();
-  const [deviceId, setDeviceId] = useState('');
+  const [userId, setUserId] = useState('');
   const [snack, setSnack] = useState(false);
   const syncOn = isSyncConfigured();
 
   useEffect(() => {
-    getDeviceId().then(setDeviceId);
+    getUserId().then((id) => setUserId(id ?? ''));
   }, []);
 
-  const copyDeviceId = async () => {
-    if (!deviceId) return;
-    await Clipboard.setStringAsync(deviceId);
+  const copyUserId = async () => {
+    if (!userId) return;
+    await Clipboard.setStringAsync(userId);
     setSnack(true);
   };
 
@@ -79,26 +79,26 @@ export default function SettingsSynchronisationScreen() {
         />
         <InfoRow
           icon="identifier"
-          label="Device-ID"
+          label="Nutzer-ID"
           showDivider={false}
           trailing={
             <View style={styles.deviceRow}>
               <View>
                 <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, textAlign: 'right' }}>
-                  {isDeviceIdFromEnv() ? '.env, fixiert' : 'lokal generiert'}
+                  Supabase Auth
                 </Text>
                 <Text
                   numberOfLines={1}
                   style={{ color: theme.colors.onSurface, fontSize: 12, fontFamily: 'monospace' }}
                 >
-                  {deviceId ? deviceId.slice(0, 12) + '…' : '…'}
+                  {userId ? userId.slice(0, 12) + '…' : '…'}
                 </Text>
               </View>
               <IconButton
                 icon="content-copy"
                 size={16}
                 iconColor={theme.colors.primary}
-                onPress={copyDeviceId}
+                onPress={copyUserId}
                 style={{ margin: -4 }}
               />
             </View>
@@ -113,7 +113,7 @@ export default function SettingsSynchronisationScreen() {
       )}
 
       <Snackbar visible={snack} onDismiss={() => setSnack(false)} duration={1500}>
-        Device-ID kopiert
+        Nutzer-ID kopiert
       </Snackbar>
     </ScrollView>
   );
