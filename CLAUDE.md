@@ -10,8 +10,9 @@ It supports notes with checklists, categories, reminders, pinning, archiving, an
 optional Supabase sync across devices. A secondary "Thoughts/Brainstorm" feature
 (atomare Gedanken → Threads) lives alongside the main notes flow.
 
-A companion **bridge** Vercel serverless API (`NotizApp/bridge/`) exposes note data
-via HTTP and a browser bookmarklet so external tools can push notes into the app.
+A companion **bridge** Vercel serverless API (`bridge/`) exposes note data via HTTP
+and a browser bookmarklet. A **webapp** (`webapp/`) is a Next.js graph visualizer
+for notes and threads.
 
 ---
 
@@ -21,14 +22,6 @@ via HTTP and a browser bookmarklet so external tools can push notes into the app
 c:/NotizApp/
 ├── NotizApp/              # Main Expo app (primary working directory)
 │   ├── App.tsx            # Root component, provider tree
-│   ├── index.ts           # Entry point
-│   ├── app.json           # Expo config
-│   ├── eas.json           # EAS Build config
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── supabase-schema.sql
-│   ├── .env               # Real secrets (git-ignored)
-│   ├── .env.example       # Template
 │   ├── src/
 │   │   ├── components/    # FilterBar, GradientCard, NoteCard,
 │   │   │                  #   QuickCaptureFAB, VoiceCaptureSheet
@@ -40,15 +33,18 @@ c:/NotizApp/
 │   │   │                  #   ThreadsScreen, ThreadDetailScreen
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, remoteNotes, remoteThoughts, deviceId
-│   │   ├── theme/         # theme.ts (MD3 dark theme, deep-navy palette)
+│   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, …
-│   └── bridge/            # Vercel serverless bridge API + worker
-│       ├── api/           # Serverless functions (note.ts, thought.ts)
-│       ├── bookmarklet/   # Browser bookmarklet source
-│       ├── worker/        # Brainstorm worker (Node.js, no bundler)
-│       │   ├── brainstorm-worker.mjs  # CLI: fetch / write / add
-│       │   └── brainstorm-prompt.md  # Claude Code agent prompt
-│       └── package.json
+│   ├── bridge/            # Vercel serverless bridge API + worker
+│   │   ├── api/           # Serverless functions (note.ts, thought.ts)
+│   │   ├── bookmarklet/   # Browser bookmarklet source
+│   │   └── worker/        # brainstorm-worker.mjs + brainstorm-prompt.md
+│   └── webapp/            # Next.js 16 graph visualizer (standalone)
+│       ├── app/           # page.tsx (force-graph UI), api/graph/route.ts
+│       ├── components/    # Graph.tsx, NoteOverlay.tsx, SimilarityOverlay.tsx,
+│       │                  #   ThreadPanel.tsx
+│       ├── lib/           # supabase.ts
+│       └── types/         # GraphData, Thread, Note, Similarity
 └── README.md
 ```
 
@@ -61,62 +57,59 @@ c:/NotizApp/
 | Framework | React Native 0.81, Expo SDK 54 |
 | Language | TypeScript 5.9 |
 | Navigation | React Navigation 7 (native-stack + bottom-tabs) |
-| UI | React Native Paper (MD3 dark theme) |
+| UI | React Native Paper (MD3 light theme) |
 | Icons | `@expo/vector-icons` – MaterialCommunityIcons |
-| Local storage | AsyncStorage (`@react-native-async-storage/async-storage`) |
-| Remote sync | Supabase JS v2 (optional – gracefully skipped if env vars missing) |
+| Local storage | AsyncStorage |
+| Remote sync | Supabase JS v2 (optional) |
 | Notifications | expo-notifications |
 | Haptics | expo-haptics |
-| IDs | uuid v13 + react-native-get-random-values polyfill |
-| Bridge API | Vercel serverless (ESM TypeScript, deployed separately) |
-| Share-Target | `expo-share-extension` (iOS plugin) + `react-native-receive-sharing-intent` (Android) |
+| IDs | uuid v13 + react-native-get-random-values |
+| Bridge API | Vercel serverless (ESM TypeScript) |
+| Share-Target | `expo-share-extension` (iOS) + `react-native-receive-sharing-intent` (Android) |
+| Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
 ---
 
 ## Build & Run Commands
 
-All commands run from `NotizApp/NotizApp/`:
-
+From `NotizApp/NotizApp/`:
 ```bash
-# Start dev server (choose platform interactively)
-npx expo start
-
-# Platform-specific
-npx expo start --android
-npx expo start --ios
-npx expo start --web
-
-# EAS builds (requires Expo account)
-eas build --platform android
-eas build --platform ios
+npx expo start [--android | --ios | --web]
+eas build --platform android|ios
+npx tsc --noEmit        # only static check (no lint/test runner configured)
 ```
 
-Bridge (`NotizApp/NotizApp/bridge/`):
+Bridge (`bridge/`):
 ```bash
-vercel dev      # local dev
+vercel dev
 vercel deploy --prod
 ```
 
-**No lint/test scripts are configured** – the project has no ESLint, Prettier, or
-test runner in package.json. TypeScript type-checking is the only static check:
+Webapp (`webapp/`):
 ```bash
-npx tsc --noEmit
+npm run dev             # Next.js dev server (localhost:3000)
+npm run build
 ```
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in:
-
+`NotizApp/.env` (copy from `.env.example`):
 ```
 EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 EXPO_PUBLIC_DEVICE_ID=<unique-device-label>
 ```
 
-Sync is **optional**. If env vars are absent, `isSyncConfigured()` returns false and
-all sync code is silently skipped. The app works fully offline.
+`webapp/.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```
+
+Sync is optional — if env vars are absent, `isSyncConfigured()` returns false and
+all sync code is silently skipped.
 
 ---
 
@@ -131,69 +124,59 @@ GestureHandlerRootView
              └─ NavigationContainer
                  └─ NotesProvider
                      └─ ThoughtsProvider
-                         ├─ ShareHandler   ← liest eingehende Share-Intents
+                         ├─ ShareHandler
                          └─ AppNavigator
 ```
 
 ### Navigation
 - **Bottom tabs**: Threads, Notizen (HomeScreen), Archiv, Einstellungen
-- **Stack screens**: NoteDetail, Editor, ThreadDetail (pushed on top of tabs)
+- **Stack screens**: NoteDetail, Editor, ThreadDetail
 
 ### Data flow
-- State lives in `NotesContext` / `ThoughtsContext` (React Context + useState).
-- Persistence: AsyncStorage via `src/storage/`. Keys: `@notizapp_notes`,
-  `@notizapp_categories`, `@notizapp_archive`, `@notizapp_tombstones`.
-- Sync: on mount, `pullRemote()` fetches from Supabase then `subscribeRemote()`
-  opens a realtime channel. Writes call `upsertRemote()` / `deleteRemote()`.
-  Deletions are tracked via a **tombstone set** to prevent re-sync of deleted notes.
-- Device identity is stored in AsyncStorage and referenced on every remote call.
+- State in `NotesContext` / `ThoughtsContext`. Persistence via AsyncStorage.
+  Keys: `@notizapp_notes`, `@notizapp_categories`, `@notizapp_archive`, `@notizapp_tombstones`.
+- Sync: `pullRemote()` on mount → `subscribeRemote()` (realtime). Writes via
+  `upsertRemote()` / `deleteRemote()`. Tombstone set prevents re-sync of deleted notes.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`.
-Schema source: `supabase-schema.sql`. RLS policies use simple `using (true)` for
-single-user/anon-key setups; replace for multi-user deployments.
-`threads` has an `is_pinned` column (Slice 5 migration — run once in SQL editor).
+`threads` has `is_pinned` (Slice 5 migration — run once in SQL editor).
+Schema source: `supabase-schema.sql`.
 
 ### Theme
-`src/theme/theme.ts` — extends `MD3LightTheme` (war: Dark).
-Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als
-einzige Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body)
-über `expo-font` in App.tsx geladen.
-Kategorien werden durch Hue-Rotation in `src/theme/categoryAccents.ts`
-unterschieden — keine bunten Gradients mehr.
-Neue Dateien: `src/theme/typography.ts` (Type-Presets), `src/theme/categoryAccents.ts`.
+`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces,
+Espresso-Tinte, Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings),
+Inter (UI/Body) via `expo-font` in App.tsx. Kategorien: Hue-Rotation via
+`src/theme/categoryAccents.ts` — **keine LinearGradient-Importe mehr in `src/`**.
+Neue Themedateien: `typography.ts`, `categoryAccents.ts`.
+
+### Webapp (graph visualizer)
+`webapp/` ist ein eigenständiges Next.js-Projekt. Es liest Notizen, Threads und
+Ähnlichkeiten direkt aus Supabase und stellt sie als interaktiven Force-Graph dar.
+- `app/page.tsx` — Haupt-UI (Filter-Pills, Graph, Overlays)
+- `app/api/graph/route.ts` — API-Route, die Supabase-Daten aggregiert
+- `components/Graph.tsx` — Force-Graph (dynamisch geladen, kein SSR)
+- Eigene `node_modules` und `package.json` — unabhängig vom Expo-App-Toolchain
 
 ### Brainstorm Worker
-`bridge/worker/brainstorm-worker.mjs` – standalone Node.js ESM CLI (no bundler,
-no extra deps beyond the built-in `fetch`). Bridges Claude Code ↔ Supabase for
-the Thoughts synthesis pipeline.
-
-Commands (run from `NotizApp/NotizApp/`):
+`bridge/worker/brainstorm-worker.mjs` — Node.js ESM CLI, keine extra Deps.
 ```bash
-node bridge/worker/brainstorm-worker.mjs fetch          # unprocessed Thoughts + active Threads → stdout JSON
-node bridge/worker/brainstorm-worker.mjs write <json>   # write synthesis (new threads, updates, processed marks)
-node bridge/worker/brainstorm-worker.mjs add "Gedanke"  # push a single thought directly
+node bridge/worker/brainstorm-worker.mjs fetch          # unprocessed Thoughts → stdout JSON
+node bridge/worker/brainstorm-worker.mjs write <json>   # write synthesis back
+node bridge/worker/brainstorm-worker.mjs add "Gedanke"  # push single thought
 ```
-
-`bridge/worker/brainstorm-prompt.md` is the Claude Code agent prompt that drives
-the full pipeline: fetch → AI synthesizes Thoughts into Threads → write back.
-
-**Credentials** (resolved in order): `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` from
-`bridge/worker/.env` → `NotizApp/.env` → `EXPO_PUBLIC_*` env vars. Service-role key
-preferred for PATCH; anon key works while RLS uses `using (true)`.
+Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` aus `bridge/worker/.env`
+→ `NotizApp/.env` → `EXPO_PUBLIC_*`.
 
 ---
 
 ## Code Conventions
 
-- **Language**: German UI strings throughout (categories, screen titles, labels).
-  Code identifiers are English.
+- **Language**: German UI strings; English code identifiers.
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
-- **Components**: functional components with hooks only. No class components.
-- **Context mutation**: all state mutations go through context functions
-  (`addNote`, `updateNote`, `deleteNote`, etc.) – never mutate state directly in screens.
-- **Async**: all storage and sync ops are `async/await`. Fire-and-forget syncs are
-  wrapped in try/catch with `console.warn`.
-- **IDs**: UUIDs via `uuid` v13 (`uuidv4()`). Always import `react-native-get-random-values`
-  before uuid (done once in NotesContext).
-- **No test files** exist – rely on manual device testing and TypeScript for safety.
+- **Components**: functional + hooks only, no class components.
+- **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
+- **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch.
+- **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
+- **No test files** — rely on manual device testing and TypeScript.
+- **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
