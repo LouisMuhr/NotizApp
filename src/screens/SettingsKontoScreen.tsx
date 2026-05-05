@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
+import { deleteAnonUser } from '../sync/deleteAnonUser';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 
@@ -65,6 +66,8 @@ export default function SettingsKontoScreen() {
     setLoading(true);
     const supabase = getSupabase();
     if (!supabase) return;
+    const { data: { user: anonUser } } = await supabase.auth.getUser();
+    const anonUid = anonUser?.is_anonymous ? anonUser.id : null;
     const { data, error } = await supabase.auth.signInWithPassword({
       email: inputEmail.trim(),
       password: inputPassword,
@@ -79,6 +82,7 @@ export default function SettingsKontoScreen() {
       setInputEmail('');
       setInputPassword('');
       setAccountState('signed-in');
+      if (anonUid) deleteAnonUser(anonUid);
     }
   };
 
