@@ -53,18 +53,18 @@ const SUPABASE_URL =
   process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY =
   process.env.SUPABASE_SERVICE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const DEVICE_ID =
-  process.env.DEVICE_ID || process.env.EXPO_PUBLIC_DEVICE_ID;
+const BRIDGE_USER_ID =
+  process.env.BRIDGE_USER_ID || process.env.DEVICE_ID;
 
-if (!SUPABASE_URL || !SERVICE_KEY || !DEVICE_ID) {
+if (!SUPABASE_URL || !SERVICE_KEY || !BRIDGE_USER_ID) {
   console.error('[brainstorm-worker] Fehlende Credentials.');
   console.error(
-    'Benötigt: SUPABASE_URL, SUPABASE_SERVICE_KEY (oder EXPO_PUBLIC_*), DEVICE_ID',
+    'Benötigt: SUPABASE_URL, SUPABASE_SERVICE_KEY, BRIDGE_USER_ID',
   );
   console.error('Status:', {
     SUPABASE_URL: !!SUPABASE_URL,
     SERVICE_KEY: !!SERVICE_KEY,
-    DEVICE_ID: !!DEVICE_ID,
+    BRIDGE_USER_ID: !!BRIDGE_USER_ID,
   });
   process.exit(1);
 }
@@ -148,17 +148,17 @@ async function sbBatchPatch(resource, items) {
 async function cmdFetch() {
   const [notes, threads] = await Promise.all([
     sbGet(
-      `notes?device_id=eq.${encodeURIComponent(DEVICE_ID)}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`,
+      `notes?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`,
     ),
     sbGet(
-      `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,note_ids,last_synthesized_at`,
+      `threads?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,note_ids,last_synthesized_at`,
     ),
   ]);
 
   const output = {
     feed_notes: notes,
     active_threads: threads,
-    device_id: DEVICE_ID,
+    user_id: BRIDGE_USER_ID,
     fetched_at: new Date().toISOString(),
   };
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
@@ -206,7 +206,7 @@ async function cmdWrite(arg) {
     let existingTitles = new Set();
     try {
       const existing = await sbGet(
-        `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}&select=title`,
+        `threads?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}&select=title`,
       );
       existingTitles = new Set(existing.map(t => t.title));
     } catch (err) {
@@ -224,7 +224,7 @@ async function cmdWrite(arg) {
       const noteIds = t.note_ids ?? t.thought_ids ?? [];
       newThreadsToInsert.push({
         id: t.id ?? randomUUID(),
-        device_id: DEVICE_ID,
+        user_id: BRIDGE_USER_ID,
         title: t.title,
         summary: t.summary ?? '',
         status: 'active',
@@ -252,7 +252,7 @@ async function cmdWrite(arg) {
       const noteIds = u.note_ids ?? u.new_thought_ids ?? [];
       const update = {
         id: u.id,
-        device_id: DEVICE_ID,
+        user_id: BRIDGE_USER_ID,
         summary: u.summary,
         status: u.status ?? 'active',
         last_synthesized_at: now,
@@ -271,7 +271,7 @@ async function cmdWrite(arg) {
     if (threadUpdates.length > 0) {
       try {
         await sbBatchPatch(
-          `threads?device_id=eq.${encodeURIComponent(DEVICE_ID)}`,
+          `threads?user_id=eq.${encodeURIComponent(BRIDGE_USER_ID)}`,
           threadUpdates,
         );
       } catch (err) {
@@ -301,7 +301,7 @@ async function cmdAdd(content) {
   const now = new Date().toISOString();
   const row = {
     id: randomUUID(),
-    device_id: DEVICE_ID,
+    user_id: BRIDGE_USER_ID,
     title: '',
     content,
     category: 'Allgemein',

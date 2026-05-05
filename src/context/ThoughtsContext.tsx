@@ -7,7 +7,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Thread } from '../models/Thought';
 import { loadThreads, saveThreads } from '../storage/thoughtStorage';
 import { isSyncConfigured } from '../sync/supabaseClient';
-import { getDeviceId } from '../sync/deviceId';
+import { getUserId } from '../sync/userId';
 import {
   pullThreads,
   archiveThread as archiveThreadRemote,
@@ -62,8 +62,8 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
       if (!isSyncConfigured()) return;
 
       try {
-        const deviceId = await getDeviceId();
-        if (cancelled) return;
+        const deviceId = await getUserId();
+        if (!deviceId || cancelled) return;
         deviceIdRef.current = deviceId;
 
         const remoteThreads = await pullThreads(deviceId);

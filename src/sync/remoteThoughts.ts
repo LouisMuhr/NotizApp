@@ -11,7 +11,7 @@ import { getSupabase } from './supabaseClient';
 
 interface ThreadRow {
   id: string;
-  device_id: string;
+  user_id: string;
   title: string;
   summary: string;
   status: ThreadStatus | null;
@@ -46,13 +46,13 @@ function rowToThread(row: ThreadRow): Thread {
 // Pull
 // ----------------------------------------------------------------------------
 
-export async function pullThreads(deviceId: string): Promise<Thread[]> {
+export async function pullThreads(userId: string): Promise<Thread[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('threads')
     .select('*')
-    .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) {
     console.warn('[brainstorm] pullThreads error', error.message);
@@ -65,58 +65,58 @@ export async function pullThreads(deviceId: string): Promise<Thread[]> {
 // Write
 // ----------------------------------------------------------------------------
 
-export async function archiveThread(deviceId: string, id: string): Promise<void> {
+export async function archiveThread(userId: string, id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('threads')
     .update({ status: 'archived', updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('device_id', deviceId);
+    .eq('user_id', userId);
   if (error) console.warn('[brainstorm] archiveThread error', error.message);
 }
 
-export async function restoreThread(deviceId: string, id: string): Promise<void> {
+export async function restoreThread(userId: string, id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('threads')
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('device_id', deviceId);
+    .eq('user_id', userId);
   if (error) console.warn('[brainstorm] restoreThread error', error.message);
 }
 
-export async function deleteThreadPermanently(deviceId: string, id: string): Promise<void> {
+export async function deleteThreadPermanently(userId: string, id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('threads')
     .delete()
     .eq('id', id)
-    .eq('device_id', deviceId);
+    .eq('user_id', userId);
   if (error) console.warn('[brainstorm] deleteThreadPermanently error', error.message);
 }
 
-export async function pinThread(deviceId: string, id: string): Promise<void> {
+export async function pinThread(userId: string, id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('threads')
     .update({ is_pinned: true, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('device_id', deviceId);
+    .eq('user_id', userId);
   if (error) console.warn('[brainstorm] pinThread error', error.message);
 }
 
-export async function unpinThread(deviceId: string, id: string): Promise<void> {
+export async function unpinThread(userId: string, id: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('threads')
     .update({ is_pinned: false, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('device_id', deviceId);
+    .eq('user_id', userId);
   if (error) console.warn('[brainstorm] unpinThread error', error.message);
 }
 
@@ -131,16 +131,16 @@ export type ThreadChangeEvent =
   | { type: 'delete'; threadId: string };
 
 export function subscribeThreads(
-  deviceId: string,
+  userId: string,
   onChange: (event: ThreadChangeEvent) => void,
 ): Unsubscribe {
   const supabase = getSupabase();
   if (!supabase) return () => {};
   const channel = supabase
-    .channel(`threads:${deviceId}`)
+    .channel(`threads:${userId}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'threads', filter: `device_id=eq.${deviceId}` },
+      { event: '*', schema: 'public', table: 'threads', filter: `user_id=eq.${userId}` },
       (payload) => {
         try {
           if (payload.eventType === 'DELETE') {

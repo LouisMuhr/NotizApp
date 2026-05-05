@@ -3,7 +3,7 @@ import { getSupabase } from './supabaseClient';
 
 interface RemoteRow {
   id: string;
-  device_id: string;
+  user_id: string;
   title: string;
   content: string;
   category: string;
@@ -38,13 +38,13 @@ function rowToNote(row: RemoteRow): Note {
   };
 }
 
-export async function pullRemote(deviceId: string): Promise<Note[] | null> {
+export async function pullRemote(userId: string): Promise<Note[] | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('notes')
     .select('*')
-    .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) {
     console.warn('[sync] pullRemote error', error.message);
@@ -53,12 +53,12 @@ export async function pullRemote(deviceId: string): Promise<Note[] | null> {
   return (data as RemoteRow[]).map(rowToNote);
 }
 
-export async function upsertRemote(deviceId: string, note: Note): Promise<void> {
+export async function upsertRemote(userId: string, note: Note): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
   const row = {
     id: note.id,
-    device_id: deviceId,
+    user_id: userId,
     title: note.title,
     content: note.content,
     category: note.category,
@@ -79,14 +79,14 @@ export async function upsertRemote(deviceId: string, note: Note): Promise<void> 
   }
 }
 
-export async function deleteRemote(deviceId: string, ids: string[]): Promise<void> {
+export async function deleteRemote(userId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('notes')
     .delete()
-    .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .in('id', ids);
   if (error) {
     console.warn('[sync] deleteRemote error', error.message);
@@ -96,20 +96,20 @@ export async function deleteRemote(deviceId: string, ids: string[]): Promise<voi
 export type Unsubscribe = () => void;
 
 export function subscribeRemote(
-  deviceId: string,
+  userId: string,
   onInsert: (note: Note) => void,
 ): Unsubscribe {
   const supabase = getSupabase();
   if (!supabase) return () => {};
   const channel = supabase
-    .channel(`notes:${deviceId}`)
+    .channel(`notes:${userId}`)
     .on(
       'postgres_changes',
       {
         event: 'INSERT',
         schema: 'public',
         table: 'notes',
-        filter: `device_id=eq.${deviceId}`,
+        filter: `user_id=eq.${userId}`,
       },
       (payload) => {
         try {

@@ -5,7 +5,7 @@ import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured } from '../sync/supabaseClient';
-import { getDeviceId } from '../sync/deviceId';
+import { getUserId } from '../sync/userId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import * as haptics from '../utils/haptics';
 
@@ -32,7 +32,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
-  const deviceIdRef = useRef<string | null>(null);
+  const deviceIdRef = useRef<string | null>(null); // holds auth user_id after sign-in
   const tombstonesRef = useRef<Set<string>>(new Set());
 
   const addTombstones = useCallback(async (ids: string[]) => {
@@ -127,7 +127,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       // Sync layer (additive, only if configured)
       if (!isSyncConfigured()) return;
       try {
-        const deviceId = await getDeviceId();
+        const deviceId = await getUserId();
+        if (!deviceId) return;
         deviceIdRef.current = deviceId;
         // Clean up remote: drop everything that has been archived or tombstoned locally
         const purgeIds = [
