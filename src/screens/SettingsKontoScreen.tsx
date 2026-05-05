@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { useTheme, Text, TextInput, Button, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
 import { migrateAndDeleteAnonUser } from '../sync/deleteAnonUser';
+import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 
@@ -15,6 +16,7 @@ type AccountState = 'loading' | 'anonymous' | 'signed-in' | 'signed-out';
 
 export default function SettingsKontoScreen() {
   const theme = useTheme();
+  const { resyncForUser } = useNotes();
   const [accountState, setAccountState] = useState<AccountState>('loading');
   const [email, setEmail] = useState('');
   const [inputEmail, setInputEmail] = useState('');
@@ -72,17 +74,18 @@ export default function SettingsKontoScreen() {
       email: inputEmail.trim(),
       password: inputPassword,
     });
-    setLoading(false);
     if (error) {
+      setLoading(false);
       setSnack('Fehler: ' + error.message);
     } else {
-      clearUserIdCache();
+      if (anonUid) await migrateAndDeleteAnonUser(anonUid, data.user.id);
+      await resyncForUser(data.user.id);
       await AsyncStorage.removeItem(SIGNED_OUT_KEY);
+      setLoading(false);
       setEmail(data.user?.email ?? '');
       setInputEmail('');
       setInputPassword('');
       setAccountState('signed-in');
-      if (anonUid) migrateAndDeleteAnonUser(anonUid, data.user.id);
     }
   };
 
