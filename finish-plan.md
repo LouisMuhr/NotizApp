@@ -242,6 +242,136 @@ seine eigenen Notizen speichert (nicht eine generische Bridge-User-ID).
 
 ---
 
+---
+
+## Phase 3c: Webapp erweitern — *Notizen + Auth*
+
+Die Webapp (`NotizApp/webapp/`) ist ein Next.js 16 App-Router-Projekt mit Tailwind CSS.
+Aktuell zeigt sie nur das "secondBrain"-Graph-Schema (Threads, Notes, Similarities) ohne
+Authentifizierung und ohne Möglichkeit, Notizen zu erstellen oder zu löschen.
+
+### Was hinzukommt
+
+1. **Login/Logout** — Nutzer muss sich anmelden um seine eigenen Daten zu sehen
+2. **Notiz erstellen** — Formular zum Anlegen einer neuen Note
+3. **Notiz löschen** — Delete-Button in `NoteOverlay.tsx`
+
+---
+
+### 3c.1 Authentication — **MUSS**  *(4–5 Std)*
+
+**Strategie:** Supabase E-Mail/Passwort-Login (kein Anonymous Auth für die Webapp —
+hier macht explizites Login Sinn, da der Nutzer bewusst auf "seine" Daten zugreift).
+
+**Neue Datei: `webapp/components/AuthModal.tsx`**
+- Modaler Dialog (gleiche Basis-Styles wie bestehende Overlays: Backdrop-Blur, 460px Breite)
+- Tabs: "Anmelden" / "Registrieren"
+- Felder: E-Mail, Passwort (+ Passwort bestätigen bei Registrierung)
+- `supabase.auth.signInWithPassword()` / `supabase.auth.signUp()`
+- Fehlertext unterhalb des Formulars (z.B. "E-Mail oder Passwort falsch")
+- Schließt sich automatisch nach erfolgreichem Login
+
+**`webapp/app/page.tsx`** — Auth-State hinzufügen:
+```ts
+const [session, setSession] = useState<Session | null>(null)
+
+useEffect(() => {
+  supabase.auth.getSession().then(({ data }) => setSession(data.session))
+  supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+}, [])
+```
+- Wenn `session === null`: AuthModal anzeigen (Vollbild-Overlay, nicht schließbar)
+- Wenn `session` vorhanden: Graph normal rendern
+- Logout-Button: rechts oben (Icon + "Abmelden"), ruft `supabase.auth.signOut()` auf
+
+**`webapp/app/api/graph/route.ts`** — Auth-Token weiterleiten:
+- Request-Header `Authorization: Bearer <access_token>` an Supabase übergeben
+- Supabase-Client mit `createClient(url, anonKey, { global: { headers: { Authorization } } })`
+- Dadurch greifen die RLS-Policies aus Phase 0 automatisch (nur eigene Daten sichtbar)
+- Wenn kein Token: 401 zurückgeben
+
+**`webapp/lib/supabase.ts`** — Server-seitigen Client ergänzen:
+```ts
+export function createServerClient(accessToken: string) {
+  return createClient(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  })
+}
+```
+
+---
+
+### 3c.2 Notiz erstellen — **MUSS**  *(3–4 Std)*
+
+**Neue Datei: `webapp/components/NoteForm.tsx`**
+- Schwebender Button "＋ Notiz" in der oberen rechten Ecke (neben Logout)
+- Klick öffnet ein Modal (460px, gleiche Overlay-Basis wie bestehende Modals)
+- Felder:
+  | Feld | Typ | Pflicht |
+  |------|-----|---------|
+  | Titel | Text-Input | Ja |
+  | Inhalt | Textarea (4 Zeilen) | Nein |
+  | Kategorie | Select | Nein (default: "Allgemein") |
+  | Anpinnen | Checkbox | Nein |
+
+**Neue API-Route: `webapp/app/api/notes/route.ts`**
+```
+POST /api/notes
+Body: { title, content, category, is_pinned }
+→ Supabase INSERT into notes (mit auth user_id aus Token)
+→ 201 { id }
+
+DELETE /api/notes?id=<uuid>
+→ Supabase DELETE where id = ? AND user_id = auth.uid()
+→ 204
+```
+
+**Beide Endpoints** lesen den `Authorization`-Header aus dem Request und nutzen
+`createServerClient(accessToken)` aus `webapp/lib/supabase.ts`.
+
+**Nach erfolgreichem Erstellen:** Graph-Daten neu laden (einfachste Lösung: `router.refresh()`
+oder State-Reset → neuer `fetch('/api/graph')` call in `page.tsx`).
+
+---
+
+### 3c.3 Notiz löschen — **MUSS**  *(1–2 Std)*
+
+**`webapp/components/NoteOverlay.tsx`** — Delete-Button ergänzen:
+- Roter "Löschen"-Button am unteren Rand der Overlay-Karte
+- Bestätigungs-Dialog: `window.confirm("Notiz wirklich löschen?")` (minimal, kein extra Modal)
+- `DELETE /api/notes?id=<note.id>` aufrufen
+- Bei Erfolg: Overlay schließen + Graph neu laden
+
+**Authentifizierungs-Token** bei API-Calls weitergeben:
+```ts
+const { data: { session } } = await supabase.auth.getSession()
+fetch('/api/notes?id=...', {
+  method: 'DELETE',
+  headers: { Authorization: `Bearer ${session?.access_token}` }
+})
+```
+
+---
+
+### Kritische Webapp-Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `webapp/app/page.tsx` | Auth-State, AuthModal-Gate, Graph-Reload-Trigger |
+| `webapp/app/api/graph/route.ts` | Auth-Token aus Header → Server-Supabase-Client |
+| `webapp/app/api/notes/route.ts` *(neu)* | POST + DELETE für Notizen |
+| `webapp/components/AuthModal.tsx` *(neu)* | Login/Registrierungs-Dialog |
+| `webapp/components/NoteForm.tsx` *(neu)* | Notiz-Erstell-Modal |
+| `webapp/components/NoteOverlay.tsx` | Delete-Button ergänzen |
+| `webapp/lib/supabase.ts` | `createServerClient(token)` ergänzen |
+
+### Abhängigkeit von Phase 0
+Diese Webapp-Änderungen setzen voraus, dass Phase 0 (RLS auf `user_id = auth.uid()`)
+in Supabase bereits durchgeführt wurde — sonst sehen Nutzer trotz Login alle Daten.
+Die Webapp-Auth kann aber **parallel** zu Phase 0 entwickelt werden.
+
+---
+
 ## Phase 4: Launch — *Woche 2+*
 
 ### 4.1 Beta-Test
