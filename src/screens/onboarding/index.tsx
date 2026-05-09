@@ -22,10 +22,10 @@ const { width: W } = Dimensions.get('window');
 
 // Hintergrundfarben pro Slide — interpoliert während des Wischens
 const BG_COLORS = [
-  'oklch(0.95 0.045 75)', // v1 — Cream
-  'oklch(0.95 0.045 75)', // v2 — Cream
-  'oklch(0.95 0.045 75)', // v3 — Cream
-  '#9C5F1F',              // welcome — AmberDeep (Tokens.amberDeep als Hex)
+  '#F0E9D6', // v1 — Cream (oklch(0.95 0.045 75) als Hex)
+  '#F0E9D6', // v2 — Cream
+  '#F0E9D6', // v3 — Cream
+  '#9C5F1F', // welcome — AmberDeep
 ];
 
 type SlideKey = 'v1' | 'v2' | 'v3' | 'welcome';

@@ -94,6 +94,7 @@ export default function App() {
   });
 
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const pendingNavigate = useRef<string | null>(null);
 
   useEffect(() => {
     // TODO: Zeile unten entfernen nach dem Testen
@@ -102,13 +103,22 @@ export default function App() {
     });
   }, []);
 
+  function handleOnboardingDone(navigateTo?: string) {
+    if (navigateTo) pendingNavigate.current = navigateTo;
+    setOnboardingDone(true);
+  }
+
   if (!fontsLoaded || onboardingDone === null) return null;
 
   if (!onboardingDone) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <OnboardingScreen onDone={() => setOnboardingDone(true)} />
+          <OnboardingScreen
+            onDone={() => handleOnboardingDone()}
+            onSignup={() => handleOnboardingDone('SettingsKonto')}
+            onLogin={() => handleOnboardingDone('SettingsKonto')}
+          />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
@@ -119,7 +129,16 @@ export default function App() {
       <SafeAreaProvider>
         <ThemeProvider>
           <PaperProvider theme={AppTheme}>
-            <NavigationContainer theme={navTheme} ref={navigationRef}>
+            <NavigationContainer
+              theme={navTheme}
+              ref={navigationRef}
+              onReady={() => {
+                if (pendingNavigate.current) {
+                  (navigationRef as any).navigate(pendingNavigate.current);
+                  pendingNavigate.current = null;
+                }
+              }}
+            >
               <NotesProvider>
                 <ThoughtsProvider>
                   <NotificationBootstrap />

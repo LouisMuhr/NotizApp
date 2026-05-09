@@ -4,7 +4,7 @@ import { Fonts } from '../../theme/typography';
 
 export const ONBOARDING_KEY = '@notizapp_onboarding_done';
 
-export const CREAM = 'oklch(0.95 0.045 75)' as const;
+export const CREAM = '#F0E9D6' as const; // oklch(0.95 0.045 75)
 
 export const shared = StyleSheet.create({
   screen: {
