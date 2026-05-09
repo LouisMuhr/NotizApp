@@ -19,7 +19,6 @@ import {
   Dialog,
   SegmentedButtons,
   Switch,
-  Snackbar,
 } from 'react-native-paper';
 
 import 'react-native-get-random-values';
@@ -28,6 +27,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNotes } from '../context/NotesContext';
 import * as haptics from '../utils/haptics';
+import Toast from '../components/Toast';
 import {
   ChecklistItem,
   ReminderRecurrence,
@@ -646,14 +646,7 @@ export default function EditorScreen({ navigation, route }: Props) {
         </Dialog>
       </Portal>
 
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={800}
-        style={{ marginBottom: 16 }}
-      >
-        Gespeichert
-      </Snackbar>
+      <Toast visible={snackbarVisible} message="Gespeichert" />
     </KeyboardAvoidingView>
   );
 }
