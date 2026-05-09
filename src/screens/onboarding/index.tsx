@@ -78,17 +78,21 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
     }
   }
 
+  function goToLast() {
+    (flatListRef.current as any)?.scrollToIndex({ index: SLIDES.length - 1, animated: true });
+  }
+
   function renderSlide({ item, index }: { item: SlideKey; index: number }) {
     const parallaxProps = { scrollX, index, slideWidth: W };
 
     const slide = (() => {
       switch (item) {
         case 'v1':
-          return <SlideValue1 onNext={goToNext} onSkip={finish} {...parallaxProps} />;
+          return <SlideValue1 onNext={goToNext} onSkip={goToLast} {...parallaxProps} />;
         case 'v2':
-          return <SlideValue2 onNext={goToNext} onSkip={finish} {...parallaxProps} />;
+          return <SlideValue2 onNext={goToNext} onSkip={goToLast} {...parallaxProps} />;
         case 'v3':
-          return <SlideValue3 onNext={goToNext} onSkip={finish} {...parallaxProps} />;
+          return <SlideValue3 onNext={goToNext} onSkip={goToLast} {...parallaxProps} />;
         case 'welcome':
           return (
             <SlideWelcome
