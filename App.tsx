@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import {
@@ -23,6 +24,7 @@ import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme, Tokens } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import ShareHandler from './src/components/ShareHandler';
+import OnboardingScreen, { ONBOARDING_KEY } from './src/screens/onboarding';
 import { requestNotificationPermissions } from './src/utils/notifications';
 import { useNotes } from './src/context/NotesContext';
 import { LogBox } from 'react-native';
@@ -91,7 +93,26 @@ export default function App() {
     InstrumentSerif_400Regular_Italic,
   });
 
-  if (!fontsLoaded) return null;
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // TODO: Zeile unten entfernen nach dem Testen
+    AsyncStorage.removeItem(ONBOARDING_KEY).then(() => {
+      AsyncStorage.getItem(ONBOARDING_KEY).then((val) => setOnboardingDone(val === 'true'));
+    });
+  }, []);
+
+  if (!fontsLoaded || onboardingDone === null) return null;
+
+  if (!onboardingDone) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <OnboardingScreen onDone={() => setOnboardingDone(true)} />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
