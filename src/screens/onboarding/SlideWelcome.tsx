@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { Animated, View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { Tokens } from '../../theme/theme';
@@ -11,6 +11,9 @@ const { width: W } = Dimensions.get('window');
 interface Props {
   onSignup: () => void;
   onLogin: () => void;
+  scrollX: Animated.Value;
+  index: number;
+  slideWidth: number;
 }
 
 const HERO_ROWS = [
@@ -20,18 +23,40 @@ const HERO_ROWS = [
   { txt: 'später.', italic: true, align: 'flex-end' as const, dim: true },
 ];
 
-export default function SlideWelcome({ onSignup, onLogin }: Props) {
+export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideWidth }: Props) {
+  // Hero-Text: stärkerer Parallax (0.35) — fühlt sich dramatischer an auf dem letzten Slide
+  const heroTranslate = scrollX.interpolate({
+    inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
+    outputRange: [-slideWidth * 0.35, 0, slideWidth * 0.35],
+    extrapolate: 'clamp',
+  });
+
+  // Buttons: leichter Parallax (0.15) — kommen etwas später rein
+  const btnTranslate = scrollX.interpolate({
+    inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
+    outputRange: [-slideWidth * 0.15, 0, slideWidth * 0.15],
+    extrapolate: 'clamp',
+  });
+
+  const opacity = scrollX.interpolate({
+    inputRange: [(index - 0.6) * slideWidth, index * slideWidth],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
-    <SafeAreaView style={[shared.screen, { backgroundColor: Tokens.amberDeep }]}>
-      {/* Logo row */}
-      <View style={styles.logoRow}>
+    <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
+      {/* Logo — kein Parallax, bleibt stabil */}
+      <Animated.View style={[styles.logoRow, { opacity }]}>
         <Text style={styles.logo}>Notiz</Text>
         <View style={styles.logoDot} />
         <Text style={styles.version}>v 2.4</Text>
-      </View>
+      </Animated.View>
 
-      {/* Hero type + dashed thread */}
-      <View style={styles.heroArea}>
+      {/* Hero type + Faden — stärkerer Parallax */}
+      <Animated.View
+        style={[styles.heroArea, { transform: [{ translateX: heroTranslate }], opacity }]}
+      >
         {HERO_ROWS.map((row, i) => (
           <Text
             key={i}
@@ -61,21 +86,19 @@ export default function SlideWelcome({ onSignup, onLogin }: Props) {
             opacity={0.4}
           />
         </Svg>
-      </View>
+      </Animated.View>
 
-      {/* CTA */}
-      <View style={styles.footer}>
+      {/* CTA — leichterer Parallax */}
+      <Animated.View
+        style={[styles.footer, { transform: [{ translateX: btnTranslate }], opacity }]}
+      >
         <TouchableOpacity onPress={onSignup} activeOpacity={0.85} style={styles.primaryBtn}>
           <Text style={styles.primaryBtnText}>Konto erstellen →</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onLogin}
-          activeOpacity={0.7}
-          style={styles.secondaryBtn}
-        >
+        <TouchableOpacity onPress={onLogin} activeOpacity={0.7} style={styles.secondaryBtn}>
           <Text style={styles.secondaryBtnText}>Ich habe schon ein Konto</Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }

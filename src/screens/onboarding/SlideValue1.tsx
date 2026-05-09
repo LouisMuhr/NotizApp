@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Animated, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
@@ -9,12 +9,27 @@ import { CREAM, shared } from './shared';
 interface Props {
   onNext: () => void;
   onSkip: () => void;
+  scrollX: Animated.Value;
+  index: number;
+  slideWidth: number;
 }
 
-export default function SlideValue1({ onNext, onSkip }: Props) {
+export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth }: Props) {
+  const translateX = scrollX.interpolate({
+    inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
+    outputRange: [-slideWidth * 0.25, 0, slideWidth * 0.25],
+    extrapolate: 'clamp',
+  });
+
+  const opacity = scrollX.interpolate({
+    inputRange: [(index - 0.5) * slideWidth, index * slideWidth, (index + 0.5) * slideWidth],
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
-    <SafeAreaView style={[shared.screen, { backgroundColor: CREAM }]}>
-      <View style={styles.inner}>
+    <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
+      <Animated.View style={[styles.inner, { transform: [{ translateX }], opacity }]}>
         <SkipRow label="I / III" onSkip={onSkip} />
 
         <View style={{ marginTop: 28 }}>
@@ -65,7 +80,7 @@ export default function SlideValue1({ onNext, onSkip }: Props) {
           <Dots count={3} active={0} />
           <NextButton label="weiter →" onPress={onNext} />
         </View>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
