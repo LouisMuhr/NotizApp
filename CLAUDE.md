@@ -181,3 +181,4 @@ Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` aus `bridge/worker/.env`
 - **No test files** — rely on manual device testing and TypeScript.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
+             Arbeite nie am main branch, außer ich bitte darum
