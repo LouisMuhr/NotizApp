@@ -5,6 +5,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { version: APP_VERSION } = require('../../package.json') as { version: string };
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -179,6 +181,21 @@ export default function SettingsScreen() {
         />
       </View>
 
+      {/* ── Datenschutz ── */}
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        Datenschutz
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <NavRow
+          icon="shield-account-outline"
+          iconBg={colors.ink}
+          label="Datenschutz & DSGVO"
+          sublabel="Export, Datenlöschung"
+          onPress={() => navigation.navigate('SettingsDatenschutz')}
+          showDivider={false}
+        />
+      </View>
+
       {/* ── Info ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         Info
@@ -188,7 +205,7 @@ export default function SettingsScreen() {
           icon="application-outline"
           iconBg={colors.inkFaint}
           label="Version"
-          value="1.0.0"
+          value={APP_VERSION}
         />
       </View>
     </ScrollView>

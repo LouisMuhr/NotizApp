@@ -166,7 +166,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
               </Text>
             ) : (
               <Text style={styles.summaryEmpty}>
-                Noch keine Zusammenfassung — Worker läuft bald.
+                Noch keine Zusammenfassung verfügbar.
               </Text>
             )}
 
@@ -237,8 +237,8 @@ export default function ThreadsScreen({ navigation }: Props) {
             Noch keine Threads
           </Text>
           <Text variant="bodySmall" style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}>
-            Notizen mit aktiviertem Thread-Feed werden{'\n'}
-            vom Worker zu Threads zusammengefasst.
+            Aktiviere bei Notizen den Thread-Feed,{'\n'}
+            um Ideen automatisch zu verknüpfen.
           </Text>
         </View>
       ) : (

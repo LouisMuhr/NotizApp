@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
@@ -24,6 +25,7 @@ interface NotesContextType {
   deleteCategory: (name: string) => Promise<void>;
   rescheduleAllReminders: () => Promise<void>;
   resyncForUser: (userId: string) => Promise<void>;
+  deleteAllData: () => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType>({} as NotesContextType);
@@ -394,6 +396,32 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await saveCategories(updated);
   }, [categories]);
 
+  const deleteAllData = useCallback(async () => {
+    await cancelAllReminders();
+    await AsyncStorage.multiRemove([
+      '@notizapp_notes',
+      '@notizapp_categories',
+      '@notizapp_archive',
+      '@notizapp_tombstones',
+    ]);
+    setNotes([]);
+    setArchivedNotes([]);
+    setCategories(DEFAULT_CATEGORIES);
+    tombstonesRef.current = new Set();
+
+    if (deviceIdRef.current) {
+      const supabase = getSupabase();
+      if (supabase) {
+        const uid = deviceIdRef.current;
+        await Promise.all([
+          supabase.from('notes').delete().eq('user_id', uid),
+          supabase.from('thoughts').delete().eq('user_id', uid),
+          supabase.from('threads').delete().eq('user_id', uid),
+        ]).catch((e) => console.warn('[gdpr] remote delete failed', e));
+      }
+    }
+  }, []);
+
   const resyncForUser = useCallback(async (userId: string) => {
     clearUserIdCache();
     if (startSyncRef.current) {
@@ -418,6 +446,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         rescheduleAllReminders,
         resyncForUser,
+        deleteAllData,
       }}
     >
       {children}

@@ -26,6 +26,7 @@ interface ThoughtsContextType {
   deleteThreadPermanently: (threadId: string) => void;
   pinThread: (threadId: string) => void;
   unpinThread: (threadId: string) => void;
+  clearAllThreads: () => void;
 }
 
 const ThoughtsContext = createContext<ThoughtsContextType>({} as ThoughtsContextType);
@@ -159,6 +160,11 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
     if (deviceId) pinThreadRemote(deviceId, threadId).catch(() => {});
   }, []);
 
+  const clearAllThreads = useCallback(() => {
+    setThreads([]);
+    saveThreads([]).catch(() => {});
+  }, []);
+
   const unpinThread = useCallback((threadId: string) => {
     setThreads((prev) => {
       const next = prev.map((t) =>
@@ -173,7 +179,7 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThoughtsContext.Provider
-      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread }}
+      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread, clearAllThreads }}
     >
       {children}
     </ThoughtsContext.Provider>
