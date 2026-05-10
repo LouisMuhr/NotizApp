@@ -181,6 +181,21 @@ export default function SettingsScreen() {
         />
       </View>
 
+      {/* ── Datenschutz ── */}
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        Datenschutz
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <NavRow
+          icon="shield-account-outline"
+          iconBg={colors.ink}
+          label="Datenschutz & DSGVO"
+          sublabel="Export, Datenlöschung"
+          onPress={() => navigation.navigate('SettingsDatenschutz')}
+          showDivider={false}
+        />
+      </View>
+
       {/* ── Info ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         Info
