@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,7 +6,7 @@ import {
   Pressable,
   Animated,
 } from 'react-native';
-import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, useTheme, ActivityIndicator, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
+import { getSupabase } from '../sync/supabaseClient';
 
 interface Props {
   navigation: any;
@@ -191,10 +192,51 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
   );
 }
 
+const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? '';
+
+async function runSynthesis(): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Sync nicht konfiguriert');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Nicht eingeloggt');
+
+  const res = await fetch(`${BRIDGE_URL}/api/synthesize`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  if (json.message === 'no_feed_notes') return 'Keine neuen Notizen zum Verarbeiten.';
+  const created = json.threads_created ?? 0;
+  const updated = json.threads_updated ?? 0;
+  const parts: string[] = [];
+  if (created > 0) parts.push(`${created} ${created === 1 ? 'Thread erstellt' : 'Threads erstellt'}`);
+  if (updated > 0) parts.push(`${updated} ${updated === 1 ? 'Thread aktualisiert' : 'Threads aktualisiert'}`);
+  return parts.length > 0 ? parts.join(', ') : 'Fertig — nichts Neues.';
+}
+
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [snackMessage, setSnackMessage] = useState('');
+  const [snackVisible, setSnackVisible] = useState(false);
+
+  async function handleSynthesize() {
+    haptics.medium();
+    setSynthesizing(true);
+    try {
+      const msg = await runSynthesis();
+      setSnackMessage(msg);
+    } catch (e: any) {
+      setSnackMessage('Fehler: ' + (e?.message ?? 'Unbekannt'));
+    } finally {
+      setSynthesizing(false);
+      setSnackVisible(true);
+    }
+  }
 
   const activeThreads = threads
     .filter((t) => t.status === 'active')
@@ -222,10 +264,28 @@ export default function ThreadsScreen({ navigation }: Props) {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerEyebrow}>
-          {activeThreads.length === 0 ? 'Noch keine Threads' : `${activeThreads.length} aktiv`}
-        </Text>
-        <Text style={styles.headerTitle}>Threads</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerEyebrow}>
+              {activeThreads.length === 0 ? 'Noch keine Threads' : `${activeThreads.length} aktiv`}
+            </Text>
+            <Text style={styles.headerTitle}>Threads</Text>
+          </View>
+          <Pressable
+            onPress={handleSynthesize}
+            disabled={synthesizing}
+            style={({ pressed }) => [styles.synthesizeBtn, pressed && styles.synthesizeBtnPressed]}
+          >
+            {synthesizing ? (
+              <ActivityIndicator size={16} color={Tokens.amberDeep} style={{ marginRight: 6 }} />
+            ) : (
+              <MaterialCommunityIcons name="creation" size={16} color={Tokens.amberDeep} style={{ marginRight: 6 }} />
+            )}
+            <Text style={styles.synthesizeBtnText}>
+              {synthesizing ? 'Läuft…' : 'Synthetisieren'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {activeThreads.length === 0 ? (
@@ -261,6 +321,15 @@ export default function ThreadsScreen({ navigation }: Props) {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       )}
+      <Snackbar
+        visible={snackVisible}
+        onDismiss={() => setSnackVisible(false)}
+        duration={3500}
+        style={{ backgroundColor: Tokens.ink }}
+        action={{ label: 'OK', onPress: () => setSnackVisible(false), textColor: Tokens.amber }}
+      >
+        <Text style={{ color: Tokens.paper, fontFamily: Fonts.sans, fontSize: 13 }}>{snackMessage}</Text>
+      </Snackbar>
     </View>
   );
 }
@@ -273,6 +342,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 4,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  synthesizeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Tokens.amberSoft,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  synthesizeBtnPressed: {
+    opacity: 0.75,
+  },
+  synthesizeBtnText: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 13,
+    color: Tokens.amberDeep,
   },
   headerEyebrow: {
     fontFamily: Fonts.sansSemibold,

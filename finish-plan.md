@@ -342,6 +342,18 @@ oder State-Reset → neuer `fetch('/api/graph')` call in `page.tsx`).
 - `DELETE /api/notes?id=<note.id>` aufrufen
 - Bei Erfolg: Overlay schließen + Graph neu laden
 
+**Hinweis bei anonymem Account:**
+Wenn der Nutzer mit anonymem Supabase-Account (Phase 0) eingeloggt ist, erscheint
+ein auffälliger Banner oben im Graph:
+
+```
+⚠ Du bist anonym eingeloggt. Melde dich an, um deine Daten geräteübergreifend zu synchronisieren.  [Jetzt anmelden →]
+```
+- Gelb/Amber-Hintergrund mit dunkler Schrift — deutlich sichtbar aber nicht störend
+- Klick auf "Jetzt anmelden →" öffnet das AuthModal mit dem "Anmelden"-Tab vorausgewählt
+- Nach erfolgreichem Login (mit E-Mail) verschwindet der Banner dauerhaft
+- Erkennung: `session.user.is_anonymous === true` (Supabase setzt dieses Flag)
+
 **Authentifizierungs-Token** bei API-Calls weitergeben:
 ```ts
 const { data: { session } } = await supabase.auth.getSession()
@@ -365,10 +377,229 @@ fetch('/api/notes?id=...', {
 | `webapp/components/NoteOverlay.tsx` | Delete-Button ergänzen |
 | `webapp/lib/supabase.ts` | `createServerClient(token)` ergänzen |
 
+---
+
+### 3c.4 Kategorie-Farben — **KANN** *(2–3 Std)*
+
+Aktuell sind alle Kategorien im Graph einheitlich lila dargestellt. Jede Kategorie soll
+eine eigene Farbe bekommen, die dezent mit dem Hintergrund (`#0E0C09`) verschmilzt.
+
+**Farbkonzept — "Muted Glow":**
+- Jede Farbe hat eine Sättigungs-/Helligkeitsstufe, die ans dunkle Hintergrundthema angepasst ist
+- Kreisrahmen (Strich) = Farbe mit ~70% Opazität; Füllung = Farbe mit ~8% Opazität
+- Das ergibt einen weichen "Glow"-Effekt ohne den Canvas zu überladen
+
+**Farb-Palette (Standardzuweisung — 8 Kategorien):**
+
+| Kategorie | Hex | Charakter |
+|-----------|-----|-----------|
+| Allgemein | `#94A3B8` | Cool grey |
+| Arbeit | `#60A5FA` | Soft blue |
+| Privat | `#A78BFA` | Soft violet |
+| Ideen | `#34D399` | Mint green |
+| Einkauf | `#FBBF24` | Warm amber |
+| Lernen | `#F472B6` | Rose |
+| Persönlich | `#FB923C` | Peach orange |
+| Gesundheit | `#2DD4BF` | Teal |
+
+Weitere / unbekannte Kategorien bekommen eine Farbe aus dem Palette-Array (zyklisch).
+
+**Implementierung in `webapp/components/Graph.tsx`:**
+- Funktion `getCategoryColor(name: string): string` — hashbasierter Index oder Map-Lookup
+- Beim Zeichnen der Kategorie-Kreise: `ctx.strokeStyle = color + 'B3'` (70% Alpha),
+  `ctx.fillStyle = color + '14'` (8% Alpha)
+- Filter-Pills in `page.tsx` ebenfalls mit Kategorie-Farbe einfärben (farbiger Rand / Dot)
+
+**Optionale User-Konfiguration — "SEHR UNNÖTIG" (wie der User selbst sagt), daher low priority:**
+- Persistiert in `localStorage` als `notiz_category_colors: { [name]: hex }`
+- Kleines Settings-Panel (Zahnrad-Icon, rechts oben neben Logout)
+- Für jede bekannte Kategorie ein Color-Picker-Input (`<input type="color">`)
+- Reset-Button für Standardfarben
+- Wird nur implementiert wenn Zeit übrig ist / explizit gewünscht
+
+---
+
 ### Abhängigkeit von Phase 0
 Diese Webapp-Änderungen setzen voraus, dass Phase 0 (RLS auf `user_id = auth.uid()`)
 in Supabase bereits durchgeführt wurde — sonst sehen Nutzer trotz Login alle Daten.
 Die Webapp-Auth kann aber **parallel** zu Phase 0 entwickelt werden.
+
+---
+
+---
+
+## Phase 3d: SettingsScreen neu strukturieren — **MUSS** *(3–4 Std)*
+
+Der aktuelle Settings-Hauptscreen hat nur 5 spärliche Einträge verteilt auf 5 Sektionen.
+Ziel: alle vorhandenen Unterpunkte sinnvoll geordnet, keine fehlenden Kategorien, nichts versteckt.
+
+### Neue Struktur (Hauptscreen `src/screens/SettingsScreen.tsx`)
+
+**1. Darstellung**
+| Eintrag | Typ | Ziel |
+|---------|-----|------|
+| Vibration & Haptik | → SettingsDarstellung | bestehend |
+| Dunkles Design | InfoRow (immer aktiv) | statisch (ThemeContext ist hardcoded) |
+
+**2. Inhalte**
+| Eintrag | Typ | Ziel |
+|---------|-----|------|
+| Kategorien verwalten | → SettingsKategorien | bestehend |
+| Erinnerungen neu planen | ActionRow (Button) | ruft `rescheduleAllReminders()` auf — bisher nirgends erreichbar |
+
+**3. Benachrichtigungen** *(bisher nur Android → jetzt immer anzeigen, mit iOS-Hinweis)*
+| Eintrag | Typ | Ziel |
+|---------|-----|------|
+| Benachrichtigungen | → SettingsBenachrichtigungen | bestehend (war Android-only; Sektion auch für iOS zeigen mit entsprechendem Text) |
+
+**4. Synchronisation**
+| Eintrag | Typ | Ziel |
+|---------|-----|------|
+| Cloud-Sync & Gerät | → SettingsSynchronisation | bestehend |
+
+**5. Daten**
+| Eintrag | Typ | Aktion |
+|---------|-----|--------|
+| Alle Notizen exportieren | ActionRow | JSON-Export via `Share`-API (Expo Sharing) |
+| App-Daten zurücksetzen | DangerRow (rot) | Bestätigungs-Dialog → löscht AsyncStorage + remote |
+
+**6. Info**
+| Eintrag | Typ | Inhalt |
+|---------|-----|--------|
+| Version | InfoRow | dynamisch aus `expo-constants` (`Constants.expoConfig.version`) statt hardcoded "1.0.0" |
+| Feedback senden | LinkRow | öffnet `mailto:` oder GitHub Issues URL |
+| Datenschutz | InfoRow | kurzer statischer Text (keine externe Seite nötig) |
+
+### Änderungen an Sub-Screens
+
+**SettingsDarstellungScreen** — Vibrations-Toggle bereits vorhanden. Keine neuen Einträge nötig.
+
+**SettingsBenachrichtigungenScreen** — Sektion-Guard `Platform.OS === 'android'` entfernen:
+- iOS: zeigt stattdessen Hinweis "Berechtigungen über iOS-Systemeinstellungen verwalten" + Button zu `openSettings()`
+- Benachrichtigungs-Test-Button bleibt auf beiden Plattformen
+
+**SettingsSynchronisationScreen** — Manuellen Sync-Button ergänzen:
+- "Jetzt synchronisieren" → ruft `pullRemote()` + visuellen Lade-Spinner für 1–2 Sek
+
+### Kritische Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `src/screens/SettingsScreen.tsx` | Vollständige Neustrukturierung der 6 Sektionen |
+| `src/screens/SettingsBenachrichtigungenScreen.tsx` | Android-Guard entfernen, iOS-Fallback ergänzen |
+| `src/screens/SettingsSynchronisationScreen.tsx` | Manueller Sync-Button |
+| `src/navigation/AppNavigator.tsx` | Prüfen ob alle Settings-Screens registriert sind |
+
+---
+
+---
+
+## Phase 3e: Abo-Modell & KI-Rate-Limiting — **MUSS** *(1,5–2 Tage)*
+
+### Ziel
+Alle App-Features bleiben für alle Nutzer zugänglich. Nur die KI-Synthese
+(Brainstorm → Threads) wird rate-limited. Drei Tiers:
+
+| Tier | KI-Läufe | Preis |
+|------|----------|-------|
+| Free | 1× / Woche | kostenlos |
+| Basic | 1× / Tag | TBD |
+| Pro | unbegrenzt (Fair-Use: max. 10×/Tag) | TBD |
+
+---
+
+### Datenmodell — Supabase
+
+**Neue Tabelle `profiles`** (1:1 zu `auth.users`):
+```sql
+create table profiles (
+  id            uuid primary key references auth.users(id),
+  tier          text not null default 'free',   -- 'free' | 'basic' | 'pro'
+  ai_last_run   timestamptz,
+  ai_runs_today int not null default 0,
+  ai_day_reset  date,
+  created_at    timestamptz default now()
+);
+-- Row anlegen bei jedem neuen Signup via DB-Trigger
+```
+
+**Rate-Limit-Logik (server-seitig, bridge-API oder Edge Function):**
+```
+free:  ai_last_run < now() - interval '7 days'
+basic: ai_last_run < now() - interval '1 day'
+pro:   ai_runs_today < 10  (Reset täglich um Mitternacht UTC)
+```
+
+---
+
+### Bridge-API: Rate-Limit-Guard
+
+**Neue oder erweiterte Route `bridge/api/synthesize.ts`** (POST):
+1. Auth-Token aus Header lesen → `supabase.auth.getUser()`
+2. `profiles`-Row laden → Tier + letzte Run-Zeit prüfen
+3. Wenn Limit erreicht: `429` + JSON `{ error: "limit_reached", next_allowed_at: "..." }`
+4. Sonst: Brainstorm-Worker auslösen → nach Abschluss `ai_last_run` + `ai_runs_today` updaten
+
+Die bestehende `brainstorm-worker.mjs`-Logik bleibt unverändert — der Guard sitzt davor.
+
+---
+
+### Payment-Integration — Placeholder-Architektur
+
+Da die Zahlungsplattform noch offen ist, wird eine saubere Abstraktionsschicht gebaut:
+
+**`src/sync/subscriptionService.ts`** (neu):
+```ts
+export interface SubscriptionService {
+  getCurrentTier(): Promise<'free' | 'basic' | 'pro'>
+  openUpgradeFlow(targetTier: 'basic' | 'pro'): Promise<void>
+  restorePurchases(): Promise<void>
+}
+
+// Aktive Implementierung (Phase 3e):
+export class SupabaseOnlySubscription implements SubscriptionService {
+  // liest Tier direkt aus profiles-Tabelle (manuell setzbar)
+  // openUpgradeFlow() zeigt vorerst nur einen "Bald verfügbar"-Dialog
+}
+```
+
+Wenn RevenueCat oder Stripe integriert wird, nur `SupabaseOnlySubscription` ersetzen —
+der Rest des Codes bleibt unverändert.
+
+---
+
+### In-App UI
+
+**KI-Synthese-Button** (HomeScreen oder ThreadsScreen — wo der Button heute sitzt):
+- Zeigt unter dem Button: "Nächster Lauf: in 4 Tagen" (für Free-Nutzer)
+- Bei Limit-Fehler (429): Bottom-Sheet mit Upgrade-Angebot
+  ```
+  ┌─────────────────────────────────┐
+  │  KI-Synthese erschöpft          │
+  │  Nächster kostenloser Lauf:     │
+  │  Montag, 18. Mai                │
+  │                                 │
+  │  [Basic — täglich]  [Pro — ∞]   │
+  │  [Schließen]                    │
+  └─────────────────────────────────┘
+  ```
+- Upgrade-Buttons rufen `subscriptionService.openUpgradeFlow()` auf (Placeholder-Dialog)
+
+**SettingsScreen** → neuer Eintrag unter Sektion "Info":
+- "Mein Abo" → zeigt aktuelles Tier, verbleibende Läufe, Upgrade-Option
+
+---
+
+### Kritische Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `supabase-schema.sql` | `profiles`-Tabelle + Trigger ergänzen |
+| `bridge/api/synthesize.ts` *(neu/erweitert)* | Rate-Limit-Guard vor Worker-Aufruf |
+| `src/sync/subscriptionService.ts` *(neu)* | Abstraktionsschicht + Supabase-Impl. |
+| `src/screens/ThreadsScreen.tsx` | KI-Button mit Limit-Feedback + Upgrade-Sheet |
+| `src/screens/SettingsScreen.tsx` | "Mein Abo"-Eintrag ergänzen |
+| `src/context/NotesContext.tsx` | Tier-Info beim Start laden + in Context bereitstellen |
 
 ---
 

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "echo 'run: vercel dev'",
     "deploy": "vercel deploy --prod"
   },
   "dependencies": {
