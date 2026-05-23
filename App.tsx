@@ -97,14 +97,12 @@ export default function App() {
   const pendingNavigate = useRef<string | null>(null);
 
   useEffect(() => {
-    // TODO: Zeile unten entfernen nach dem Testen
-    AsyncStorage.removeItem(ONBOARDING_KEY).then(() => {
-      AsyncStorage.getItem(ONBOARDING_KEY).then((val) => setOnboardingDone(val === 'true'));
-    });
+    AsyncStorage.getItem(ONBOARDING_KEY).then((val) => setOnboardingDone(val === 'true'));
   }, []);
 
   function handleOnboardingDone(navigateTo?: string) {
     if (navigateTo) pendingNavigate.current = navigateTo;
+    AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     setOnboardingDone(true);
   }
 
