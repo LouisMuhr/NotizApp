@@ -2,12 +2,12 @@
   "expo": {
     "name": "NotizApp",
     "slug": "NotizApp",
-    "android.package": "com.louismuhr.notizapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "privacyPolicyUrl": "https://notizapp.vercel.app/privacy",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,7 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.notizapp.app"
+      "bundleIdentifier": "com.notizapp.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +26,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.notizapp.app",
+      "versionCode": 1,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",

@@ -9,13 +9,32 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "simulator": false
+      },
       "channel": "preview"
     },
     "production": {
       "android": {
-        "buildType": "apk"
+        "buildType": "aab"
+      },
+      "ios": {
+        "autoIncrement": true
       },
       "channel": "production"
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "louismuhr8@gmail.com",
+        "ascAppId": "",
+        "appleTeamId": ""
+      }
     }
   }
 }
