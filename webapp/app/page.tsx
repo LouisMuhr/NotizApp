@@ -6,7 +6,7 @@ import { GraphData, Thread, Note, Similarity } from '@/types';
 import { GraphHandle } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
-import { NoteViewModal, NoteCreateModal, type NoteCreateData } from '@/components/NoteModal';
+import { NoteViewModal } from '@/components/NoteModal';
 import LoginView, { AppUser } from '@/components/LoginView';
 import { supabase } from '@/lib/supabase';
 import { DEMO_DATA } from '@/lib/demoData';
@@ -66,8 +66,21 @@ export default function Home() {
   };
 
   // ── graph data ────────────────────────────────────────────────────────────
-  const [graphData, setGraphData]   = useState<GraphData>(EMPTY);
-  const [loading, setLoading]       = useState(true);
+  const CACHE_KEY = 'notiz_graph_cache';
+
+  function readCache(): GraphData | null {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  function writeCache(data: GraphData) {
+    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  const cached = readCache();
+  const [graphData, setGraphData] = useState<GraphData>(cached ?? EMPTY);
+  const [loading, setLoading]     = useState(!cached); // kein Spinner wenn Cache vorhanden
 
   const fetchGraph = useCallback((currentUser?: AppUser | null) => {
     const u = currentUser ?? user;
@@ -76,10 +89,15 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Nur Spinner zeigen wenn noch kein Cache da
+    if (!readCache()) setLoading(true);
     fetch('/api/graph')
       .then(r => r.json())
-      .then((data: GraphData) => { setGraphData(data); setLoading(false); })
+      .then((data: GraphData) => {
+        setGraphData(data);
+        writeCache(data);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -90,7 +108,6 @@ export default function Home() {
   const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
   const [selectedNote,   setSelectedNote]   = useState<Note | null>(null);
   const [selectedSim,    setSelectedSim]    = useState<Similarity | null>(null);
-  const [createOpen,     setCreateOpen]     = useState(false);
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [tooltip, setTooltip]           = useState<{ label: string; x: number; y: number } | null>(null);
@@ -100,7 +117,7 @@ export default function Home() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null); setCreateOpen(false);
+        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -120,39 +137,32 @@ export default function Home() {
     setTooltip(label ? { label, x, y } : null);
   }, []);
 
-  // ── note delete ───────────────────────────────────────────────────────────
+  // ── note delete (optimistic) ──────────────────────────────────────────────
   const handleDeleteNote = useCallback(async (id: string) => {
-    if (user?.isDemo) {
-      setGraphData(prev => ({ ...prev, notes: prev.notes.filter(n => n.id !== id) }));
-      setSelectedNote(null);
-      return;
-    }
-    const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-    if (res.ok) { setSelectedNote(null); fetchGraph(); }
-  }, [user, fetchGraph]);
+    // Sofort aus lokalem State entfernen — kein Reload, kein Flackern
+    setGraphData(prev => ({
+      ...prev,
+      notes: prev.notes.filter(n => n.id !== id),
+      threads: prev.threads.map(t => ({
+        ...t,
+        noteIds: t.noteIds.filter(nid => nid !== id),
+        noteCount: Math.max(0, t.noteCount - 1),
+      })),
+    }));
+    setSelectedNote(null);
+    if (!user?.isDemo) await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+  }, [user]);
 
-  // ── note create ───────────────────────────────────────────────────────────
-  const handleCreateNote = useCallback(async (data: NoteCreateData) => {
-    if (user?.isDemo) {
-      // For demo users: add locally without Supabase
-      const newNote: Note = {
-        id: `local_${Date.now()}`,
-        threadId: data.threadId,
-        title: data.title,
-        content: data.content,
-        category: data.category,
-        createdAt: data.createdAt,
-        updatedAt: data.createdAt,
-      };
-      setGraphData(prev => ({ ...prev, notes: [...prev.notes, newNote] }));
-      return;
-    }
-    const res = await fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, userId: user?.id }),
-    });
-    if (res.ok) fetchGraph();
+  // ── realtime: Graph neu laden wenn Worker synthetisiert ───────────────────
+  useEffect(() => {
+    if (!user || user.isDemo) return;
+    const channel = supabase
+      .channel('graph-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'threads' }, () => {
+        fetchGraph();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [user, fetchGraph]);
 
   // ── derived ───────────────────────────────────────────────────────────────
@@ -308,24 +318,6 @@ export default function Home() {
         <button onClick={() => graphHandle.current?.zoomBy(0.2)} style={btnStyle}>+</button>
       </div>
 
-      {/* FAB — Neue Notiz */}
-      <button
-        onClick={() => setCreateOpen(true)}
-        title="Neue Notiz erstellen"
-        style={{
-          position: 'absolute', bottom: 24, right: 24, zIndex: 20,
-          width: 46, height: 46,
-          background: '#E8874A', border: 'none', borderRadius: 13,
-          color: '#0E0C09', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 24, fontWeight: 300, lineHeight: 1,
-          boxShadow: '0 4px 18px rgba(244,162,97,0.4)',
-          transition: 'transform 0.15s, box-shadow 0.15s',
-        }}
-      >
-        +
-      </button>
-
       {/* TOOLTIP */}
       {tooltip && (
         <div style={{ position: 'absolute', left: tooltip.x, top: tooltip.y, background: 'rgba(22,18,14,0.95)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', fontSize: 12.5, color: 'var(--t1)', pointerEvents: 'none', zIndex: 30, whiteSpace: 'normal', maxWidth: 200, backdropFilter: 'blur(10px)' }}>
@@ -355,15 +347,6 @@ export default function Home() {
           thread1={simThread1}
           thread2={simThread2}
           onClose={() => setSelectedSim(null)}
-        />
-      )}
-
-      {createOpen && (
-        <NoteCreateModal
-          threads={graphData.threads}
-          userId={user.id}
-          onClose={() => setCreateOpen(false)}
-          onCreate={handleCreateNote}
         />
       )}
 

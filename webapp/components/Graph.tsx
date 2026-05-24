@@ -106,6 +106,19 @@ function bezierPt(t: number, x1: number, y1: number, cpx: number, cpy: number, x
 function drawOrb(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
   hex: string, wobble: number, animT: number, active: boolean, hovered: boolean) {
   const rp = r * (active ? 1 + 0.05 * Math.sin(animT * 1.3) : 1) * (hovered ? 1.18 : 1);
+
+  // ── Glow-Halo (shadow pass) ────────────────────────────────────────────────
+  ctx.save();
+  ctx.shadowColor = hex;
+  ctx.shadowBlur  = hovered ? 28 : active ? 18 : 6 + 3 * Math.sin(animT * 0.8 + r);
+  ctx.beginPath();
+  ctx.arc(x, y, rp, 0, Math.PI * 2);
+  ctx.fillStyle   = hex;
+  ctx.globalAlpha = 0.15;
+  ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur = 0; // reset — kritisch
+
   const gr = ctx.createRadialGradient(x, y, 0, x, y, rp * (active ? 5.5 : hovered ? 4.5 : 3.5));
   gr.addColorStop(0, `rgba(${hexRgb(hex)},${active ? 0.28 : hovered ? 0.22 : 0.1})`);
   gr.addColorStop(1, 'rgba(0,0,0,0)');
