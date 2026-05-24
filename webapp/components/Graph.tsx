@@ -14,6 +14,26 @@ const C = {
   white:       '#FFFFFF',
 } as const;
 
+// ── category colours ───────────────────────────────────
+const CATEGORY_COLORS: Record<string, string> = {
+  'Lernen':     '#5A8FC0',
+  'Arbeit':     '#5AA46A',
+  'Ideen':      '#B0A040',
+  'Persönlich': '#B07090',
+};
+function getCategoryColor(cat: string): string {
+  return CATEGORY_COLORS[cat] ?? C.green;
+}
+function getCategoryColorDim(cat: string): string {
+  const col = CATEGORY_COLORS[cat];
+  if (!col) return '#3A6A3A';
+  // darken: parse hex, halve brightness, return hex
+  const r = Math.round(parseInt(col.slice(1,3),16) * 0.45);
+  const g = Math.round(parseInt(col.slice(3,5),16) * 0.45);
+  const b = Math.round(parseInt(col.slice(5,7),16) * 0.45);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
 const TOPBAR_H         = 54;
 const THREAD_R         = 15;
 const NOTE_R           = 5;
@@ -86,6 +106,19 @@ function bezierPt(t: number, x1: number, y1: number, cpx: number, cpy: number, x
 function drawOrb(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
   hex: string, wobble: number, animT: number, active: boolean, hovered: boolean) {
   const rp = r * (active ? 1 + 0.05 * Math.sin(animT * 1.3) : 1) * (hovered ? 1.18 : 1);
+
+  // ── Glow-Halo (shadow pass) ────────────────────────────────────────────────
+  ctx.save();
+  ctx.shadowColor = hex;
+  ctx.shadowBlur  = hovered ? 28 : active ? 18 : 6 + 3 * Math.sin(animT * 0.8 + r);
+  ctx.beginPath();
+  ctx.arc(x, y, rp, 0, Math.PI * 2);
+  ctx.fillStyle   = hex;
+  ctx.globalAlpha = 0.15;
+  ctx.fill();
+  ctx.restore();
+  ctx.shadowBlur = 0; // reset — kritisch
+
   const gr = ctx.createRadialGradient(x, y, 0, x, y, rp * (active ? 5.5 : hovered ? 4.5 : 3.5));
   gr.addColorStop(0, `rgba(${hexRgb(hex)},${active ? 0.28 : hovered ? 0.22 : 0.1})`);
   gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -442,8 +475,10 @@ export default function Graph(props: Props) {
         const th=layout.threads.find(t=>t.id===note.threadId);
         if (!th||th.xf===undefined) continue;
         const lit=noteLit(note), hovN=hovered?.type==='note'&&hovered.id===note.id;
+        const catCol=getCategoryColor(note.category);
+        const catRgb=hexRgb(catCol);
         drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-          hovN?C.white:lit?C.green:'rgba(100,140,80,0.3)', hovN?0.6:lit?0.3:0.07, hovN?1.4*z:lit?1.0*z:0.45*z);
+          hovN?C.white:lit?catCol:`rgba(${catRgb},0.35)`, hovN?0.6:lit?0.3:0.07, hovN?1.4*z:lit?1.0*z:0.45*z);
       }
 
       // particles
@@ -466,7 +501,9 @@ export default function Graph(props: Props) {
         if (note.xf===undefined) continue;
         if (activeFilter!=='all'&&note.category!==activeFilter) continue;
         const lit=noteLit(note), isHov=hovered?.type==='note'&&hovered.id===note.id;
-        drawOrb(ctx,GX(note.xf),GY(note.yf!),lit?7:NOTE_R,isHov?C.white:lit?C.green:C.greenDim,0.08,animT,lit,isHov);
+        const catCol=getCategoryColor(note.category);
+        const catDim=getCategoryColorDim(note.category);
+        drawOrb(ctx,GX(note.xf),GY(note.yf!),lit?7:NOTE_R,isHov?C.white:lit?catCol:catDim,0.08,animT,lit,isHov);
       }
 
       // similarity nodes

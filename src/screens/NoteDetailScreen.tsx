@@ -4,7 +4,7 @@ import { Text, useTheme, IconButton, Chip, Checkbox, Portal, Dialog, Button } fr
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { WEEKDAY_LABELS } from '../models/Note';
-import { getCategoryColor, withAlpha } from '../utils/categoryColors';
+import { getCategoryAccent } from '../theme/categoryAccents';
 
 interface Props {
   navigation: any;
@@ -25,7 +25,7 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const catColor = getCategoryColor(note.category);
+  const catAccent = getCategoryAccent(note.category);
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('de-DE', {
@@ -83,8 +83,8 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
         <View style={styles.topRow}>
           <Chip
             compact
-            style={[styles.categoryChip, { backgroundColor: withAlpha(catColor, 0.15) }]}
-            textStyle={{ color: catColor, fontSize: 12, fontWeight: '700' }}
+            style={[styles.categoryChip, { backgroundColor: catAccent.soft }]}
+            textStyle={{ color: catAccent.deep, fontSize: 12, fontWeight: '700' }}
           >
             {note.category}
           </Chip>

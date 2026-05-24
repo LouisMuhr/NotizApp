@@ -248,7 +248,8 @@ seine eigenen Notizen speichert (nicht eine generische Bridge-User-ID).
 
 Die Webapp (`NotizApp/webapp/`) ist ein Next.js 16 App-Router-Projekt mit Tailwind CSS.
 Aktuell zeigt sie nur das "secondBrain"-Graph-Schema (Threads, Notes, Similarities) ohne
-Authentifizierung und ohne Möglichkeit, Notizen zu erstellen oder zu löschen.
+Authentifizierung und ohne Möglichkeit, Notizen zu erstellen oder zu löschen. Dabei muss das "secondBrain"-Graph-Schema
+die main page bleiben.
 
 ### Was hinzukommt
 

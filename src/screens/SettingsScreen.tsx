@@ -117,6 +117,21 @@ export default function SettingsScreen() {
         />
       </View>
 
+      {/* ── Konto ── */}
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        Konto
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <NavRow
+          icon="account-circle-outline"
+          iconBg={colors.amberMid}
+          label="Konto & Sicherheit"
+          sublabel="E-Mail, Passwort, Abmelden"
+          onPress={() => navigation.navigate('SettingsKonto')}
+          showDivider={false}
+        />
+      </View>
+
       {/* ── Inhalte ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         Inhalte
@@ -133,44 +148,19 @@ export default function SettingsScreen() {
       </View>
 
       {/* ── System ── */}
-      {Platform.OS === 'android' && (
-        <>
-          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-            System
-          </Text>
-          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            <NavRow
-              icon="bell-outline"
-              iconBg={colors.ink}
-              label="Benachrichtigungen"
-              sublabel="Alarme & Akkuoptimierung"
-              onPress={() => navigation.navigate('SettingsBenachrichtigungen')}
-              showDivider={false}
-            />
-          </View>
-        </>
-      )}
-
-      {/* ── Konto ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Konto
+        System
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-        <NavRow
-          icon="account-circle-outline"
-          iconBg={colors.amberMid}
-          label="Konto & Sicherheit"
-          sublabel="E-Mail, Passwort, Abmelden"
-          onPress={() => navigation.navigate('SettingsKonto')}
-          showDivider={false}
-        />
-      </View>
-
-      {/* ── Verbindung ── */}
-      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Verbindung
-      </Text>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {Platform.OS === 'android' && (
+          <NavRow
+            icon="bell-outline"
+            iconBg={colors.ink}
+            label="Benachrichtigungen"
+            sublabel="Alarme & Akkuoptimierung"
+            onPress={() => navigation.navigate('SettingsBenachrichtigungen')}
+          />
+        )}
         <NavRow
           icon="cloud-sync-outline"
           iconBg={colors.inkDim}
@@ -203,9 +193,9 @@ export default function SettingsScreen() {
         />
       </View>
 
-      {/* ── Info ── */}
+      {/* ── Version ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Info
+        Version
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <InfoRow
