@@ -17,6 +17,7 @@ import SettingsBenachrichtigungenScreen from '../screens/SettingsBenachrichtigun
 import SettingsSynchronisationScreen from '../screens/SettingsSynchronisationScreen';
 import SettingsKontoScreen from '../screens/SettingsKontoScreen';
 import SettingsDatenschutzScreen from '../screens/SettingsDatenschutzScreen';
+import SettingsBookmarkletScreen from '../screens/SettingsBookmarkletScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -165,6 +166,11 @@ export default function AppNavigator() {
         name="SettingsDatenschutz"
         component={SettingsDatenschutzScreen}
         options={{ title: 'Datenschutz & DSGVO' }}
+      />
+      <Stack.Screen
+        name="SettingsBookmarklet"
+        component={SettingsBookmarkletScreen}
+        options={{ title: 'Bookmarklet' }}
       />
     </Stack.Navigator>
   );

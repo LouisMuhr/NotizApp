@@ -177,6 +177,13 @@ export default function SettingsScreen() {
           label="Synchronisation"
           sublabel="Claude-Bridge & Nutzer-ID"
           onPress={() => navigation.navigate('SettingsSynchronisation')}
+        />
+        <NavRow
+          icon="bookmark-plus-outline"
+          iconBg={colors.amberMid}
+          label="Bookmarklet"
+          sublabel="Webseiten als Notiz speichern"
+          onPress={() => navigation.navigate('SettingsBookmarklet')}
           showDivider={false}
         />
       </View>

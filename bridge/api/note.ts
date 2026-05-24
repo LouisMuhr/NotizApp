@@ -65,6 +65,11 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    // user_id from body (bookmarklet sends it explicitly); fall back to env BRIDGE_USER_ID
+    const userId = typeof body.user_id === 'string' && body.user_id.trim()
+      ? body.user_id.trim()
+      : BRIDGE_USER_ID;
+
     const checklist =
       Array.isArray(body.checklist) && body.checklist.length > 0
         ? body.checklist.map((text: string) => ({
@@ -74,22 +79,32 @@ export default async function handler(req: any, res: any) {
           }))
         : [];
 
+    const reminderAt =
+      body.reminder_at && typeof body.reminder_at === 'string'
+        ? body.reminder_at
+        : null;
+    const reminderRecurrence =
+      reminderAt && ['once', 'daily', 'weekly', 'monthly'].includes(body.reminder_recurrence)
+        ? body.reminder_recurrence
+        : 'once';
+
     const now = new Date().toISOString();
     const row = {
       id: randomUUID(),
-      user_id: BRIDGE_USER_ID,
+      user_id: userId,
       title: title || 'Notiz aus Claude',
       content,
       category: body.category || 'Allgemein',
-      is_pinned: Boolean(body.pinned),
+      is_pinned: false,
+      feeds_threads: Boolean(body.feeds_threads),
       checklist,
       created_at: now,
       updated_at: now,
-      reminder_at: null,
-      reminder_recurrence: 'once',
+      reminder_at: reminderAt,
+      reminder_recurrence: reminderRecurrence,
       reminder_weekday: null,
       reminder_day_of_month: null,
-      source: 'claude',
+      source: 'bookmarklet',
     };
 
     const r = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
