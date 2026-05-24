@@ -6,7 +6,7 @@ import { GraphData, Thread, Note, Similarity } from '@/types';
 import { GraphHandle } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
-import { NoteViewModal } from '@/components/NoteModal';
+import { NoteViewModal, NoteCreateModal, NoteCreateData } from '@/components/NoteModal';
 import LoginView, { AppUser } from '@/components/LoginView';
 import { supabase } from '@/lib/supabase';
 import { DEMO_DATA } from '@/lib/demoData';
@@ -65,6 +65,13 @@ export default function Home() {
     setUser(null);
   };
 
+  /** Aktuellen Supabase-Access-Token holen (null für Demo-User) */
+  const getToken = useCallback(async (): Promise<string | null> => {
+    if (user?.isDemo) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  }, [user]);
+
   // ── graph data ────────────────────────────────────────────────────────────
   const CACHE_KEY = 'notiz_graph_cache';
 
@@ -82,17 +89,19 @@ export default function Home() {
   const [graphData, setGraphData] = useState<GraphData>(cached ?? EMPTY);
   const [loading, setLoading]     = useState(!cached); // kein Spinner wenn Cache vorhanden
 
-  const fetchGraph = useCallback((currentUser?: AppUser | null) => {
+  const fetchGraph = useCallback(async (currentUser?: AppUser | null) => {
     const u = currentUser ?? user;
     if (u?.isDemo) {
       setGraphData(DEMO_DATA);
       setLoading(false);
       return;
     }
+    const token = await getToken();
+    if (!token) return;
     // Nur Spinner zeigen wenn noch kein Cache da
     if (!readCache()) setLoading(true);
-    fetch('/api/graph')
-      .then(r => r.json())
+    fetch('/api/graph', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: GraphData) => {
         setGraphData(data);
         writeCache(data);
@@ -100,7 +109,7 @@ export default function Home() {
       })
       .catch(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [getToken]);
 
   useEffect(() => { if (user) fetchGraph(user); }, [user, fetchGraph]);
 
@@ -137,7 +146,24 @@ export default function Home() {
     setTooltip(label ? { label, x, y } : null);
   }, []);
 
-  // ── note delete (optimistic) ──────────────────────────────────────────────
+  // ── note create / delete ──────────────────────────────────────────────────
+  const [showCreate, setShowCreate] = useState(false);
+
+  const handleCreateNote = useCallback(async (data: NoteCreateData) => {
+    if (user?.isDemo) { setShowCreate(false); return; }
+    const token = await getToken();
+    if (!token) return;
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    });
+    if (res.ok) {
+      sessionStorage.removeItem('notiz_graph_cache');
+      fetchGraph();
+    }
+  }, [user, getToken, fetchGraph]);
+
   const handleDeleteNote = useCallback(async (id: string) => {
     // Sofort aus lokalem State entfernen — kein Reload, kein Flackern
     setGraphData(prev => ({
@@ -150,8 +176,14 @@ export default function Home() {
       })),
     }));
     setSelectedNote(null);
-    if (!user?.isDemo) await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-  }, [user]);
+    if (!user?.isDemo) {
+      const token = await getToken();
+      if (token) await fetch(`/api/notes/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  }, [user, getToken]);
 
   // ── realtime: Graph neu laden wenn Worker synthetisiert ───────────────────
   useEffect(() => {
@@ -249,11 +281,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* Right: hint + user chip */}
+        {/* Right: hint + create button + user chip */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'all' }}>
           <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
             Klick auf <strong style={{ color: 'var(--amber)' }}>Thread</strong> oder <strong style={{ color: '#5AA46A' }}>Notiz</strong>
           </span>
+          {/* + Notiz Button */}
+          {!user.isDemo && (
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(244,162,97,0.12)', border: '1px solid rgba(244,162,97,0.25)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
+            >
+              ＋ Notiz
+            </button>
+          )}
           {/* User chip */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(244,162,97,0.08)', border: '1px solid rgba(244,162,97,0.15)', borderRadius: 20, padding: '4px 12px' }}>
             <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(244,162,97,0.2)', color: '#F4A261', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
@@ -339,6 +380,15 @@ export default function Home() {
 
       {selectedNote && (
         <NoteViewModal note={selectedNote} onClose={() => setSelectedNote(null)} onDelete={handleDeleteNote} />
+      )}
+
+      {showCreate && (
+        <NoteCreateModal
+          threads={graphData.threads}
+          userId={user.id}
+          onClose={() => setShowCreate(false)}
+          onCreate={handleCreateNote}
+        />
       )}
 
       {selectedSim && (

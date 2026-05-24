@@ -1,30 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@/lib/supabase';
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = req.headers.get('Authorization');
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await req.json();
-    const { title, content, category, threadId, userId, includeInThreads, reminder } = body;
+    const { title, content, category, threadId, includeInThreads, reminder } = body;
 
     if (!title?.trim()) {
       return NextResponse.json({ error: 'Titel ist erforderlich.' }, { status: 400 });
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
+    const supabase = createServerClient(token);
+
+    // user_id aus dem Token ableiten (RLS setzt es automatisch via auth.uid())
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const noteData: Record<string, unknown> = {
       title: title.trim(),
       content: content?.trim() ?? '',
       category: category ?? '',
+      user_id: user.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    // Optional fields
-    if (userId && userId !== 'demo') noteData.user_id = userId;
     if (includeInThreads !== undefined) noteData.feeds_threads = includeInThreads;
     if (reminder) noteData.reminder = reminder;
 

@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@/lib/supabase';
 import { GraphData, Thread, Note, Similarity } from '@/types';
 
-export const revalidate = 60;
+export const revalidate = 0; // kein statisches Caching — Daten sind nutzer-spezifisch
 
-export async function GET() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get('Authorization');
+  const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const supabase = createServerClient(token);
 
   const [{ data: threadRows }, { data: noteRows }, { data: similarityRows }] = await Promise.all([
     supabase
