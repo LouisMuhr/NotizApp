@@ -50,6 +50,32 @@ function checkRateLimit(profile: ProfileRow): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Profile update helper
+// ---------------------------------------------------------------------------
+
+async function updateProfile(
+  supabaseUrl: string,
+  serviceKey: string,
+  uid: string,
+  profile: ProfileRow,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const todayUtc = now.slice(0, 10);
+  const isNewDay = profile.ai_day_reset !== todayUtc;
+  const runsToday = isNewDay ? 1 : (profile.ai_runs_today ?? 0) + 1;
+
+  await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${uid}`, {
+    method: 'PATCH',
+    headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      ai_last_run: now,
+      ai_runs_today: runsToday,
+      ai_day_reset: todayUtc,
+    }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CORS / Supabase helpers
 // ---------------------------------------------------------------------------
 
@@ -206,6 +232,8 @@ export default async function handler(req: any, res: any) {
     ]);
 
     if (!feedNotes.length) {
+      // Auch ohne Feed-Notizen den Lauf als "verbraucht" markieren
+      await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
       res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
       return;
     }
@@ -298,19 +326,7 @@ export default async function handler(req: any, res: any) {
     // -----------------------------------------------------------------------
     // Update profile: ai_last_run, ai_runs_today, ai_day_reset
     // -----------------------------------------------------------------------
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    const isNewDay = profile.ai_day_reset !== todayUtc;
-    const runsToday = isNewDay ? 1 : (profile.ai_runs_today ?? 0) + 1;
-
-    await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}`, {
-      method: 'PATCH',
-      headers: { ...sbHeaders(SUPABASE_SERVICE_KEY), Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        ai_last_run: now,
-        ai_runs_today: runsToday,
-        ai_day_reset: todayUtc,
-      }),
-    });
+    await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
 
     res.status(200).json({ ok: true, threads_created, threads_updated });
   } catch (e: any) {
