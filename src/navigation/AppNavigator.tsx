@@ -18,6 +18,7 @@ import SettingsSynchronisationScreen from '../screens/SettingsSynchronisationScr
 import SettingsKontoScreen from '../screens/SettingsKontoScreen';
 import SettingsDatenschutzScreen from '../screens/SettingsDatenschutzScreen';
 import SettingsBookmarkletScreen from '../screens/SettingsBookmarkletScreen';
+import SettingsAboScreen from '../screens/SettingsAboScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -171,6 +172,11 @@ export default function AppNavigator() {
         name="SettingsBookmarklet"
         component={SettingsBookmarkletScreen}
         options={{ title: 'Bookmarklet' }}
+      />
+      <Stack.Screen
+        name="SettingsAbo"
+        component={SettingsAboScreen}
+        options={{ title: 'Mein Abo' }}
       />
     </Stack.Navigator>
   );

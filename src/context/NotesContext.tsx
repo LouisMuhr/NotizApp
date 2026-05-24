@@ -9,12 +9,17 @@ import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
 import { getUserId, clearUserIdCache } from '../sync/userId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import * as haptics from '../utils/haptics';
+import { subscriptionService, Tier } from '../sync/subscriptionService';
 
 interface NotesContextType {
   notes: Note[];
   archivedNotes: Note[];
   categories: string[];
   loading: boolean;
+  // Subscription / Rate-Limit
+  tier: Tier;
+  nextAllowedAt: Date | null;
+  refreshSubscription: () => Promise<void>;
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>) => Promise<Note>;
   updateNote: (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -35,9 +40,21 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
+  const [tier, setTier] = useState<Tier>('free');
+  const [nextAllowedAt, setNextAllowedAt] = useState<Date | null>(null);
   const deviceIdRef = useRef<string | null>(null);
   const tombstonesRef = useRef<Set<string>>(new Set());
   const startSyncRef = useRef<((userId: string, remoteOnly?: boolean) => Promise<void>) | null>(null);
+
+  const refreshSubscription = useCallback(async () => {
+    try {
+      const status = await subscriptionService.getStatus();
+      setTier(status.tier);
+      setNextAllowedAt(status.nextAllowedAt);
+    } catch (e) {
+      console.warn('[subscription] refresh failed', e);
+    }
+  }, []);
 
   const addTombstones = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
@@ -51,6 +68,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, []);
+
+  // Load subscription status once on mount (after auth is available)
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -436,6 +458,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         archivedNotes,
         categories,
         loading,
+        tier,
+        nextAllowedAt,
+        refreshSubscription,
         addNote,
         updateNote,
         deleteNote,

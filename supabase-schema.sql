@@ -131,3 +131,57 @@ create policy "tt delete"       on public.thought_threads for delete using (true
 -- ============================================================================
 -- Einmalig im Supabase SQL-Editor ausführen (bestehende Projekte):
 -- ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS is_pinned boolean NOT NULL DEFAULT false;
+
+-- ============================================================================
+-- Phase 3e: Abo-Modell & KI-Rate-Limiting — profiles-Tabelle
+-- ============================================================================
+-- Einmalig im Supabase SQL-Editor ausführen.
+
+create table if not exists public.profiles (
+  id            uuid primary key references auth.users(id) on delete cascade,
+  tier          text not null default 'free',   -- 'free' | 'basic' | 'pro'
+  ai_last_run   timestamptz,
+  ai_runs_today int not null default 0,
+  ai_day_reset  date,
+  created_at    timestamptz default now()
+);
+
+alter table public.profiles enable row level security;
+
+create policy "profiles: own read"
+  on public.profiles for select
+  using (auth.uid() = id);
+
+create policy "profiles: own update"
+  on public.profiles for update
+  using (auth.uid() = id);
+
+-- Service-role (Bridge API) darf schreiben:
+create policy "profiles: service insert"
+  on public.profiles for insert
+  with check (true);
+
+-- Trigger: Row automatisch anlegen bei jedem neuen User (auch anonym)
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id)
+  values (new.id)
+  on conflict do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Für bestehende User (bereits eingeloggte Accounts) nachholen:
+-- INSERT INTO public.profiles (id)
+-- SELECT id FROM auth.users
+-- ON CONFLICT DO NOTHING;
