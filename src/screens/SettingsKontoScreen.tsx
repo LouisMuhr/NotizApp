@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Animated } from 'react-native';
-import { useTheme, Text, TextInput, Button, SegmentedButtons } from 'react-native-paper';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Animated,
+  TouchableOpacity,
+  TextInput as RNTextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -9,13 +18,14 @@ import { clearUserIdCache } from '../sync/userId';
 import { migrateAndDeleteAnonUser } from '../sync/deleteAnonUser';
 import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
-import { Fonts } from '../theme/typography';
+import { Fonts, Type } from '../theme/typography';
 
 const SIGNED_OUT_KEY = '@notizapp_signed_out_uid';
 
 type AccountState = 'loading' | 'anonymous' | 'signed-in' | 'signed-out';
 type AnonTab = 'signup' | 'signin';
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ message, type }: { message: string; type: 'error' | 'success' | 'info' }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-12)).current;
@@ -31,38 +41,184 @@ function Toast({ message, type }: { message: string; type: 'error' | 'success' |
         Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
         Animated.timing(translateY, { toValue: -12, duration: 200, useNativeDriver: true }),
       ]).start();
-    }, 3000);
+    }, 3200);
     return () => clearTimeout(timer);
   }, [message]);
 
   if (!message) return null;
 
-  const bg = type === 'error' ? '#c0392b' : type === 'success' ? '#27ae60' : Tokens.ink;
+  const bg =
+    type === 'error' ? '#B14A3D' :
+    type === 'success' ? '#3D7A4A' :
+    Tokens.ink;
+
+  const icon =
+    type === 'error' ? 'alert-circle-outline' :
+    type === 'success' ? 'check-circle-outline' :
+    'information-outline';
 
   return (
     <Animated.View style={[styles.toast, { backgroundColor: bg, opacity, transform: [{ translateY }] }]}>
-      <MaterialCommunityIcons
-        name={type === 'error' ? 'alert-circle-outline' : type === 'success' ? 'check-circle-outline' : 'information-outline'}
-        size={16}
-        color="#fff"
-      />
+      <MaterialCommunityIcons name={icon} size={15} color={Tokens.paper} />
       <Text style={styles.toastText}>{message}</Text>
     </Animated.View>
   );
 }
 
+// ─── Eingabefeld ──────────────────────────────────────────────────────────────
+function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  secure,
+  keyboardType,
+  autoCapitalize,
+  onSubmit,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  secure?: boolean;
+  keyboardType?: 'email-address' | 'default';
+  autoCapitalize?: 'none' | 'sentences';
+  onSubmit?: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  return (
+    <View style={fieldStyles.wrap}>
+      <Text style={[fieldStyles.label, focused && { color: Tokens.amberDeep }]}>{label}</Text>
+      <View style={[
+        fieldStyles.inputRow,
+        { borderColor: focused ? Tokens.amberDeep : Tokens.rule },
+      ]}>
+        <RNTextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={Tokens.inkFaint}
+          secureTextEntry={secure && !showPw}
+          keyboardType={keyboardType ?? 'default'}
+          autoCapitalize={autoCapitalize ?? 'sentences'}
+          autoCorrect={false}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onSubmitEditing={onSubmit}
+          returnKeyType={onSubmit ? 'done' : 'next'}
+          style={[fieldStyles.input, { color: Tokens.ink }]}
+        />
+        {secure && (
+          <TouchableOpacity onPress={() => setShowPw((v) => !v)} style={fieldStyles.eyeBtn}>
+            <MaterialCommunityIcons
+              name={showPw ? 'eye-off-outline' : 'eye-outline'}
+              size={18}
+              color={Tokens.inkFaint}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const fieldStyles = StyleSheet.create({
+  wrap: { gap: 6 },
+  label: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: Tokens.inkDim,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    backgroundColor: Tokens.paperDeep,
+    paddingHorizontal: 14,
+  },
+  input: {
+    flex: 1,
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    paddingVertical: 11,
+  },
+  eyeBtn: { padding: 4 },
+});
+
+// ─── Primärer Button ──────────────────────────────────────────────────────────
+function PrimaryButton({
+  label,
+  onPress,
+  loading,
+  disabled,
+  danger,
+}: {
+  label: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  const bg = danger ? '#F4DAD3' : Tokens.amberDeep;
+  const fg = danger ? '#B14A3D' : Tokens.paper;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.75}
+      style={[
+        btnStyles.btn,
+        { backgroundColor: bg, opacity: (disabled || loading) ? 0.5 : 1 },
+      ]}
+    >
+      {loading ? (
+        <MaterialCommunityIcons name="loading" size={18} color={fg} />
+      ) : (
+        <Text style={[btnStyles.label, { color: fg }]}>{label}</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const btnStyles = StyleSheet.create({
+  btn: {
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 14,
+  },
+});
+
+// ─── Haupt-Screen ─────────────────────────────────────────────────────────────
 export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { resyncForUser } = useNotes();
+
   const [accountState, setAccountState] = useState<AccountState>('loading');
   const [anonTab, setAnonTab] = useState<AnonTab>('signup');
   const [email, setEmail] = useState('');
+
+  // Felder
   const [inputEmail, setInputEmail] = useState('');
   const [inputPassword, setInputPassword] = useState('');
   const [inputPasswordConfirm, setInputPasswordConfirm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' | 'info' }>({ message: '', type: 'info' });
+
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' | 'info' }>({
+    message: '',
+    type: 'info',
+  });
   const toastKey = useRef(0);
 
   const showToast = (message: string, type: 'error' | 'success' | 'info' = 'info') => {
@@ -70,6 +226,18 @@ export default function SettingsKontoScreen() {
     setToast({ message, type });
   };
 
+  const clearFields = () => {
+    setInputEmail('');
+    setInputPassword('');
+    setInputPasswordConfirm('');
+  };
+
+  const switchTab = (tab: AnonTab) => {
+    setAnonTab(tab);
+    clearFields();
+  };
+
+  // ── Auth-State laden ──
   useEffect(() => {
     (async () => {
       const supabase = getSupabase();
@@ -90,6 +258,7 @@ export default function SettingsKontoScreen() {
     })();
   }, []);
 
+  // ── Actions ──
   const handleSignOut = async () => {
     setLoading(true);
     const supabase = getSupabase();
@@ -118,17 +287,15 @@ export default function SettingsKontoScreen() {
       email: inputEmail.trim(),
       password: inputPassword,
     });
+    setLoading(false);
     if (error) {
-      setLoading(false);
-      showToast('Fehler: ' + error.message, 'error');
+      showToast('Anmeldung fehlgeschlagen: ' + error.message, 'error');
     } else {
       if (anonUid) await migrateAndDeleteAnonUser(anonUid, data.user.id);
       await resyncForUser(data.user.id);
       await AsyncStorage.removeItem(SIGNED_OUT_KEY);
-      setLoading(false);
       setEmail(data.user?.email ?? '');
-      setInputEmail('');
-      setInputPassword('');
+      clearFields();
       setAccountState('signed-in');
       navigation.navigate('Home', { screen: 'Threads' });
     }
@@ -160,9 +327,7 @@ export default function SettingsKontoScreen() {
     } else {
       setAccountState('signed-in');
       setEmail(inputEmail.trim());
-      setInputEmail('');
-      setInputPassword('');
-      setInputPasswordConfirm('');
+      clearFields();
       showToast('Konto gesichert! Bitte E-Mail bestätigen.', 'success');
     }
   };
@@ -188,120 +353,253 @@ export default function SettingsKontoScreen() {
     if (error) {
       showToast('Fehler: ' + error.message, 'error');
     } else {
-      setInputPassword('');
-      setInputPasswordConfirm('');
-      showToast('Passwort geändert.', 'success');
+      clearFields();
+      showToast('Passwort erfolgreich geändert.', 'success');
     }
   };
 
+  // ── Loading ──
   if (accountState === 'loading') {
     return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Toast key={toastKey.current} message={toast.message} type={toast.type} />
 
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
+
+        {/* ══════════════════════════════════════════
+            ANONYM  — Konto sichern / Anmelden
+        ══════════════════════════════════════════ */}
         {accountState === 'anonymous' && (
           <>
-            <SegmentedButtons
-              value={anonTab}
-              onValueChange={(v) => { setAnonTab(v as AnonTab); setInputEmail(''); setInputPassword(''); setInputPasswordConfirm(''); }}
-              buttons={[
-                { value: 'signup', label: 'Konto sichern' },
-                { value: 'signin', label: 'Anmelden' },
-              ]}
-              style={styles.tabs}
-            />
+            {/* Tab-Umschalter */}
+            <View style={styles.tabBar}>
+              <TouchableOpacity
+                style={[styles.tabBtn, anonTab === 'signup' && styles.tabBtnActive]}
+                onPress={() => switchTab('signup')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.tabLabel, anonTab === 'signup' && styles.tabLabelActive]}>
+                  Konto sichern
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, anonTab === 'signin' && styles.tabBtnActive]}
+                onPress={() => switchTab('signin')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.tabLabel, anonTab === 'signin' && styles.tabLabelActive]}>
+                  Anmelden
+                </Text>
+              </TouchableOpacity>
+            </View>
 
+            {/* Konto sichern */}
             {anonTab === 'signup' && (
               <>
-                <View style={[styles.banner, { backgroundColor: Tokens.amberDeep + '22', borderColor: Tokens.amberDeep + '55' }]}>
-                  <MaterialCommunityIcons name="alert-circle-outline" size={20} color={Tokens.amberDeep} />
-                  <Text style={[styles.bannerText, { color: Tokens.ink }]}>
-                    Dein Konto ist noch nicht gesichert. Bei einer Neu-Installation gehen alle Sync-Daten verloren.
-                  </Text>
+                {/* Warnbanner */}
+                <View style={styles.warningBanner}>
+                  <View style={styles.warningIcon}>
+                    <MaterialCommunityIcons name="shield-alert-outline" size={20} color={Tokens.amberDeep} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.warningTitle}>Konto nicht gesichert</Text>
+                    <Text style={styles.warningText}>
+                      Bei einer Neu-Installation oder einem Gerätewechsel gehen alle Sync-Daten verloren.
+                    </Text>
+                  </View>
                 </View>
+
+                {/* Formular */}
                 <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-                  <TextInput label="E-Mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" autoCapitalize="none" mode="outlined" style={styles.input} />
-                  <TextInput label="Passwort" value={inputPassword} onChangeText={setInputPassword} secureTextEntry mode="outlined" style={styles.input} />
-                  <TextInput label="Passwort wiederholen" value={inputPasswordConfirm} onChangeText={setInputPasswordConfirm} secureTextEntry mode="outlined" style={styles.input} />
-                  <Button mode="contained" onPress={handleUpgrade} loading={loading} disabled={loading} style={styles.button}>
-                    Konto sichern
-                  </Button>
+                  <Field
+                    label="E-Mail-Adresse"
+                    value={inputEmail}
+                    onChangeText={setInputEmail}
+                    placeholder="deine@email.com"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <Field
+                    label="Passwort"
+                    value={inputPassword}
+                    onChangeText={setInputPassword}
+                    placeholder="Mindestens 6 Zeichen"
+                    secure
+                  />
+                  <Field
+                    label="Passwort bestätigen"
+                    value={inputPasswordConfirm}
+                    onChangeText={setInputPasswordConfirm}
+                    placeholder="Nochmals eingeben"
+                    secure
+                    onSubmit={handleUpgrade}
+                  />
+                  <PrimaryButton
+                    label="Konto jetzt sichern"
+                    onPress={handleUpgrade}
+                    loading={loading}
+                    disabled={!inputEmail.trim() || !inputPassword || !inputPasswordConfirm}
+                  />
                 </View>
               </>
             )}
 
+            {/* Anmelden */}
             {anonTab === 'signin' && (
               <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-                <TextInput label="E-Mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" autoCapitalize="none" mode="outlined" style={styles.input} />
-                <TextInput label="Passwort" value={inputPassword} onChangeText={setInputPassword} secureTextEntry mode="outlined" style={styles.input} />
-                <Button mode="contained" onPress={handleSignIn} loading={loading} disabled={loading} style={styles.button}>
-                  Anmelden
-                </Button>
+                <Field
+                  label="E-Mail-Adresse"
+                  value={inputEmail}
+                  onChangeText={setInputEmail}
+                  placeholder="deine@email.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <Field
+                  label="Passwort"
+                  value={inputPassword}
+                  onChangeText={setInputPassword}
+                  placeholder="Dein Passwort"
+                  secure
+                  onSubmit={handleSignIn}
+                />
+                <PrimaryButton
+                  label="Anmelden"
+                  onPress={handleSignIn}
+                  loading={loading}
+                  disabled={!inputEmail.trim() || !inputPassword}
+                />
               </View>
             )}
           </>
         )}
 
+        {/* ══════════════════════════════════════════
+            ANGEMELDET
+        ══════════════════════════════════════════ */}
         {accountState === 'signed-in' && (
           <>
-            <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>Konto</Text>
+            {/* Konto-Info */}
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Konto</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <View style={styles.row}>
-                <View style={[styles.rowIcon, { backgroundColor: Tokens.amberDeep }]}>
-                  <MaterialCommunityIcons name="account-outline" size={19} color={Tokens.paper} />
+              <View style={styles.accountRow}>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarLetter}>
+                    {email.charAt(0).toUpperCase()}
+                  </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, fontFamily: Fonts.sansMedium }}>Angemeldet als</Text>
-                  <Text style={{ color: theme.colors.onSurface, fontSize: 14, fontFamily: Fonts.sansMedium }}>{email}</Text>
+                  <Text style={styles.accountEmail}>{email}</Text>
+                  <View style={styles.verifiedBadge}>
+                    <MaterialCommunityIcons name="check-circle" size={12} color="#3D7A4A" />
+                    <Text style={styles.verifiedText}>Angemeldet</Text>
+                  </View>
                 </View>
               </View>
             </View>
 
-            <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>Passwort ändern</Text>
+            {/* Passwort ändern */}
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
+              Passwort ändern
+            </Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <TextInput label="Neues Passwort" value={inputPassword} onChangeText={setInputPassword} secureTextEntry mode="outlined" style={styles.input} />
-              <TextInput label="Passwort wiederholen" value={inputPasswordConfirm} onChangeText={setInputPasswordConfirm} secureTextEntry mode="outlined" style={styles.input} />
-              <Button mode="contained" onPress={handleChangePassword} loading={loading} disabled={loading} style={styles.button}>
-                Passwort ändern
-              </Button>
+              <Field
+                label="Neues Passwort"
+                value={inputPassword}
+                onChangeText={setInputPassword}
+                placeholder="Mindestens 6 Zeichen"
+                secure
+              />
+              <Field
+                label="Passwort bestätigen"
+                value={inputPasswordConfirm}
+                onChangeText={setInputPasswordConfirm}
+                placeholder="Nochmals eingeben"
+                secure
+                onSubmit={handleChangePassword}
+              />
+              <PrimaryButton
+                label="Passwort aktualisieren"
+                onPress={handleChangePassword}
+                loading={loading}
+                disabled={!inputPassword || !inputPasswordConfirm}
+              />
             </View>
 
-            <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>Sitzung</Text>
+            {/* Abmelden */}
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Sitzung</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <Button mode="outlined" onPress={handleSignOut} loading={loading} disabled={loading} textColor={theme.colors.error} style={[styles.button, { borderColor: theme.colors.error + '55' }]}>
-                Abmelden
-              </Button>
+              <PrimaryButton
+                label="Abmelden"
+                onPress={handleSignOut}
+                loading={loading}
+                danger
+              />
             </View>
           </>
         )}
 
+        {/* ══════════════════════════════════════════
+            ABGEMELDET — wieder anmelden
+        ══════════════════════════════════════════ */}
         {accountState === 'signed-out' && (
           <>
-            <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>Anmelden</Text>
+            {/* Info-Banner */}
+            <View style={styles.infoBanner}>
+              <MaterialCommunityIcons name="account-off-outline" size={20} color={Tokens.inkDim} />
+              <Text style={styles.infoText}>Du bist abgemeldet. Melde dich an, um deine Notizen zu synchronisieren.</Text>
+            </View>
+
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Anmelden</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <TextInput label="E-Mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" autoCapitalize="none" mode="outlined" style={styles.input} />
-              <TextInput label="Passwort" value={inputPassword} onChangeText={setInputPassword} secureTextEntry mode="outlined" style={styles.input} />
-              <Button mode="contained" onPress={handleSignIn} loading={loading} disabled={loading} style={styles.button}>
-                Anmelden
-              </Button>
+              <Field
+                label="E-Mail-Adresse"
+                value={inputEmail}
+                onChangeText={setInputEmail}
+                placeholder="deine@email.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <Field
+                label="Passwort"
+                value={inputPassword}
+                onChangeText={setInputPassword}
+                placeholder="Dein Passwort"
+                secure
+                onSubmit={handleSignIn}
+              />
+              <PrimaryButton
+                label="Anmelden"
+                onPress={handleSignIn}
+                loading={loading}
+                disabled={!inputEmail.trim() || !inputPassword}
+              />
             </View>
           </>
         )}
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 100, gap: 6 },
-  tabs: { marginBottom: 8 },
+  content: {
+    padding: 16,
+    paddingBottom: 100,
+    gap: 10,
+  },
+
+  // ── Toast ──
   toast: {
     position: 'absolute',
     top: 12,
@@ -314,60 +612,148 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     zIndex: 100,
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: Tokens.warmShadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
   toastText: {
-    color: '#fff',
-    fontSize: 13,
+    color: Tokens.paper,
     fontFamily: Fonts.sansMedium,
+    fontSize: 13,
   },
-  banner: {
+
+  // ── Tabs ──
+  tabBar: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 4,
+    backgroundColor: Tokens.paperDeep,
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Tokens.paperEdge,
   },
-  bannerText: {
+  tabBtn: {
     flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: Fonts.sansMedium,
+    paddingVertical: 10,
+    borderRadius: 11,
+    alignItems: 'center',
   },
-  sectionHeader: {
+  tabBtnActive: {
+    backgroundColor: Tokens.paper,
+    shadowColor: Tokens.warmShadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabLabel: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 13.5,
+    color: Tokens.inkFaint,
+  },
+  tabLabelActive: {
+    fontFamily: Fonts.sansSemibold,
+    color: Tokens.ink,
+  },
+
+  // ── Karten ──
+  card: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Tokens.paperEdge,
+    padding: 16,
+    gap: 14,
+  },
+
+  // ── Eyebrow ──
+  eyebrow: {
     fontFamily: Fonts.sansSemibold,
     fontSize: 10.5,
     letterSpacing: 0.84,
     textTransform: 'uppercase',
-    marginTop: 10,
-    marginBottom: 4,
+    marginTop: 6,
     marginLeft: 4,
   },
-  card: {
+
+  // ── Warnbanner ──
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: Tokens.amberSoft,
     borderRadius: 14,
-    overflow: 'hidden',
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Tokens.amber + '80',
+  },
+  warningIcon: {
+    marginTop: 1,
+  },
+  warningTitle: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 13.5,
+    color: Tokens.amberDeep,
+  },
+  warningText: {
+    fontFamily: Fonts.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Tokens.ink,
+  },
+
+  // ── Info-Banner ──
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: Tokens.paperDeep,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Tokens.paperEdge,
-    padding: 16,
-    gap: 10,
   },
-  input: { backgroundColor: 'transparent' },
-  button: { marginTop: 4 },
-  row: {
+  infoText: {
+    flex: 1,
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    lineHeight: 19,
+    color: Tokens.inkDim,
+  },
+
+  // ── Account-Row ──
+  accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+  avatarCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: Tokens.amberSoft,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarLetter: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 20,
+    color: Tokens.amberDeep,
+  },
+  accountEmail: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 15,
+    color: Tokens.ink,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  verifiedText: {
+    fontFamily: Fonts.sansMedium,
+    fontSize: 11.5,
+    color: '#3D7A4A',
   },
 });
