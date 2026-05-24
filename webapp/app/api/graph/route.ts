@@ -7,7 +7,7 @@ export const revalidate = 60;
 export async function GET() {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
   const [{ data: threadRows }, { data: noteRows }, { data: similarityRows }] = await Promise.all([
@@ -17,8 +17,7 @@ export async function GET() {
       .eq('status', 'active'),
     supabase
       .from('notes')
-      .select('id, title, content, category, created_at, updated_at')
-      .eq('feeds_threads', true),
+      .select('id, title, content, category, created_at, updated_at'),
     supabase
       .from('thread_similarities')
       .select('id, thread_id_1, thread_id_2, label'),
