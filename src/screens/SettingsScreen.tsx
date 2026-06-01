@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
+import { useNotes } from '../context/NotesContext';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: APP_VERSION } = require('../../package.json') as { version: string };
 
@@ -83,6 +84,9 @@ function InfoRow({
 export default function SettingsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
+  const { tier } = useNotes();
+
+  const tierLabel = tier === 'pro' ? 'Pro-Plan' : tier === 'basic' ? 'Basic-Plan' : 'Free-Plan';
 
   const colors = {
     amber: Tokens.amberDeep,
@@ -128,6 +132,13 @@ export default function SettingsScreen() {
           label="Konto & Sicherheit"
           sublabel="E-Mail, Passwort, Abmelden"
           onPress={() => navigation.navigate('SettingsKonto')}
+        />
+        <NavRow
+          icon="crown-outline"
+          iconBg={colors.amber}
+          label="Mein Abo"
+          sublabel={tierLabel}
+          onPress={() => navigation.navigate('SettingsAbo')}
           showDivider={false}
         />
       </View>

@@ -1,5 +1,84 @@
 import { randomUUID } from 'node:crypto';
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Tier = 'free' | 'basic' | 'pro';
+
+interface ProfileRow {
+  id: string;
+  tier: Tier;
+  ai_last_run: string | null;
+  ai_runs_today: number;
+  ai_day_reset: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Rate-limit check — returns nextAllowedAt ISO string or null (= allowed)
+// ---------------------------------------------------------------------------
+
+function checkRateLimit(profile: ProfileRow): string | null {
+  const { tier, ai_last_run, ai_runs_today, ai_day_reset } = profile;
+  const now = new Date();
+
+  if (!ai_last_run) return null; // never run → always allowed
+
+  const lastRun = new Date(ai_last_run);
+
+  if (tier === 'free') {
+    const nextAllowed = new Date(lastRun.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return nextAllowed > now ? nextAllowed.toISOString() : null;
+  }
+
+  if (tier === 'basic') {
+    const nextAllowed = new Date(lastRun.getTime() + 24 * 60 * 60 * 1000);
+    return nextAllowed > now ? nextAllowed.toISOString() : null;
+  }
+
+  if (tier === 'pro') {
+    const todayUtc = now.toISOString().slice(0, 10);
+    if (ai_day_reset === todayUtc && ai_runs_today >= 10) {
+      const midnight = new Date(todayUtc);
+      midnight.setUTCDate(midnight.getUTCDate() + 1);
+      return midnight.toISOString();
+    }
+    return null;
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Profile update helper
+// ---------------------------------------------------------------------------
+
+async function updateProfile(
+  supabaseUrl: string,
+  serviceKey: string,
+  uid: string,
+  profile: ProfileRow,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const todayUtc = now.slice(0, 10);
+  const isNewDay = profile.ai_day_reset !== todayUtc;
+  const runsToday = isNewDay ? 1 : (profile.ai_runs_today ?? 0) + 1;
+
+  await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${uid}`, {
+    method: 'PATCH',
+    headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      ai_last_run: now,
+      ai_runs_today: runsToday,
+      ai_day_reset: todayUtc,
+    }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CORS / Supabase helpers
+// ---------------------------------------------------------------------------
+
 function setCors(res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -105,8 +184,46 @@ export default async function handler(req: any, res: any) {
       res.status(401).json({ error: 'invalid token' }); return;
     }
 
-    // Daten laden
+    // -----------------------------------------------------------------------
+    // Rate-limit check
+    // -----------------------------------------------------------------------
     const uid = encodeURIComponent(userId);
+
+    // Load or create profile row (upsert as safety-net if trigger didn't run)
+    const profileRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=*`,
+      { headers: sbHeaders(SUPABASE_SERVICE_KEY) },
+    );
+    let profileRows: ProfileRow[] = profileRes.ok ? await profileRes.json() : [];
+
+    if (profileRows.length === 0) {
+      // Trigger hasn't run yet for this user — create row now
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
+        method: 'POST',
+        headers: { ...sbHeaders(SUPABASE_SERVICE_KEY), Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        body: JSON.stringify({ id: userId }),
+      });
+      // Re-fetch
+      const refetch = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=*`,
+        { headers: sbHeaders(SUPABASE_SERVICE_KEY) },
+      );
+      profileRows = refetch.ok ? await refetch.json() : [];
+    }
+
+    const profile: ProfileRow = profileRows[0] ?? {
+      id: userId, tier: 'free', ai_last_run: null, ai_runs_today: 0, ai_day_reset: null,
+    };
+
+    const nextAllowedAt = checkRateLimit(profile);
+    if (nextAllowedAt) {
+      res.status(429).json({ error: 'limit_reached', next_allowed_at: nextAllowedAt });
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Daten laden
+    // -----------------------------------------------------------------------
     const [feedNotes, activeThreads] = await Promise.all([
       sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY,
         `notes?user_id=eq.${uid}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`),
@@ -115,6 +232,8 @@ export default async function handler(req: any, res: any) {
     ]);
 
     if (!feedNotes.length) {
+      // Auch ohne Feed-Notizen den Lauf als "verbraucht" markieren
+      await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
       res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
       return;
     }
@@ -203,6 +322,11 @@ export default async function handler(req: any, res: any) {
         `threads?user_id=eq.${uid}&id=eq.${encodeURIComponent(u.id)}`, patch);
       threads_updated++;
     }
+
+    // -----------------------------------------------------------------------
+    // Update profile: ai_last_run, ai_runs_today, ai_day_reset
+    // -----------------------------------------------------------------------
+    await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
 
     res.status(200).json({ ok: true, threads_created, threads_updated });
   } catch (e: any) {

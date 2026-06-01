@@ -11,6 +11,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThoughts } from '../context/ThoughtsContext';
+import { useNotes } from '../context/NotesContext';
 import { Thread } from '../models/Thought';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
@@ -194,7 +195,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
 
 const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? '';
 
-async function runSynthesis(): Promise<string> {
+async function runSynthesis(): Promise<{ message: string; next_allowed_at?: string }> {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Sync nicht konfiguriert');
   const { data: { session } } = await supabase.auth.getSession();
@@ -206,30 +207,68 @@ async function runSynthesis(): Promise<string> {
   });
 
   const json = await res.json();
+
+  if (res.status === 429) {
+    return { message: 'limit_reached', next_allowed_at: json?.next_allowed_at };
+  }
+
   if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-  if (json.message === 'no_feed_notes') return 'Keine neuen Notizen zum Verarbeiten.';
+  if (json.message === 'no_feed_notes') return { message: 'Keine neuen Notizen zum Verarbeiten.' };
   const created = json.threads_created ?? 0;
   const updated = json.threads_updated ?? 0;
   const parts: string[] = [];
   if (created > 0) parts.push(`${created} ${created === 1 ? 'Thread erstellt' : 'Threads erstellt'}`);
   if (updated > 0) parts.push(`${updated} ${updated === 1 ? 'Thread aktualisiert' : 'Threads aktualisiert'}`);
-  return parts.length > 0 ? parts.join(', ') : 'Fertig — nichts Neues.';
+  return { message: parts.length > 0 ? parts.join(', ') : 'Fertig — nichts Neues.' };
+}
+
+/** Formats a Date into German short date: "Mo. 26. Mai" */
+function formatGermanDate(date: Date): string {
+  return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long' });
+}
+
+/** Calculates days until a future date (ceil) */
+function daysUntil(date: Date): number {
+  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
 }
 
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
+  const { nextAllowedAt, refreshSubscription } = useNotes();
   const [synthesizing, setSynthesizing] = useState(false);
   const [snackMessage, setSnackMessage] = useState('');
   const [snackVisible, setSnackVisible] = useState(false);
 
+  // Is the user currently rate-limited?
+  const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
+
+  function getSynthesizeLabel(): string {
+    if (synthesizing) return 'Läuft…';
+    if (isLimited) {
+      const days = daysUntil(nextAllowedAt!);
+      return `In ${days} ${days === 1 ? 'Tag' : 'Tagen'} verfügbar`;
+    }
+    return 'Synthetisieren';
+  }
+
   async function handleSynthesize() {
+    if (isLimited) return; // shouldn't happen since button is disabled
     haptics.medium();
     setSynthesizing(true);
     try {
-      const msg = await runSynthesis();
-      setSnackMessage(msg);
+      const result = await runSynthesis();
+      if (result.message === 'limit_reached' && result.next_allowed_at) {
+        // Server says we're limited — refresh subscription state
+        await refreshSubscription();
+        const nextDate = new Date(result.next_allowed_at);
+        setSnackMessage(`Limit erreicht. Nächster Lauf: ${formatGermanDate(nextDate)}`);
+      } else {
+        // On success, also refresh (ai_last_run was updated server-side)
+        await refreshSubscription();
+        setSnackMessage(result.message);
+      }
     } catch (e: any) {
       setSnackMessage('Fehler: ' + (e?.message ?? 'Unbekannt'));
     } finally {
@@ -273,16 +312,25 @@ export default function ThreadsScreen({ navigation }: Props) {
           </View>
           <Pressable
             onPress={handleSynthesize}
-            disabled={synthesizing}
-            style={({ pressed }) => [styles.synthesizeBtn, pressed && styles.synthesizeBtnPressed]}
+            disabled={synthesizing || isLimited}
+            style={({ pressed }) => [
+              styles.synthesizeBtn,
+              isLimited && styles.synthesizeBtnDisabled,
+              !isLimited && pressed && styles.synthesizeBtnPressed,
+            ]}
           >
             {synthesizing ? (
-              <ActivityIndicator size={16} color={Tokens.amberDeep} style={{ marginRight: 6 }} />
+              <ActivityIndicator size={16} color={isLimited ? Tokens.inkFaint : Tokens.amberDeep} style={{ marginRight: 6 }} />
             ) : (
-              <MaterialCommunityIcons name="creation" size={16} color={Tokens.amberDeep} style={{ marginRight: 6 }} />
+              <MaterialCommunityIcons
+                name={isLimited ? 'clock-outline' : 'creation'}
+                size={16}
+                color={isLimited ? Tokens.inkFaint : Tokens.amberDeep}
+                style={{ marginRight: 6 }}
+              />
             )}
-            <Text style={styles.synthesizeBtnText}>
-              {synthesizing ? 'Läuft…' : 'Synthetisieren'}
+            <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
+              {getSynthesizeLabel()}
             </Text>
           </Pressable>
         </View>
@@ -359,10 +407,16 @@ const styles = StyleSheet.create({
   synthesizeBtnPressed: {
     opacity: 0.75,
   },
+  synthesizeBtnDisabled: {
+    backgroundColor: Tokens.inkFaint + '18', // very faint bg
+  },
   synthesizeBtnText: {
     fontFamily: Fonts.sansSemibold,
     fontSize: 13,
     color: Tokens.amberDeep,
+  },
+  synthesizeBtnTextDisabled: {
+    color: Tokens.inkFaint,
   },
   headerEyebrow: {
     fontFamily: Fonts.sansSemibold,
