@@ -21,11 +21,7 @@ import {
 } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// expo-speech-recognition benötigt einen Custom Dev Build (EAS).
-// In Expo Go ist das native Modul nicht verfügbar → wir laden es lazy
-// und fallen auf reinen Text-Modus zurück, wenn es fehlt.
 let ExpoSpeechRecognitionModule: any = null;
 let useSpeechRecognitionEvent: (event: string, handler: (e: any) => void) => void =
   () => {};
@@ -39,11 +35,11 @@ try {
   AVAudioSessionCategory = mod.AVAudioSessionCategory;
   speechAvailable = true;
 } catch {
-  // Expo Go oder kein Custom Build → nur Text-Modus
   speechAvailable = false;
 }
 import { useNotes } from '../context/NotesContext';
-import { Gradients, Radii, Shadows } from '../theme/gradients';
+import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Tokens } from '../theme/theme';
 import * as haptics from '../utils/haptics';
 
 interface Props {
@@ -61,7 +57,6 @@ export default function VoiceCaptureSheet({
   const insets = useSafeAreaInsets();
   const { addNote } = useNotes();
 
-  // Wenn das native Modul fehlt (Expo Go), erzwinge Text-Modus
   const [mode, setMode] = useState<'voice' | 'text'>(
     speechAvailable ? initialMode : 'text',
   );
@@ -71,7 +66,6 @@ export default function VoiceCaptureSheet({
   const [isSaving, setIsSaving] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
 
-  // Pulsierende Mikrofon-Animation während der Aufnahme
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -80,15 +74,15 @@ export default function VoiceCaptureSheet({
       pulseLoop.current = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.15,
-            duration: 700,
-            easing: Easing.inOut(Easing.quad),
+            toValue: 1.12,
+            duration: 750,
+            easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 700,
-            easing: Easing.inOut(Easing.quad),
+            duration: 750,
+            easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
         ]),
@@ -100,7 +94,6 @@ export default function VoiceCaptureSheet({
     }
   }, [isListening, pulseAnim]);
 
-  // Spracherkennungs-Events
   useSpeechRecognitionEvent('start', () => setIsListening(true));
   useSpeechRecognitionEvent('end', () => setIsListening(false));
   useSpeechRecognitionEvent('result', (event) => {
@@ -117,7 +110,6 @@ export default function VoiceCaptureSheet({
     setIsListening(false);
   });
 
-  // Reset beim Schließen
   useEffect(() => {
     if (!visible) {
       if (isListening) {
@@ -208,7 +200,6 @@ export default function VoiceCaptureSheet({
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Hintergrund-Tap schließt das Sheet */}
         <Pressable style={styles.backdrop} onPress={() => {
           if (isListening) stopListening();
           onClose();
@@ -217,24 +208,24 @@ export default function VoiceCaptureSheet({
         <View
           style={[
             styles.sheet,
+            Shadows.softWarm,
+            Insets.cardBorder,
             {
-              backgroundColor: '#181B23',
+              backgroundColor: Tokens.paper,
               paddingBottom: Math.max(insets.bottom, 20),
             },
           ]}
         >
           {/* Drag-Handle */}
           <View style={styles.handleRow}>
-            <View
-              style={[
-                styles.handle,
-                { backgroundColor: theme.colors.onSurfaceVariant + '50' },
-              ]}
-            />
+            <View style={[styles.handle, { backgroundColor: Tokens.rule }]} />
           </View>
 
           {/* Titel */}
-          <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+          <Text
+            variant="headlineSmall"
+            style={[styles.title, { color: Tokens.ink }]}
+          >
             {mode === 'voice' ? 'Notiz sprechen' : 'Notiz tippen'}
           </Text>
 
@@ -244,24 +235,24 @@ export default function VoiceCaptureSheet({
               <View
                 style={[
                   styles.transcriptBox,
-                  { backgroundColor: theme.colors.surfaceVariant },
+                  {
+                    backgroundColor: Tokens.paperDeep,
+                    borderColor: Tokens.paperEdge,
+                  },
                 ]}
               >
                 {displayText ? (
-                  <Text style={[styles.transcriptText, { color: theme.colors.onSurface }]}>
+                  <Text style={[styles.transcriptText, { color: Tokens.ink }]}>
                     {displayText}
                     {isListening && (
-                      <Text style={{ color: theme.colors.primary }}> |</Text>
+                      <Text style={{ color: Tokens.amber }}> |</Text>
                     )}
                   </Text>
                 ) : (
                   <Text
                     style={[
                       styles.transcriptText,
-                      {
-                        color: theme.colors.onSurfaceVariant,
-                        fontStyle: 'italic',
-                      },
+                      { color: Tokens.inkFaint, fontStyle: 'italic' },
                     ]}
                   >
                     {isListening
@@ -274,59 +265,51 @@ export default function VoiceCaptureSheet({
               {/* Mikrofon-Button */}
               <View style={styles.micRow}>
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                  <Pressable onPress={toggleListening}>
-                    <LinearGradient
-                      colors={isListening ? Gradients.danger : Gradients.secondary}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={[
-                        styles.micButton,
-                        isListening
-                          ? Shadows.glow(Gradients.danger[0])
-                          : Shadows.glow(Gradients.secondary[0]),
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name={isListening ? 'stop' : 'microphone'}
-                        size={38}
-                        color="#FFFFFF"
-                      />
-                    </LinearGradient>
+                  <Pressable
+                    onPress={toggleListening}
+                    style={[
+                      styles.micButton,
+                      isListening
+                        ? { backgroundColor: '#B14A3D', ...Shadows.glow('#B14A3D') }
+                        : { backgroundColor: Tokens.ink, ...Shadows.softWarm },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={isListening ? 'stop' : 'microphone'}
+                      size={34}
+                      color={Tokens.paper}
+                    />
                   </Pressable>
                 </Animated.View>
-                <Text
-                  style={[styles.micLabel, { color: theme.colors.onSurfaceVariant }]}
-                >
+                <Text style={[styles.micLabel, { color: Tokens.inkDim }]}>
                   {isListening ? 'Tippen zum Stoppen' : 'Tippen zum Sprechen'}
                 </Text>
               </View>
 
               {!speechAvailable && (
-                <Text style={[styles.hintText, { color: theme.colors.onSurfaceVariant }]}>
+                <Text style={[styles.hintText, { color: Tokens.inkFaint }]}>
                   Spracherkennung benötigt einen Custom Dev Build.{'\n'}
                   Bitte Text-Modus verwenden.
                 </Text>
               )}
               {speechAvailable && permissionGranted === false && (
-                <Text style={[styles.hintText, { color: Gradients.danger[0] }]}>
+                <Text style={[styles.hintText, { color: '#B14A3D' }]}>
                   Mikrofon-Zugriff verweigert — bitte in den Einstellungen erlauben.
                 </Text>
               )}
 
-              {/* Wechsel zu Text */}
               <Pressable onPress={() => setMode('text')} style={styles.switchRow}>
                 <MaterialCommunityIcons
                   name="keyboard-outline"
                   size={16}
-                  color={theme.colors.onSurfaceVariant}
+                  color={Tokens.inkDim}
                 />
-                <Text style={[styles.switchText, { color: theme.colors.onSurfaceVariant }]}>
+                <Text style={[styles.switchText, { color: Tokens.inkDim }]}>
                   Lieber tippen
                 </Text>
               </Pressable>
             </>
           ) : (
-            /* Text-Modus */
             <>
               <TextInput
                 autoFocus
@@ -334,12 +317,13 @@ export default function VoiceCaptureSheet({
                 value={transcript}
                 onChangeText={setTranscript}
                 placeholder="Notiz eingeben…"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
+                placeholderTextColor={Tokens.inkFaint}
                 style={[
                   styles.textInput,
                   {
-                    color: theme.colors.onSurface,
-                    backgroundColor: theme.colors.surfaceVariant,
+                    color: Tokens.ink,
+                    backgroundColor: Tokens.paperDeep,
+                    borderColor: Tokens.paperEdge,
                   },
                 ]}
               />
@@ -347,9 +331,9 @@ export default function VoiceCaptureSheet({
                 <MaterialCommunityIcons
                   name="microphone-outline"
                   size={16}
-                  color={theme.colors.onSurfaceVariant}
+                  color={Tokens.inkDim}
                 />
-                <Text style={[styles.switchText, { color: theme.colors.onSurfaceVariant }]}>
+                <Text style={[styles.switchText, { color: Tokens.inkDim }]}>
                   Lieber sprechen
                 </Text>
               </Pressable>
@@ -363,9 +347,12 @@ export default function VoiceCaptureSheet({
                 if (isListening) stopListening();
                 onClose();
               }}
-              style={[styles.btnCancel, { borderColor: theme.colors.outline }]}
+              style={[
+                styles.btnCancel,
+                { borderColor: Tokens.rule, backgroundColor: Tokens.paperDeep },
+              ]}
             >
-              <Text style={{ color: theme.colors.onSurfaceVariant, fontWeight: '600' }}>
+              <Text style={{ color: Tokens.inkDim, fontWeight: '600', fontSize: 15 }}>
                 Abbrechen
               </Text>
             </Pressable>
@@ -373,18 +360,22 @@ export default function VoiceCaptureSheet({
             <Pressable
               onPress={handleSave}
               disabled={!canSave || isSaving}
-              style={styles.btnSaveWrap}
+              style={[
+                styles.btnSave,
+                {
+                  backgroundColor: canSave && !isSaving ? Tokens.ink : Tokens.paperEdge,
+                },
+              ]}
             >
-              <LinearGradient
-                colors={canSave && !isSaving ? Gradients.secondary : Gradients.surface}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.btnSaveGradient}
+              <Text
+                style={{
+                  color: canSave && !isSaving ? Tokens.paper : Tokens.inkFaint,
+                  fontWeight: '700',
+                  fontSize: 15,
+                }}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
-                  {isSaving ? 'Speichere…' : 'Speichern'}
-                </Text>
-              </LinearGradient>
+                {isSaving ? 'Speichere…' : 'Speichern'}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -400,31 +391,33 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#00000088',
+    backgroundColor: 'rgba(43, 36, 25, 0.45)',
   },
   sheet: {
     borderTopLeftRadius: Radii.xl,
     borderTopRightRadius: Radii.xl,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     paddingHorizontal: 20,
     paddingTop: 12,
   },
   handleRow: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: -0.3,
+    fontFamily: 'InstrumentSerif_400Regular',
     marginBottom: 16,
+    color: Tokens.ink,
   },
   transcriptBox: {
     borderRadius: Radii.md,
+    borderWidth: 1,
     padding: 16,
     minHeight: 110,
     justifyContent: 'flex-start',
@@ -433,27 +426,30 @@ const styles = StyleSheet.create({
   transcriptText: {
     fontSize: 16,
     lineHeight: 24,
+    fontFamily: 'Inter_400Regular',
   },
   micRow: {
     alignItems: 'center',
     marginBottom: 20,
-    gap: 10,
+    gap: 12,
   },
   micButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
   micLabel: {
     fontSize: 12,
-    opacity: 0.7,
+    fontFamily: 'Inter_400Regular',
+    letterSpacing: 0.2,
   },
   hintText: {
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 12,
+    fontFamily: 'Inter_400Regular',
   },
   switchRow: {
     flexDirection: 'row',
@@ -465,20 +461,22 @@ const styles = StyleSheet.create({
   },
   switchText: {
     fontSize: 13,
-    opacity: 0.7,
+    fontFamily: 'Inter_400Regular',
   },
   textInput: {
     borderRadius: Radii.md,
+    borderWidth: 1,
     padding: 16,
     minHeight: 120,
     fontSize: 16,
     lineHeight: 24,
+    fontFamily: 'Inter_400Regular',
     textAlignVertical: 'top',
     marginBottom: 12,
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   btnCancel: {
     flex: 1,
@@ -486,15 +484,13 @@ const styles = StyleSheet.create({
     borderRadius: Radii.md,
     paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  btnSaveWrap: {
+  btnSave: {
     flex: 2,
     borderRadius: Radii.md,
-    overflow: 'hidden',
-  },
-  btnSaveGradient: {
     paddingVertical: 14,
     alignItems: 'center',
-    borderRadius: Radii.md,
+    justifyContent: 'center',
   },
 });

@@ -57,7 +57,7 @@ export default function QuickCaptureFAB() {
             delayLongPress={400}
             style={[styles.fab, { backgroundColor: Tokens.ink }]}
           >
-            <MaterialCommunityIcons name="pencil-outline" size={24} color={Tokens.paper} />
+            <MaterialCommunityIcons name="microphone" size={24} color={Tokens.paper} />
           </Pressable>
         </Animated.View>
       </View>

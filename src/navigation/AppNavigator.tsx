@@ -19,6 +19,7 @@ import SettingsKontoScreen from '../screens/SettingsKontoScreen';
 import SettingsDatenschutzScreen from '../screens/SettingsDatenschutzScreen';
 import SettingsBookmarkletScreen from '../screens/SettingsBookmarkletScreen';
 import SettingsAboScreen from '../screens/SettingsAboScreen';
+import SettingsWebAppScreen from '../screens/SettingsWebAppScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -177,6 +178,11 @@ export default function AppNavigator() {
         name="SettingsAbo"
         component={SettingsAboScreen}
         options={{ title: 'Mein Abo' }}
+      />
+      <Stack.Screen
+        name="SettingsWebApp"
+        component={SettingsWebAppScreen}
+        options={{ title: 'Web App' }}
       />
     </Stack.Navigator>
   );
