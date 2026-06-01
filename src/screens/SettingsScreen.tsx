@@ -185,6 +185,13 @@ export default function SettingsScreen() {
           label="Bookmarklet"
           sublabel="Webseiten als Notiz speichern"
           onPress={() => navigation.navigate('SettingsBookmarklet')}
+        />
+        <NavRow
+          icon="graph-outline"
+          iconBg={colors.ink}
+          label="Web App"
+          sublabel="Notizen im Browser als Graph"
+          onPress={() => navigation.navigate('SettingsWebApp')}
           showDivider={false}
         />
       </View>
