@@ -16,7 +16,7 @@
     },
     "production": {
       "android": {
-        "buildType": "aab"
+        "buildType": "app-bundle"
       },
       "ios": {
         "autoIncrement": true
@@ -31,9 +31,7 @@
         "track": "internal"
       },
       "ios": {
-        "appleId": "louismuhr8@gmail.com",
-        "ascAppId": "",
-        "appleTeamId": ""
+        "appleId": "louismuhr8@gmail.com"
       }
     }
   }
