@@ -5,6 +5,10 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Pressable,
+  Animated,
+  Easing,
 } from 'react-native';
 import {
   TextInput,
@@ -12,9 +16,7 @@ import {
   Chip,
   useTheme,
   Text,
-  Menu,
   IconButton,
-  Divider,
   Portal,
   Dialog,
   SegmentedButtons,
@@ -26,8 +28,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNotes } from '../context/NotesContext';
+import { getCategoryAccent } from '../theme/categoryAccents';
+import { Tokens } from '../theme/theme';
+import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 import Toast from '../components/Toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChecklistItem,
   ReminderRecurrence,
@@ -49,7 +56,9 @@ const RECURRENCE_OPTIONS: { value: ReminderRecurrence; label: string }[] = [
 
 export default function EditorScreen({ navigation, route }: Props) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { notes, categories, addNote, updateNote, addCategory } = useNotes();
+  const categorySheetAnim = useRef(new Animated.Value(0)).current;
   const noteId = route.params?.noteId as string | undefined;
   const existingNote = noteId ? notes.find((n) => n.id === noteId) : undefined;
 
@@ -136,6 +145,25 @@ export default function EditorScreen({ navigation, route }: Props) {
     });
     return unsubscribe;
   }, [navigation]);
+
+  const openCategorySheet = useCallback(() => {
+    setCategoryMenuVisible(true);
+    Animated.timing(categorySheetAnim, {
+      toValue: 1,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [categorySheetAnim]);
+
+  const closeCategorySheet = useCallback(() => {
+    Animated.timing(categorySheetAnim, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => setCategoryMenuVisible(false));
+  }, [categorySheetAnim]);
 
   const handleAddCategory = useCallback(async () => {
     const name = newCategoryName.trim();
@@ -380,37 +408,87 @@ export default function EditorScreen({ navigation, route }: Props) {
         <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
           KATEGORIE
         </Text>
-        <Menu
+        <Pressable onPress={openCategorySheet} style={styles.categoryTrigger}>
+          <MaterialCommunityIcons name="tag-outline" size={15} color={Tokens.inkDim} />
+          <Text style={styles.categoryTriggerText}>{category}</Text>
+          <MaterialCommunityIcons name="chevron-down" size={15} color={Tokens.inkFaint} />
+        </Pressable>
+
+        {/* Category Bottom-Sheet */}
+        <Modal
           visible={categoryMenuVisible}
-          onDismiss={() => setCategoryMenuVisible(false)}
-          anchor={
-            <Button
-              mode="text"
-              onPress={() => setCategoryMenuVisible(true)}
-              icon="folder-outline"
-              style={[styles.categoryBtn, { backgroundColor: theme.colors.surfaceVariant }]}
-              labelStyle={{ color: theme.colors.onSurface }}
-              contentStyle={{ height: 44 }}
-            >
-              {category}
-            </Button>
-          }
+          transparent
+          animationType="none"
+          onRequestClose={closeCategorySheet}
         >
-          {categories.map((cat) => (
-            <Menu.Item
-              key={cat}
-              title={cat}
-              leadingIcon={cat === category ? 'check' : undefined}
-              onPress={() => { setCategory(cat); setCategoryMenuVisible(false); }}
-            />
-          ))}
-          <Divider />
-          <Menu.Item
-            title="Neue Kategorie..."
-            leadingIcon="plus"
-            onPress={() => { setCategoryMenuVisible(false); setNewCategoryDialog(true); }}
-          />
-        </Menu>
+          <Animated.View
+            style={[styles.categoryBackdrop, { opacity: categorySheetAnim }]}
+            pointerEvents="auto"
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeCategorySheet} />
+          </Animated.View>
+          <View style={styles.categorySheetContainer} pointerEvents="box-none">
+            <Animated.View
+              style={[
+                styles.categorySheet,
+                Shadows.softWarm,
+                Insets.cardBorder,
+                {
+                  paddingBottom: Math.max(insets.bottom, 16),
+                  transform: [{
+                    translateY: categorySheetAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [400, 0],
+                    }),
+                  }],
+                },
+              ]}
+            >
+              <View style={styles.sheetHandleRow}>
+                <View style={[styles.sheetHandle, { backgroundColor: Tokens.rule }]} />
+              </View>
+              <Text style={styles.sheetTitle}>Kategorie</Text>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.categoryGrid}
+              >
+                {categories.map((cat) => {
+                  const isActive = cat === category;
+                  const a = getCategoryAccent(cat);
+                  return (
+                    <Pressable
+                      key={cat}
+                      onPress={() => { setCategory(cat); closeCategorySheet(); }}
+                      style={[
+                        styles.categoryOption,
+                        isActive
+                          ? { backgroundColor: a.soft, borderColor: a.deep + '40' }
+                          : { backgroundColor: Tokens.paperDeep, borderColor: Tokens.paperEdge },
+                      ]}
+                    >
+                      <View style={[styles.categoryDot, { backgroundColor: a.deep }]} />
+                      <Text style={[styles.categoryOptionText, { color: isActive ? a.deep : Tokens.inkDim }]}>
+                        {cat}
+                      </Text>
+                      {isActive && (
+                        <MaterialCommunityIcons name="check" size={14} color={a.deep} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Pressable
+                onPress={() => { closeCategorySheet(); setTimeout(() => setNewCategoryDialog(true), 250); }}
+                style={[styles.newCategoryBtn, { borderColor: Tokens.rule }]}
+              >
+                <MaterialCommunityIcons name="plus" size={16} color={Tokens.inkDim} />
+                <Text style={[styles.newCategoryText, { color: Tokens.inkDim }]}>Neue Kategorie</Text>
+              </Pressable>
+            </Animated.View>
+          </View>
+        </Modal>
 
         {/* Feeds Threads Toggle */}
         <View style={styles.feedsThreadsRow}>
@@ -720,9 +798,91 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-  categoryBtn: {
-    borderRadius: 14,
+  categoryTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'flex-start',
+    gap: 7,
+    borderRadius: Radii.pill,
+    borderWidth: 1,
+    borderColor: Tokens.paperEdge,
+    backgroundColor: Tokens.paperDeep,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  categoryTriggerText: {
+    fontSize: 14,
+    fontFamily: Fonts.sansMedium,
+    color: Tokens.inkDim,
+  },
+  categoryBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(43, 36, 25, 0.4)',
+  },
+  categorySheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  categorySheet: {
+    backgroundColor: Tokens.paper,
+    borderTopLeftRadius: Radii.xl,
+    borderTopRightRadius: Radii.xl,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    maxHeight: '70%',
+  },
+  sheetHandleRow: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+  },
+  sheetTitle: {
+    fontFamily: 'InstrumentSerif_400Regular',
+    fontSize: 18,
+    color: Tokens.ink,
+    marginBottom: 14,
+    marginLeft: 4,
+  },
+  categoryGrid: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  categoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  categoryOptionText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Fonts.sansMedium,
+  },
+  newCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 13,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+  },
+  newCategoryText: {
+    fontSize: 14,
+    fontFamily: Fonts.sansMedium,
   },
   feedsThreadsRow: {
     flexDirection: 'row',
