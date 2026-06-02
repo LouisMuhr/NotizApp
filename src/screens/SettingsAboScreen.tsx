@@ -10,27 +10,63 @@ import { Fonts } from '../theme/typography';
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 // ---------------------------------------------------------------------------
-// Tier metadata
+// Plan definitions
 // ---------------------------------------------------------------------------
 
-const TIER_META: Record<Tier, { label: string; icon: IconName; runsLabel: string; color: string }> = {
+interface PlanFeature {
+  icon: IconName;
+  text: string;
+}
+
+interface PlanMeta {
+  label: string;
+  icon: IconName;
+  color: string;
+  price: string;
+  priceDetail: string;
+  features: PlanFeature[];
+}
+
+const PLANS: Record<Tier, PlanMeta> = {
   free: {
-    label: 'Free-Plan',
+    label: 'Free',
     icon: 'star-outline',
-    runsLabel: '1× pro Woche',
     color: Tokens.inkFaint,
+    price: 'Kostenlos',
+    priceDetail: 'Für immer',
+    features: [
+      { icon: 'notebook-outline', text: 'Unbegrenzte Notizen' },
+      { icon: 'tag-outline', text: 'Kategorien & Filter' },
+      { icon: 'bell-outline', text: 'Erinnerungen' },
+      { icon: 'brain', text: 'KI-Synthese 1× pro Woche' },
+    ],
   },
   basic: {
-    label: 'Basic-Plan',
+    label: 'Basic',
     icon: 'star-half-full',
-    runsLabel: '1× pro Tag',
     color: Tokens.amber,
+    price: '1,99 €',
+    priceDetail: 'pro Monat',
+    features: [
+      { icon: 'check-circle-outline', text: 'Alles aus Free' },
+      { icon: 'brain', text: 'KI-Synthese 1× täglich' },
+      { icon: 'cloud-sync-outline', text: 'Geräte-Synchronisation' },
+      { icon: 'lightning-bolt-outline', text: 'Schnellere Synthese' },
+    ],
   },
   pro: {
-    label: 'Pro-Plan',
+    label: 'Pro',
     icon: 'star',
-    runsLabel: 'Unbegrenzt (max. 10× / Tag)',
     color: Tokens.amberDeep,
+    price: '4,99 €',
+    priceDetail: 'pro Monat',
+    features: [
+      { icon: 'check-circle-outline', text: 'Alles aus Basic' },
+      { icon: 'brain', text: 'KI-Synthese bis 10× täglich' },
+      { icon: 'priority-high', text: 'Prioritäts-Verarbeitung' },
+      { icon: 'graph-outline', text: 'Erweiterte Web-Visualisierung' },
+      { icon: 'headset', text: 'Premium-Support' },
+    ],
   },
 };
 
@@ -45,7 +81,7 @@ function formatGermanDate(date: Date): string {
 export default function SettingsAboScreen() {
   const theme = useTheme();
   const { tier, nextAllowedAt } = useNotes();
-  const meta = TIER_META[tier] ?? TIER_META.free;
+  const currentPlan = PLANS[tier] ?? PLANS.free;
 
   const nextRunText: string = (() => {
     if (!nextAllowedAt || nextAllowedAt <= new Date()) return 'Jetzt verfügbar';
@@ -57,25 +93,42 @@ export default function SettingsAboScreen() {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.content}
     >
-      {/* Current tier badge */}
-      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Dein Tarif
-      </Text>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-        <View style={styles.tierRow}>
-          <View style={[styles.tierIconWrap, { backgroundColor: meta.color + '20' }]}>
-            <MaterialCommunityIcons name={meta.icon} size={22} color={meta.color} />
-          </View>
-          <View style={styles.tierText}>
-            <Text style={[styles.tierLabel, { color: theme.colors.onSurface }]}>{meta.label}</Text>
-            <Text style={[styles.tierSublabel, { color: theme.colors.onSurfaceVariant }]}>
-              KI-Synthese: {meta.runsLabel}
-            </Text>
-          </View>
+      {/* Active plan hero */}
+      <View style={[styles.heroBadge, { backgroundColor: currentPlan.color + '18', borderColor: currentPlan.color + '40' }]}>
+        <View style={[styles.heroIconWrap, { backgroundColor: currentPlan.color + '28' }]}>
+          <MaterialCommunityIcons name={currentPlan.icon} size={28} color={currentPlan.color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.heroLabel, { color: currentPlan.color }]}>{currentPlan.label}</Text>
+          <Text style={[styles.heroSub, { color: theme.colors.onSurfaceVariant }]}>Dein aktueller Plan</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[styles.heroPrice, { color: theme.colors.onSurface }]}>{currentPlan.price}</Text>
+          <Text style={[styles.heroPriceSub, { color: theme.colors.onSurfaceVariant }]}>{currentPlan.priceDetail}</Text>
         </View>
       </View>
 
-      {/* Next run info */}
+      {/* Current plan features */}
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        Enthaltene Leistungen
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {currentPlan.features.map((f, i) => (
+          <React.Fragment key={f.text}>
+            <View style={styles.featureRow}>
+              <View style={[styles.featureIconWrap, { backgroundColor: currentPlan.color + '18' }]}>
+                <MaterialCommunityIcons name={f.icon} size={15} color={currentPlan.color} />
+              </View>
+              <Text style={[styles.featureText, { color: theme.colors.onSurface }]}>{f.text}</Text>
+            </View>
+            {i < currentPlan.features.length - 1 && (
+              <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
+            )}
+          </React.Fragment>
+        ))}
+      </View>
+
+      {/* Next AI run */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         KI-Synthese
       </Text>
@@ -88,58 +141,25 @@ export default function SettingsAboScreen() {
             style={{ marginRight: 10 }}
           />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.infoLabel, { color: theme.colors.onSurface }]}>
-              Nächster Lauf
-            </Text>
-            <Text style={[styles.infoValue, { color: theme.colors.onSurfaceVariant }]}>
-              {nextRunText}
-            </Text>
+            <Text style={[styles.infoLabel, { color: theme.colors.onSurface }]}>Nächster Lauf</Text>
+            <Text style={[styles.infoValue, { color: theme.colors.onSurfaceVariant }]}>{nextRunText}</Text>
           </View>
         </View>
       </View>
 
-      {/* Upgrade section — only shown if not already on Pro */}
+      {/* Upgrade plans */}
       {tier !== 'pro' && (
         <>
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
             Upgrade
           </Text>
-          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-            {tier === 'free' && (
-              <>
-                <UpgradeButton
-                  targetTier="basic"
-                  label="Basic — täglich synthetisieren"
-                  sublabel="1× pro Tag KI-Synthese"
-                  icon="star-half-full"
-                  color={Tokens.amber}
-                  showDivider
-                />
-                <UpgradeButton
-                  targetTier="pro"
-                  label="Pro — unbegrenzt"
-                  sublabel="Bis zu 10× täglich"
-                  icon="star"
-                  color={Tokens.amberDeep}
-                  showDivider={false}
-                />
-              </>
-            )}
-            {tier === 'basic' && (
-              <UpgradeButton
-                targetTier="pro"
-                label="Pro — unbegrenzt"
-                sublabel="Bis zu 10× täglich"
-                icon="star"
-                color={Tokens.amberDeep}
-                showDivider={false}
-              />
-            )}
-          </View>
+          {(tier === 'free' ? (['basic', 'pro'] as const) : (['pro'] as const)).map((t) => (
+            <UpgradePlanCard key={t} targetTier={t} />
+          ))}
         </>
       )}
 
-      {/* Restore purchases placeholder */}
+      {/* Restore */}
       <Pressable
         style={styles.restoreBtn}
         onPress={() => subscriptionService.openUpgradeFlow('basic')}
@@ -153,45 +173,52 @@ export default function SettingsAboScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// UpgradeButton sub-component
+// UpgradePlanCard
 // ---------------------------------------------------------------------------
 
-function UpgradeButton({
-  targetTier,
-  label,
-  sublabel,
-  icon,
-  color,
-  showDivider,
-}: {
-  targetTier: 'basic' | 'pro';
-  label: string;
-  sublabel: string;
-  icon: IconName;
-  color: string;
-  showDivider: boolean;
-}) {
+function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
   const theme = useTheme();
+  const plan = PLANS[targetTier];
 
   return (
-    <>
-      <Pressable
-        onPress={() => subscriptionService.openUpgradeFlow(targetTier)}
-        style={({ pressed }) => [styles.upgradeRow, pressed && { opacity: 0.7 }]}
-      >
-        <View style={[styles.upgradeIconWrap, { backgroundColor: color + '20' }]}>
-          <MaterialCommunityIcons name={icon} size={18} color={color} />
+    <Pressable
+      onPress={() => subscriptionService.openUpgradeFlow(targetTier)}
+      style={({ pressed }) => [
+        styles.upgradePlanCard,
+        { backgroundColor: theme.colors.surface, borderColor: plan.color + '50' },
+        pressed && { opacity: 0.75 },
+      ]}
+    >
+      {/* Header row */}
+      <View style={styles.upgradePlanHeader}>
+        <View style={[styles.upgradePlanIconWrap, { backgroundColor: plan.color + '22' }]}>
+          <MaterialCommunityIcons name={plan.icon} size={20} color={plan.color} />
         </View>
-        <View style={styles.upgradeText}>
-          <Text style={[styles.upgradeLabel, { color: theme.colors.onSurface }]}>{label}</Text>
-          <Text style={[styles.upgradeSublabel, { color: theme.colors.onSurfaceVariant }]}>{sublabel}</Text>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={[styles.upgradePlanLabel, { color: theme.colors.onSurface }]}>{plan.label}</Text>
         </View>
-        <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
-      </Pressable>
-      {showDivider && (
-        <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
-      )}
-    </>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[styles.upgradePlanPrice, { color: plan.color }]}>{plan.price}</Text>
+          <Text style={[styles.upgradePlanPriceSub, { color: theme.colors.onSurfaceVariant }]}>{plan.priceDetail}</Text>
+        </View>
+      </View>
+
+      {/* Features list */}
+      <View style={styles.upgradePlanFeatures}>
+        {plan.features.map((f) => (
+          <View key={f.text} style={styles.upgradePlanFeatureRow}>
+            <MaterialCommunityIcons name="check" size={13} color={plan.color} style={{ marginRight: 6, marginTop: 1 }} />
+            <Text style={[styles.upgradePlanFeatureText, { color: theme.colors.onSurfaceVariant }]}>{f.text}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* CTA */}
+      <View style={[styles.upgradeCTA, { backgroundColor: plan.color }]}>
+        <Text style={styles.upgradeCTAText}>Auf {plan.label} upgraden</Text>
+        <MaterialCommunityIcons name="arrow-right" size={15} color={Tokens.paper} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -201,6 +228,41 @@ function UpgradeButton({
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100, gap: 6 },
+
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+    marginBottom: 8,
+  },
+  heroIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroLabel: {
+    fontSize: 20,
+    fontFamily: Fonts.sansSemibold,
+  },
+  heroSub: {
+    fontSize: 12,
+    marginTop: 2,
+    fontFamily: Fonts.sans,
+  },
+  heroPrice: {
+    fontSize: 17,
+    fontFamily: Fonts.sansSemibold,
+  },
+  heroPriceSub: {
+    fontSize: 11,
+    fontFamily: Fonts.sans,
+    marginTop: 1,
+  },
 
   sectionHeader: {
     fontSize: 13,
@@ -217,29 +279,24 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  tierRow: {
+  featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 11,
     gap: 12,
   },
-  tierIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  featureIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tierText: { flex: 1 },
-  tierLabel: {
-    fontSize: 16,
-    fontFamily: Fonts.sansSemibold,
-  },
-  tierSublabel: {
-    fontSize: 13,
-    marginTop: 2,
+  featureText: {
+    fontSize: 14,
     fontFamily: Fonts.sans,
+    flex: 1,
   },
 
   infoRow: {
@@ -258,32 +315,66 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
   },
 
-  upgradeRow: {
+  divider: { height: 1, marginLeft: 56, opacity: 0.35 },
+
+  upgradePlanCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  upgradePlanHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    padding: 16,
+    paddingBottom: 12,
   },
-  upgradeIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+  upgradePlanIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  upgradeText: { flex: 1 },
-  upgradeLabel: {
-    fontSize: 15,
+  upgradePlanLabel: {
+    fontSize: 16,
     fontFamily: Fonts.sansSemibold,
   },
-  upgradeSublabel: {
-    fontSize: 12,
-    marginTop: 1,
-    fontFamily: Fonts.sans,
+  upgradePlanPrice: {
+    fontSize: 16,
+    fontFamily: Fonts.sansSemibold,
   },
-
-  divider: { height: 1, marginLeft: 62, opacity: 0.35 },
+  upgradePlanPriceSub: {
+    fontSize: 11,
+    fontFamily: Fonts.sans,
+    marginTop: 1,
+  },
+  upgradePlanFeatures: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    gap: 6,
+  },
+  upgradePlanFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  upgradePlanFeatureText: {
+    fontSize: 13,
+    fontFamily: Fonts.sans,
+    flex: 1,
+  },
+  upgradeCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 6,
+  },
+  upgradeCTAText: {
+    fontSize: 14,
+    fontFamily: Fonts.sansSemibold,
+    color: Tokens.paper,
+  },
 
   restoreBtn: {
     alignItems: 'center',

@@ -19,6 +19,7 @@ import { Type, Fonts } from '../theme/typography';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
 import { getSupabase } from '../sync/supabaseClient';
+import ProBanner from '../components/ProBanner';
 
 interface Props {
   navigation: any;
@@ -335,6 +336,8 @@ export default function ThreadsScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </View>
+
+      <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
 
       {activeThreads.length === 0 ? (
         <View style={styles.center}>

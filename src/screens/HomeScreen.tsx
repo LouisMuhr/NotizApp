@@ -8,6 +8,7 @@ import { FilterOptions } from '../models/Note';
 import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
 import QuickCaptureFAB from '../components/QuickCaptureFAB';
+import ProBanner from '../components/ProBanner';
 import { Radii, Shadows } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
@@ -125,6 +126,8 @@ export default function HomeScreen({ navigation }: Props) {
         <Text style={styles.headerEyebrow}>{today}</Text>
         <Text style={styles.headerTitle}>Notizen</Text>
       </View>
+
+      <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
 
       <FilterBar
         filters={filters}
