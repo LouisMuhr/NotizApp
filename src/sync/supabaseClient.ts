@@ -18,11 +18,9 @@ export function getSupabase(): SupabaseClient | null {
       },
       realtime: { params: { eventsPerSecond: 5 } },
     });
-    // Abgelaufene/ungültige Sessions still verwerfen statt als ERROR zu loggen
-    client.auth.onAuthStateChange((event) => {
-      if (event === 'TOKEN_REFRESHED') return;
-      if (event === 'SIGNED_OUT') client?.auth.signOut().catch(() => {});
-    });
+    // Abgelaufene/ungültige Sessions still verwerfen statt als ERROR zu loggen.
+    // KEIN erneutes signOut() im SIGNED_OUT-Branch — das löst rekursiv ein
+    // weiteres SIGNED_OUT-Event aus und kann eine Schleife erzeugen.
     client.auth.getSession().then(({ error }) => {
       if (error?.message?.includes('Refresh Token')) {
         client?.auth.signOut().catch(() => {});
