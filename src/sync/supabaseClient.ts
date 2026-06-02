@@ -18,6 +18,16 @@ export function getSupabase(): SupabaseClient | null {
       },
       realtime: { params: { eventsPerSecond: 5 } },
     });
+    // Abgelaufene/ungültige Sessions still verwerfen statt als ERROR zu loggen
+    client.auth.onAuthStateChange((event) => {
+      if (event === 'TOKEN_REFRESHED') return;
+      if (event === 'SIGNED_OUT') client?.auth.signOut().catch(() => {});
+    });
+    client.auth.getSession().then(({ error }) => {
+      if (error?.message?.includes('Refresh Token')) {
+        client?.auth.signOut().catch(() => {});
+      }
+    });
   }
   return client;
 }
