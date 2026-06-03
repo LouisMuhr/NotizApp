@@ -12,21 +12,30 @@ import * as haptics from '../utils/haptics';
 
 interface Props {
   note: Note;
-  onPress: () => void;
-  onDelete: () => void;
-  onTogglePin: () => void;
+  onPress: (id: string) => void;
+  onDelete: (id: string) => void;
+  onTogglePin: (id: string) => void;
   index?: number;
 }
 
-export default function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
+// Merkt sich, welche Notizen ihre Einfly-Animation schon abgespielt haben.
+// So animiert eine Karte nur beim ersten Erscheinen, nicht beim Recycling
+// durch die FlatList während des Scrollens.
+const animatedOnce = new Set<string>();
+
+function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
   const theme = useTheme();
   const accent = getCategoryAccent(note.category);
   const swipeableRef = useRef<Swipeable>(null);
 
+  const alreadyAnimated = animatedOnce.has(note.id);
   const pressScale = useRef(new Animated.Value(1)).current;
-  const entry = useRef(new Animated.Value(0)).current;
+  // Bereits animierte Karten starten direkt sichtbar (Wert 1), keine Re-Animation.
+  const entry = useRef(new Animated.Value(alreadyAnimated ? 1 : 0)).current;
 
   useEffect(() => {
+    if (alreadyAnimated) return;
+    animatedOnce.add(note.id);
     Animated.timing(entry, {
       toValue: 1,
       duration: 320,
@@ -34,7 +43,7 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin, index =
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [entry, index]);
+  }, [entry, index, alreadyAnimated, note.id]);
 
   const handlePressIn = () => {
     Animated.spring(pressScale, { toValue: 0.985, useNativeDriver: true, friction: 6, tension: 220 }).start();
@@ -89,9 +98,9 @@ export default function NoteCard({ note, onPress, onDelete, onTogglePin, index =
     );
   };
 
-  const handleSwipeLeft = () => { swipeableRef.current?.close(); haptics.light(); onTogglePin(); };
-  const handleSwipeRight = () => { swipeableRef.current?.close(); haptics.medium(); onDelete(); };
-  const handlePress = () => { haptics.tap(); onPress(); };
+  const handleSwipeLeft = () => { swipeableRef.current?.close(); haptics.light(); onTogglePin(note.id); };
+  const handleSwipeRight = () => { swipeableRef.current?.close(); haptics.medium(); onDelete(note.id); };
+  const handlePress = () => { haptics.tap(); onPress(note.id); };
 
   const translateY = entry.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
   const checklistDone = note.checklist?.filter((i) => i.checked).length ?? 0;
@@ -289,4 +298,30 @@ const styles = StyleSheet.create({
     color: Tokens.amberDeep,
     letterSpacing: 0.2,
   },
+});
+
+// Memoisiert: Die Karte rendert nur neu, wenn sich die Notiz selbst ändert.
+// Verhindert das komplette Neu-Rendern aller sichtbaren Karten, sobald sich
+// irgendwas im HomeScreen ändert (z. B. ein Tastendruck im Suchfeld).
+export default React.memo(NoteCard, (prev, next) => {
+  const a = prev.note;
+  const b = next.note;
+  return (
+    a.id === b.id &&
+    a.title === b.title &&
+    a.content === b.content &&
+    a.category === b.category &&
+    a.isPinned === b.isPinned &&
+    a.updatedAt === b.updatedAt &&
+    a.reminderAt === b.reminderAt &&
+    a.reminderRecurrence === b.reminderRecurrence &&
+    a.reminderWeekday === b.reminderWeekday &&
+    a.reminderDayOfMonth === b.reminderDayOfMonth &&
+    a.feedsThreads === b.feedsThreads &&
+    a.checklist === b.checklist &&
+    prev.index === next.index &&
+    prev.onPress === next.onPress &&
+    prev.onDelete === next.onDelete &&
+    prev.onTogglePin === next.onTogglePin
+  );
 });

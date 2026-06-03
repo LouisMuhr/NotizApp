@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, View, FlatList, Pressable, Animated, Easing } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { StyleSheet, View, FlatList, Pressable, Animated, Easing, ListRenderItemInfo } from 'react-native';
 import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -78,6 +78,25 @@ export default function HomeScreen({ navigation }: Props) {
 
     return result;
   }, [notes, filters]);
+
+  // Stabile Handler + renderItem, damit React.memo in NoteCard greift und
+  // nicht jede sichtbare Karte bei jedem HomeScreen-Render neu rendert.
+  const handleOpen = useCallback(
+    (id: string) => navigation.navigate('NoteDetail', { noteId: id }),
+    [navigation],
+  );
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<typeof filteredNotes[number]>) => (
+      <NoteCard
+        note={item}
+        index={index}
+        onPress={handleOpen}
+        onDelete={deleteNote}
+        onTogglePin={togglePin}
+      />
+    ),
+    [handleOpen, deleteNote, togglePin],
+  );
 
   const fabPulse = useRef(new Animated.Value(1)).current;
   const fabScale = useRef(new Animated.Value(1)).current;
@@ -161,17 +180,13 @@ export default function HomeScreen({ navigation }: Props) {
         <FlatList
           data={filteredNotes}
           keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
-            <NoteCard
-              note={item}
-              index={index}
-              onPress={() => navigation.navigate('NoteDetail', { noteId: item.id })}
-              onDelete={() => deleteNote(item.id)}
-              onTogglePin={() => togglePin(item.id)}
-            />
-          )}
+          renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={7}
         />
       )}
 
