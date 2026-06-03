@@ -154,6 +154,11 @@ export default function Home() {
     if (res.ok) {
       sessionStorage.removeItem('notiz_graph_cache');
       fetchGraph();
+    } else {
+      // Fehler nicht stillschweigend schlucken — sonst wirkt das Speichern
+      // erfolgreich, obwohl die Notiz nie angelegt wurde.
+      const msg = await res.json().catch(() => null);
+      alert(`Notiz konnte nicht erstellt werden: ${msg?.error ?? `Fehler ${res.status}`}`);
     }
   }, [user, getToken, fetchGraph]);
 
