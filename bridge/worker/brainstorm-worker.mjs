@@ -1,8 +1,10 @@
 /**
  * brainstorm-worker.mjs
  *
- * Node.js-Helper für den Brainstorm-Worker.
- * Wird vom brainstorm-prompt.md via Claude Code aufgerufen.
+ * Node.js-Helper für die Thoughts→Threads-Synthese (manuelle/lokale Nutzung).
+ * Die produktive Synthese läuft on-demand über bridge/api/synthesize.ts
+ * (User drückt "Synthetisieren" in der App). Dieser CLI-Helfer dient nur noch
+ * dem manuellen Lesen/Schreiben gegen Supabase.
  *
  * Befehle:
  *   node bridge/worker/brainstorm-worker.mjs fetch

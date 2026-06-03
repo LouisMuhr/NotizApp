@@ -38,7 +38,7 @@ c:/NotizApp/
 │   ├── bridge/            # Vercel serverless bridge API + worker
 │   │   ├── api/           # Serverless functions (note.ts, thought.ts)
 │   │   ├── bookmarklet/   # Browser bookmarklet source
-│   │   └── worker/        # brainstorm-worker.mjs + brainstorm-prompt.md
+│   │   └── worker/        # brainstorm-worker.mjs, similarity-worker.mjs (CLI-Helfer)
 │   └── webapp/            # Next.js 16 graph visualizer (standalone)
 │       ├── app/           # page.tsx (force-graph UI), api/graph/route.ts
 │       ├── components/    # Graph.tsx, NoteOverlay.tsx, SimilarityOverlay.tsx,
@@ -158,10 +158,17 @@ Neue Themedateien: `typography.ts`, `categoryAccents.ts`.
 - `components/Graph.tsx` — Force-Graph (dynamisch geladen, kein SSR)
 - Eigene `node_modules` und `package.json` — unabhängig vom Expo-App-Toolchain
 
-### Brainstorm Worker
-`bridge/worker/brainstorm-worker.mjs` — Node.js ESM CLI, keine extra Deps.
+### Synthese (Thoughts → Threads)
+Läuft **on-demand**: Der User drückt in `ThreadsScreen` auf „Synthetisieren" →
+`POST /api/synthesize` (`bridge/api/synthesize.ts`). Der Endpoint prüft das Rate-Limit
+pro Tier (free 1×/Woche, basic 1×/Tag, pro 10×/Tag) über die `profiles`-Tabelle
+(`ai_last_run`, `ai_runs_today`, `ai_day_reset`), ruft dann die Anthropic-API direkt
+auf und schreibt Threads zurück. **Kein täglicher Cron-Job mehr.**
+
+`bridge/worker/brainstorm-worker.mjs` / `similarity-worker.mjs` — Node.js ESM CLI-Helfer
+(keine extra Deps), nur noch für manuelle/lokale Nutzung:
 ```bash
-node bridge/worker/brainstorm-worker.mjs fetch          # unprocessed Thoughts → stdout JSON
+node bridge/worker/brainstorm-worker.mjs fetch          # feed-notes + active threads → stdout JSON
 node bridge/worker/brainstorm-worker.mjs write <json>   # write synthesis back
 node bridge/worker/brainstorm-worker.mjs add "Gedanke"  # push single thought
 ```
