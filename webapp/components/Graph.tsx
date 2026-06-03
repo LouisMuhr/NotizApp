@@ -38,7 +38,7 @@ const TOPBAR_H         = 54;
 const THREAD_R         = 15;
 const NOTE_R           = 5;
 const SIM_R            = 10;
-const NOTE_ORBIT_SCALE = 0.11;
+const NOTE_SPREAD      = 1.7; // wie weit Notizen aus der Thread-Mitte sitzen
 const LS_KEY           = 'notiz_thread_positions';
 const LS_KEY_NOTES     = 'notiz_note_positions';
 
@@ -72,11 +72,16 @@ function layoutNodes(data: GraphData): GraphData {
   const saved = loadPositions();
   const savedNotes = loadNotePositions();
   const n = data.threads.length;
+  // Mehr Threads → größerer Ring, damit die Cluster Platz haben.
+  // (Die Kamera zoomt anschließend automatisch passend heran.)
+  const ringR = 0.27 + Math.max(0, n - 5) * 0.05;
+  // Notizen weiter aus der Thread-Mitte herausziehen.
+  const noteSpread = NOTE_SPREAD;
   const threads = data.threads.map((th, i) => {
     if (saved[th.id]) return { ...th, xf: saved[th.id].xf, yf: saved[th.id].yf };
     if (th.xf !== undefined && th.yf !== undefined) return th;
     const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-    return { ...th, xf: 0.5 + 0.27 * Math.cos(angle), yf: 0.5 + 0.27 * Math.sin(angle) };
+    return { ...th, xf: 0.5 + ringR * Math.cos(angle), yf: 0.5 + ringR * Math.sin(angle) };
   });
   const threadMap = new Map(threads.map(t => [t.id, t]));
   const noteCount = new Map<string, number>();
@@ -89,7 +94,7 @@ function layoutNodes(data: GraphData): GraphData {
     const idx = noteCount.get(note.threadId) ?? 0;
     noteCount.set(note.threadId, idx + 1);
     const [ox, oy] = noteOffset(idx);
-    return { ...note, xf: th.xf + ox * NOTE_ORBIT_SCALE / 0.11, yf: th.yf! + oy * NOTE_ORBIT_SCALE / 0.11 };
+    return { ...note, xf: th.xf + ox * noteSpread, yf: th.yf! + oy * noteSpread };
   });
   const similarities = data.similarities.map((s, i) => {
     const a = threadMap.get(s.threadId1), b = threadMap.get(s.threadId2);
@@ -211,6 +216,8 @@ export default function Graph(props: Props) {
     // camera (fractional offset + zoom, lerped each frame like the mockup)
     camX: 0, camY: 0, camZ: 1,
     camXt: 0, camYt: 0, camZt: 1,
+    // zuletzt berechnete "fit to content"-Zielwerte (für Zoom-Reset-Button)
+    fitX: 0, fitY: 0, fitZ: 1,
   });
 
   // Props mirror — always current, no stale closures
@@ -227,7 +234,8 @@ export default function Graph(props: Props) {
       },
       zoomReset: () => {
         const r = rt.current;
-        r.camXt = 0; r.camYt = 0; r.camZt = 1;
+        // Zurück zur automatischen "Alles im Bild"-Ansicht.
+        r.camXt = r.fitX; r.camYt = r.fitY; r.camZt = r.fitZ;
       },
     };
   });
@@ -268,8 +276,35 @@ export default function Graph(props: Props) {
           threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
           p: Math.random(), s: 0.001 + Math.random() * 0.0015,
         }));
+        fitToContent(r.layout); // Kamera so setzen, dass alle Knoten ins Bild passen
       }
       return r.layout;
+    }
+
+    // Bounding-Box aller Knoten berechnen und Kamera (Ziel-Werte) so wählen,
+    // dass alles mit etwas Rand sichtbar ist. Der Lerp animiert sanft dorthin.
+    function fitToContent(layout: GraphData) {
+      const pts: Array<{ xf?: number; yf?: number }> = [...layout.threads, ...layout.notes];
+      let minX = 1, maxX = 0, minY = 1, maxY = 0, found = false;
+      for (const pt of pts) {
+        if (pt.xf === undefined || pt.yf === undefined) continue;
+        found = true;
+        minX = Math.min(minX, pt.xf); maxX = Math.max(maxX, pt.xf);
+        minY = Math.min(minY, pt.yf); maxY = Math.max(maxY, pt.yf);
+      }
+      if (!found) return;
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      // Spannweite + Rand für Labels/Knotenradius; gegen 0 absichern.
+      const spanX = Math.max(0.001, maxX - minX) + 0.18;
+      const spanY = Math.max(0.001, maxY - minY) + 0.18;
+      // camZ so, dass die größere Achse genau ins Bild passt (Spannweite·camZ ≈ 1).
+      const z = Math.max(0.4, Math.min(2.5, Math.min(1 / spanX, 1 / spanY)));
+      rt.current.fitX = cx - 0.5;
+      rt.current.fitY = cy - 0.5;
+      rt.current.fitZ = z;
+      rt.current.camXt = rt.current.fitX;
+      rt.current.camYt = rt.current.fitY;
+      rt.current.camZt = rt.current.fitZ;
     }
 
     function moveThread(threadId: string, xf: number, yf: number) {
@@ -295,7 +330,7 @@ export default function Graph(props: Props) {
         }
         const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
         const [ox, oy] = noteOffset(idx);
-        return { ...note, xf: cxf + ox * NOTE_ORBIT_SCALE / 0.11, yf: cyf + oy * NOTE_ORBIT_SCALE / 0.11 };
+        return { ...note, xf: cxf + ox * NOTE_SPREAD, yf: cyf + oy * NOTE_SPREAD };
       });
       const similarities = layout.similarities.map((s, i) => {
         if (s.threadId1 !== threadId && s.threadId2 !== threadId) return s;
@@ -415,7 +450,8 @@ export default function Graph(props: Props) {
           if (th && th.xf !== undefined) {
             const { activeThreadId } = propsRef.current;
             if (activeThreadId === th.id) {
-              rt.current.camXt = 0; rt.current.camYt = 0; rt.current.camZt = 1.0;
+              // Zurück zur "Alles im Bild"-Ansicht statt fix auf Zoom 1.
+              rt.current.camXt = rt.current.fitX; rt.current.camYt = rt.current.fitY; rt.current.camZt = rt.current.fitZ;
             } else {
               // Shift thread slightly left of center so the modal has space on the right
               const targetZ = 1.5;
