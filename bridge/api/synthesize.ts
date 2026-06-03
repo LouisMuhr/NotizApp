@@ -118,6 +118,14 @@ async function sbPatch(url: string, serviceKey: string, path: string, body: any)
   if (!r.ok) throw new Error(`supabase PATCH ${path}: ${r.status} ${await r.text()}`);
 }
 
+async function sbDelete(url: string, serviceKey: string, path: string) {
+  const r = await fetch(`${url}/rest/v1/${path}`, {
+    method: 'DELETE',
+    headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
+  });
+  if (!r.ok) throw new Error(`supabase DELETE ${path}: ${r.status} ${await r.text()}`);
+}
+
 const SYSTEM_PROMPT = `Du bist ein Brainstorm-Synthese-Agent für die NotizApp.
 Deine Aufgabe: Notizen (feed_notes) thematisch gruppieren und als "Threads" mit KI-generierten Zusammenfassungen ausgeben.
 
@@ -141,16 +149,43 @@ Antworte NUR mit einem einzigen validen JSON-Objekt, ohne Markdown, ohne Erklär
       "summary": "Aktualisierte Summary",
       "note_ids": ["<alle bisherigen + neue note-ids>"]
     }
+  ],
+  "similarities": [
+    {
+      "thread_id_1": "<thread-id>",
+      "thread_id_2": "<anderer-thread-id>",
+      "label": "Oberkategorie (1-3 Worte, Deutsch)"
+    }
   ]
 }
 
-Regeln:
-- Threads ohne neue Notiz seit >21 Tagen: als {"id":"...","status":"dormant","summary":"<unverändert>"} in thread_updates
-- Notizen ≤14 Zeichen ohne Aussage (einzelnes Wort, "ok", "ja"): ignorieren
-- Pro Notiz: A) passt zu bestehendem Thread → thread_updates; B) verwandt mit anderen neuen → neuer gemeinsamer Thread; C) isoliert → Single-Thread
-- note_ids in thread_updates = VOLLSTÄNDIGE Liste (bestehende + neue)
-- Summary: Deutsch, Fließtext, max. 4 Sätze, beschreibt das Thema sachlich
-- UUIDs für neue Threads selbst generieren (Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)`;
+Vorsortierung & Pruning:
+- Notizen ≤14 Zeichen ohne Aussage (einzelnes Wort, "ok", "ja", "erledigen"): ignorieren, keinen Thread anlegen
+- Dormant-Pruning: Threads ohne neue Notiz seit >21 Tagen als {"id":"...","status":"dormant","summary":"<unverändert>"} in thread_updates markieren UND aus dem Relevanz-Vergleich mit aktuellen Notizen ausschließen (nicht mit ihnen vergleichen)
+
+Entscheidungsbaum pro Notiz (nach Vorsortierung):
+- A) Passt sie zum Kernanliegen eines bestehenden (aktiven, nicht-dormant) Threads? → thread_updates. Bei Unsicherheit: nein. Summary organisch neu schreiben, kein bloßes Anhängen.
+- B) Verwandt mit anderen neuen Notizen, aber kein bestehender Thread passt? → neuer gemeinsamer Thread
+- C) Völlig isoliert? → Single-Thread (Titel = kürzester treffender Ausdruck, 3-5 Worte)
+
+Summary-Qualität:
+- Deutsch, Fließtext, keine Bullet-Points, max. 3-4 Sätze — verdichtend, nicht auflistend
+- Beschreibe das übergeordnete THEMA selbst, nicht die Gedanken als Objekte ("Es geht um …", nicht "Die Notiz sagt …")
+- Bekommt ein Thread ≥5 neue Notizen: einen Satz einfügen, der beschreibt was seit dem letzten Mal neu hinzugekommen ist ("Neu hinzugekommen ist …")
+
+Format-Regeln:
+- note_ids in thread_updates = VOLLSTÄNDIGE Liste (bestehende aus active_threads + neue)
+- UUIDs für neue Threads selbst generieren (Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)
+
+Thread-Verbindungen (similarities):
+Erkenne thematische Verbindungen zwischen Threads für den Knowledge-Graph. Berücksichtige dabei ALLE Threads — die bestehenden active_threads UND die in diesem Lauf neu erstellten/aktualisierten. Verwende für neue Threads die UUIDs, die du oben selbst vergeben hast.
+- Verbinde Threads die zur selben übergeordneten Domäne/Thema gehören (z.B. mehrere Software/App-Ideen, Finanzen & Investment, Gesundheit & Fitness, Lebensplanung)
+- Eine Verbindung zählt, wenn das inhaltliche THEMA übereinstimmt — nicht der Medientyp
+- NICHT verbinden: Threads die nur oberflächlich ähnlich sind ("beide handeln von Plänen"), oder Threads die hauptsächlich nur eine URL/einen Link enthalten (kein inhaltliches Thema)
+- Lieber wenige bedeutungsvolle Verbindungen als viele oberflächliche
+- label = kurze übergeordnete Kategorie (1-3 Worte, Deutsch), die beide verbindet
+- Jedes Paar nur EINMAL (nicht thread_id_1/thread_id_2 gespiegelt wiederholen)
+- Keine sinnvollen Verbindungen? → "similarities": []`;
 
 export default async function handler(req: any, res: any) {
   try {
@@ -269,7 +304,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    let synthesis: { new_threads?: any[]; thread_updates?: any[] };
+    let synthesis: { new_threads?: any[]; thread_updates?: any[]; similarities?: any[] };
     try {
       synthesis = JSON.parse(jsonMatch[0]);
     } catch (e: any) {
@@ -324,11 +359,50 @@ export default async function handler(req: any, res: any) {
     }
 
     // -----------------------------------------------------------------------
+    // Thread-Verbindungen (similarities) — komplett neu aufbauen
+    // -----------------------------------------------------------------------
+    let similarities_written = 0;
+    // Gültige Thread-IDs des Users: bestehende aktive + frisch eingefügte.
+    // Verhindert FK-Verletzungen, falls die KI eine unbekannte ID referenziert.
+    const allThreads: any[] = await sbGet(
+      SUPABASE_URL, SUPABASE_SERVICE_KEY,
+      `threads?user_id=eq.${uid}&status=eq.active&select=id`,
+    );
+    const validIds = new Set<string>(allThreads.map((t: any) => t.id));
+
+    const seenPairs = new Set<string>();
+    const simRows = (synthesis.similarities ?? [])
+      .filter((s: any) => {
+        const a = s.thread_id_1;
+        const b = s.thread_id_2;
+        if (!a || !b || a === b) return false;
+        if (!validIds.has(a) || !validIds.has(b)) return false;
+        const key = [a, b].sort().join('|'); // ungerichtet, dedupliziert
+        if (seenPairs.has(key)) return false;
+        seenPairs.add(key);
+        return true;
+      })
+      .map((s: any) => ({
+        user_id: userId,
+        thread_id_1: s.thread_id_1,
+        thread_id_2: s.thread_id_2,
+        label: s.label ?? '',
+      }));
+
+    // Alte Verbindungen des Users löschen, dann neue schreiben (frischer Stand)
+    await sbDelete(SUPABASE_URL, SUPABASE_SERVICE_KEY,
+      `thread_similarities?user_id=eq.${uid}`);
+    if (simRows.length > 0) {
+      await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'thread_similarities', simRows);
+      similarities_written = simRows.length;
+    }
+
+    // -----------------------------------------------------------------------
     // Update profile: ai_last_run, ai_runs_today, ai_day_reset
     // -----------------------------------------------------------------------
     await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
 
-    res.status(200).json({ ok: true, threads_created, threads_updated });
+    res.status(200).json({ ok: true, threads_created, threads_updated, similarities_written });
   } catch (e: any) {
     try { res.status(500).json({ error: 'crash: ' + (e?.message || String(e)) }); }
     catch { res.status(500).end('crash'); }
