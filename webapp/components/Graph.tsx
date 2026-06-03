@@ -159,8 +159,8 @@ function buildNoise(): HTMLCanvasElement {
 
 interface Particle { threadId1: string; threadId2: string; simId: string; p: number; s: number }
 interface DragState {
-  kind: 'thread' | 'pan';
-  threadId?: string; startMouseX: number; startMouseY: number;
+  kind: 'thread' | 'note' | 'pan';
+  threadId?: string; noteId?: string; startMouseX: number; startMouseY: number;
   startXf?: number; startYf?: number;
   startCamX?: number; startCamY?: number;
   moved: boolean;
@@ -188,6 +188,7 @@ export default function Graph(props: Props) {
     animT: 0,
     hovered: null as HitResult | null,
     drag: null as DragState | null,
+    suppressClick: false,
     noise: null as HTMLCanvasElement | null,
     particles: [] as Particle[],
     layout: null as GraphData | null,
@@ -278,6 +279,15 @@ export default function Graph(props: Props) {
       rt.current.layout = { threads, notes, similarities };
     }
 
+    function moveNote(noteId: string, xf: number, yf: number) {
+      const layout = rt.current.layout;
+      if (!layout) return;
+      const cxf = Math.max(0.02, Math.min(0.98, xf));
+      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
+      rt.current.layout = { ...layout, notes };
+    }
+
     function getNodeAt(mx: number, my: number): HitResult | null {
       const layout = getLayout();
       const { activeFilter, activeThreadId } = propsRef.current;
@@ -307,6 +317,10 @@ export default function Graph(props: Props) {
         const th = getLayout().threads.find(t => t.id === hit.id);
         if (!th || th.xf === undefined) return;
         rt.current.drag = { kind: 'thread', threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
+      } else if (hit?.type === 'note') {
+        const n = getLayout().notes.find(n => n.id === hit.id);
+        if (!n || n.xf === undefined) return;
+        rt.current.drag = { kind: 'note', noteId: n.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: n.xf, startYf: n.yf!, moved: false };
       } else if (!hit) {
         // pan the camera
         rt.current.drag = { kind: 'pan', startMouseX: e.clientX, startMouseY: e.clientY, startCamX: rt.current.camXt, startCamY: rt.current.camYt, moved: false };
@@ -326,6 +340,8 @@ export default function Graph(props: Props) {
           const z = rt.current.camZ;
           if (drag.kind === 'thread') {
             moveThread(drag.threadId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
+          } else if (drag.kind === 'note') {
+            moveNote(drag.noteId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
           } else {
             // pan: pixel delta → fractional delta (divide by zoom scale)
             rt.current.camXt = drag.startCamX! - dx / (GW() * z);
@@ -337,7 +353,7 @@ export default function Graph(props: Props) {
       }
       const hit = getNodeAt(e.clientX, e.clientY);
       rt.current.hovered = hit;
-      canvas.style.cursor = hit?.type === 'thread' ? 'grab' : hit ? 'pointer' : 'default';
+      canvas.style.cursor = hit?.type === 'thread' || hit?.type === 'note' ? 'grab' : hit ? 'pointer' : 'default';
       if (hit) {
         const layout = getLayout();
         const label = hit.type === 'thread' ? layout.threads.find(t => t.id === hit.id)?.title ?? ''
@@ -374,6 +390,8 @@ export default function Graph(props: Props) {
           }
         }
       }
+      // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
+      if (drag.kind === 'note' && drag.moved) rt.current.suppressClick = true;
       // pan drag: camera target already set in mousemove, nothing extra needed
       rt.current.drag = null;
       canvas.style.cursor = 'default';
@@ -385,6 +403,7 @@ export default function Graph(props: Props) {
 
     function onClick(e: MouseEvent) {
       if (rt.current.drag) return;
+      if (rt.current.suppressClick) { rt.current.suppressClick = false; return; }
       const hit = getNodeAt(e.clientX, e.clientY);
       if (!hit || hit.type === 'thread') return;
       const layout = getLayout();
@@ -462,7 +481,7 @@ export default function Graph(props: Props) {
         const a=layout.threads.find(t=>t.id===sim.threadId1), b=layout.threads.find(t=>t.id===sim.threadId2);
         if (!a||!b||a.xf===undefined||b.xf===undefined) continue;
         const lit=linkLit(sim.id,sim.threadId1,sim.threadId2);
-        const col=lit?C.amber:'rgba(150,100,50,0.4)', al=lit?0.38:0.07, w=lit?1.6*z:0.55*z;
+        const col=lit?C.amber:'rgba(190,130,70,0.7)', al=lit?0.42:0.24, w=lit?1.6*z:0.85*z;
         const sx=GX(sim.xf),sy=GY(sim.yf!);
         drawCurve(ctx,GX(a.xf),GY(a.yf!),sx,sy,GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),col,al,w);
         drawCurve(ctx,GX(b.xf),GY(b.yf!),sx,sy,GX((b.xf+sim.xf)/2),GY((b.yf!+sim.yf!)/2),col,al,w);
@@ -478,7 +497,7 @@ export default function Graph(props: Props) {
         const catCol=getCategoryColor(note.category);
         const catRgb=hexRgb(catCol);
         drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-          hovN?C.white:lit?catCol:`rgba(${catRgb},0.35)`, hovN?0.6:lit?0.3:0.07, hovN?1.4*z:lit?1.0*z:0.45*z);
+          hovN?C.white:lit?catCol:`rgba(${catRgb},0.7)`, hovN?0.6:lit?0.36:0.22, hovN?1.4*z:lit?1.0*z:0.7*z);
       }
 
       // particles
