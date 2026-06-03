@@ -15,6 +15,7 @@ import { FilterOptions, SortField, SortOrder } from '../models/Note';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import { Tokens } from '../theme/theme';
 import { Radii, Shadows, Insets } from '../theme/gradients';
+import * as haptics from '../utils/haptics';
 
 interface Props {
   filters: FilterOptions;
@@ -40,6 +41,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
   ) ?? SORT_OPTIONS[0];
 
   const openSheet = () => {
+    haptics.tap();
     setSheetVisible(true);
     Animated.timing(slideAnim, {
       toValue: 1,
@@ -59,6 +61,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
   };
 
   const selectSort = (opt: (typeof SORT_OPTIONS)[0]) => {
+    haptics.tap();
     onFiltersChange({ ...filters, sortField: opt.field, sortOrder: opt.order });
     closeSheet();
   };
@@ -104,7 +107,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
         contentContainerStyle={styles.pillRow}
       >
         <Pressable
-          onPress={() => onFiltersChange({ ...filters, category: null })}
+          onPress={() => { haptics.tap(); onFiltersChange({ ...filters, category: null }); }}
           style={[
             styles.pill,
             filters.category === null
@@ -128,7 +131,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
           return (
             <Pressable
               key={cat}
-              onPress={() => onFiltersChange({ ...filters, category: isActive ? null : cat })}
+              onPress={() => { haptics.tap(); onFiltersChange({ ...filters, category: isActive ? null : cat }); }}
               style={[
                 styles.pill,
                 isActive

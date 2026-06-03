@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as haptics from '../utils/haptics';
 import HomeScreen from '../screens/HomeScreen';
 import EditorScreen from '../screens/EditorScreen';
 import NoteDetailScreen from '../screens/NoteDetailScreen';
@@ -30,6 +31,9 @@ function HomeTabs() {
 
   return (
     <Tab.Navigator
+      screenListeners={{
+        tabPress: () => { haptics.tap(); },
+      }}
       screenOptions={{
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,

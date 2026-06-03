@@ -178,17 +178,20 @@ export default function EditorScreen({ navigation, route }: Props) {
   const addChecklistItem = useCallback(() => {
     const text = newChecklistText.trim();
     if (text) {
+      haptics.light();
       setChecklist((prev) => [...prev, { id: uuidv4(), text, checked: false }]);
       setNewChecklistText('');
     }
   }, [newChecklistText]);
 
   const toggleChecklistItem = useCallback((itemId: string) => {
+    haptics.tap();
     setChecklist((prev) => {
       const updated = prev.map((item) =>
         item.id === itemId ? { ...item, checked: !item.checked } : item
       );
       if (updated.length > 0 && updated.every((i) => i.checked)) {
+        haptics.success();
         setShowResetDialog(true);
       }
       return updated;
@@ -287,7 +290,7 @@ export default function EditorScreen({ navigation, route }: Props) {
             icon={isPinned ? 'pin' : 'pin-outline'}
             size={22}
             iconColor={isPinned ? theme.colors.tertiary : theme.colors.onSurfaceVariant}
-            onPress={() => setIsPinned(!isPinned)}
+            onPress={() => { haptics.light(); setIsPinned(!isPinned); }}
             style={[
               styles.pinBtn,
               isPinned && { backgroundColor: theme.colors.tertiaryContainer },

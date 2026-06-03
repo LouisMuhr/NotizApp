@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { WEEKDAY_LABELS } from '../models/Note';
 import { getCategoryAccent } from '../theme/categoryAccents';
+import * as haptics from '../utils/haptics';
 
 interface Props {
   navigation: any;
@@ -57,11 +58,13 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const toggleChecklistItem = useCallback((itemId: string) => {
+    // updateNote() löst bereits haptics.light() zentral aus — hier kein zusätzliches tap().
     const updated = note.checklist.map((item) =>
       item.id === itemId ? { ...item, checked: !item.checked } : item
     );
     updateNote(note.id, { checklist: updated });
     if (updated.length > 0 && updated.every((i) => i.checked)) {
+      haptics.success();
       setShowResetDialog(true);
     }
   }, [note, updateNote]);
@@ -156,7 +159,6 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
               >
                 <Checkbox
                   status={item.checked ? 'checked' : 'unchecked'}
-                  onPress={() => toggleChecklistItem(item.id)}
                   color={theme.colors.secondary}
                   uncheckedColor={theme.colors.onSurfaceVariant}
                 />
