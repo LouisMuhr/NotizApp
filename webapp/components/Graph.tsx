@@ -189,6 +189,9 @@ export default function Graph(props: Props) {
     hovered: null as HitResult | null,
     drag: null as DragState | null,
     suppressClick: false,
+    // Notizen, die der User manuell verschoben hat — bleiben an ihrer Stelle,
+    // auch wenn der zugehörige Thread danach bewegt wird.
+    pinnedNotes: new Set<string>(),
     noise: null as HTMLCanvasElement | null,
     particles: [] as Particle[],
     layout: null as GraphData | null,
@@ -247,6 +250,7 @@ export default function Graph(props: Props) {
       if (!r.layout || r.layoutData !== p.data) {
         r.layout = layoutNodes(p.data);
         r.layoutData = p.data;
+        r.pinnedNotes.clear(); // neuer Datensatz → manuelle Notiz-Positionen zurücksetzen
         r.particles = r.layout.similarities.map(s => ({
           threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
           p: Math.random(), s: 0.001 + Math.random() * 0.0015,
@@ -263,9 +267,11 @@ export default function Graph(props: Props) {
       const threads = layout.threads.map(t => t.id === threadId ? { ...t, xf: cxf, yf: cyf } : t);
       const tm = new Map(threads.map(t => [t.id, t]));
       const nc = new Map<string, number>();
+      const pinned = rt.current.pinnedNotes;
       const notes = layout.notes.map(note => {
         if (note.threadId !== threadId) return note;
-        const th = tm.get(note.threadId)!;
+        // Manuell verschobene Notizen behalten ihre Position.
+        if (pinned.has(note.id)) return note;
         const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
         const [ox, oy] = noteOffset(idx);
         return { ...note, xf: cxf + ox * NOTE_ORBIT_SCALE / 0.11, yf: cyf + oy * NOTE_ORBIT_SCALE / 0.11 };
@@ -285,6 +291,7 @@ export default function Graph(props: Props) {
       const cxf = Math.max(0.02, Math.min(0.98, xf));
       const cyf = Math.max(0.02, Math.min(0.98, yf));
       const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
+      rt.current.pinnedNotes.add(noteId);
       rt.current.layout = { ...layout, notes };
     }
 
