@@ -38,120 +38,72 @@ const TOPBAR_H         = 54;
 const THREAD_R         = 15;
 const NOTE_R           = 5;
 const SIM_R            = 10;
+const NOTE_ORBIT_SCALE = 0.11;
+const LS_KEY           = 'notiz_thread_positions';
+const LS_KEY_NOTES     = 'notiz_note_positions';
+
+function loadPositions(): Record<string, { xf: number; yf: number }> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '{}'); } catch { return {}; }
+}
+function savePositions(pos: Record<string, { xf: number; yf: number }>) {
+  localStorage.setItem(LS_KEY, JSON.stringify(pos));
+}
+
+// Nur manuell verschobene Notizen werden persistiert (eigener Key).
+function loadNotePositions(): Record<string, { xf: number; yf: number }> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY_NOTES) ?? '{}'); } catch { return {}; }
+}
+function saveNotePositions(pos: Record<string, { xf: number; yf: number }>) {
+  localStorage.setItem(LS_KEY_NOTES, JSON.stringify(pos));
+}
 
 type HitType = 'thread' | 'note' | 'similarity';
 interface HitResult { type: HitType; id: string }
+
+function noteOffset(idx: number): [number, number] {
+  const offsets: [number, number][] = [
+    [-0.09,-0.09],[0.10,-0.07],[0.12,0.06],[0.05,0.13],[-0.07,0.14],
+    [-0.08,-0.08],[0.10,-0.11],[0.12,0.03],[-0.09,0.09],[0.03,0.13],
+  ];
+  return offsets[idx % offsets.length];
+}
+
+function layoutNodes(data: GraphData): GraphData {
+  const saved = loadPositions();
+  const savedNotes = loadNotePositions();
+  const n = data.threads.length;
+  const threads = data.threads.map((th, i) => {
+    if (saved[th.id]) return { ...th, xf: saved[th.id].xf, yf: saved[th.id].yf };
+    if (th.xf !== undefined && th.yf !== undefined) return th;
+    const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return { ...th, xf: 0.5 + 0.27 * Math.cos(angle), yf: 0.5 + 0.27 * Math.sin(angle) };
+  });
+  const threadMap = new Map(threads.map(t => [t.id, t]));
+  const noteCount = new Map<string, number>();
+  const notes = data.notes.map(note => {
+    // Manuell verschobene Notiz: gespeicherte Position wiederherstellen.
+    if (savedNotes[note.id]) return { ...note, xf: savedNotes[note.id].xf, yf: savedNotes[note.id].yf };
+    if (note.xf !== undefined && note.yf !== undefined) return note;
+    const th = threadMap.get(note.threadId);
+    if (!th || th.xf === undefined) return note;
+    const idx = noteCount.get(note.threadId) ?? 0;
+    noteCount.set(note.threadId, idx + 1);
+    const [ox, oy] = noteOffset(idx);
+    return { ...note, xf: th.xf + ox * NOTE_ORBIT_SCALE / 0.11, yf: th.yf! + oy * NOTE_ORBIT_SCALE / 0.11 };
+  });
+  const similarities = data.similarities.map((s, i) => {
+    const a = threadMap.get(s.threadId1), b = threadMap.get(s.threadId2);
+    if (!a || !b || a.xf === undefined) return s;
+    return simPos(s, a.xf, a.yf!, b.xf!, b.yf!, i);
+  });
+  return { threads, notes, similarities };
+}
 
 function simPos(s: Similarity, ax: number, ay: number, bx: number, by: number, i: number): Similarity {
   const mx = (ax + bx) / 2, my = (ay + by) / 2;
   const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
   const sign = i % 2 === 0 ? 1 : -1;
   return { ...s, xf: mx + sign * (-dy / len) * 0.06, yf: my + sign * (dx / len) * 0.06 };
-}
-
-// ── Force-Simulation (eigene, leichtgewichtige Physik in fraktionalen Koordinaten) ──
-// Knoten stoßen sich gegenseitig ab, Verbindungen (Notiz↔Thread, Thread↔Thread via
-// KI-Verbindung) wirken als Federn, eine schwache Zentrierungskraft hält alles zusammen.
-// Läuft dauerhaft in der draw-Schleife → "lebendiges" Layout.
-interface SimNode {
-  id: string;
-  type: 'thread' | 'note';
-  threadId?: string;     // nur für Notizen
-  xf: number; yf: number;
-  vx: number; vy: number;
-  fixed: boolean;        // true während Drag → Physik lässt diesen Knoten in Ruhe
-}
-interface SimLink { a: string; b: string; rest: number; strength: number }
-
-const SIM = {
-  repulsion:   0.00028,  // Abstoßungsstärke (alle Knoten)
-  centerPull:  0.0016,   // Zug zur Mitte
-  damping:     0.86,     // Geschwindigkeitsdämpfung pro Tick
-  noteRest:    0.07,     // Soll-Abstand Notiz↔Thread
-  noteSpring:  0.012,    // Federstärke Notiz↔Thread
-  simRest:     0.34,     // Soll-Abstand verbundener Threads
-  simSpring:   0.004,    // Federstärke Thread↔Thread (KI-Verbindung)
-  maxV:        0.02,     // Geschwindigkeits-Cap (verhindert Wegschleudern)
-};
-
-function buildSimNodes(data: GraphData): SimNode[] {
-  const nodes: SimNode[] = [];
-  const n = data.threads.length || 1;
-  data.threads.forEach((th, i) => {
-    // Threads grob auf einem Kreis verteilt starten → Simulation entwirrt den Rest.
-    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
-    nodes.push({
-      id: th.id, type: 'thread',
-      xf: 0.5 + 0.22 * Math.cos(ang) + (Math.random() - 0.5) * 0.04,
-      yf: 0.5 + 0.22 * Math.sin(ang) + (Math.random() - 0.5) * 0.04,
-      vx: 0, vy: 0, fixed: false,
-    });
-  });
-  const threadPos = new Map(nodes.map(nd => [nd.id, nd]));
-  data.notes.forEach(note => {
-    const th = threadPos.get(note.threadId);
-    const bx = th ? th.xf : 0.5, by = th ? th.yf : 0.5;
-    nodes.push({
-      id: note.id, type: 'note', threadId: note.threadId,
-      xf: bx + (Math.random() - 0.5) * 0.08,
-      yf: by + (Math.random() - 0.5) * 0.08,
-      vx: 0, vy: 0, fixed: false,
-    });
-  });
-  return nodes;
-}
-
-function buildSimLinks(data: GraphData): SimLink[] {
-  const links: SimLink[] = [];
-  for (const note of data.notes) {
-    links.push({ a: note.id, b: note.threadId, rest: SIM.noteRest, strength: SIM.noteSpring });
-  }
-  for (const s of data.similarities) {
-    links.push({ a: s.threadId1, b: s.threadId2, rest: SIM.simRest, strength: SIM.simSpring });
-  }
-  return links;
-}
-
-// Ein Physik-Tick: mutiert die SimNodes in place.
-function stepSim(nodes: SimNode[], links: SimLink[], byId: Map<string, SimNode>) {
-  // Abstoßung (O(n²) — bei wenigen Hundert Knoten unkritisch)
-  for (let i = 0; i < nodes.length; i++) {
-    const a = nodes[i];
-    for (let j = i + 1; j < nodes.length; j++) {
-      const b = nodes[j];
-      let dx = a.xf - b.xf, dy = a.yf - b.yf;
-      let d2 = dx * dx + dy * dy;
-      if (d2 < 1e-6) { dx = (Math.random() - 0.5) * 0.01; dy = (Math.random() - 0.5) * 0.01; d2 = dx * dx + dy * dy; }
-      const f = SIM.repulsion / d2;
-      const d = Math.sqrt(d2);
-      const fx = (dx / d) * f, fy = (dy / d) * f;
-      a.vx += fx; a.vy += fy;
-      b.vx -= fx; b.vy -= fy;
-    }
-  }
-  // Federn entlang der Verbindungen
-  for (const lk of links) {
-    const a = byId.get(lk.a), b = byId.get(lk.b);
-    if (!a || !b) continue;
-    const dx = b.xf - a.xf, dy = b.yf - a.yf;
-    const d = Math.hypot(dx, dy) || 1e-4;
-    const f = (d - lk.rest) * lk.strength;
-    const fx = (dx / d) * f, fy = (dy / d) * f;
-    a.vx += fx; a.vy += fy;
-    b.vx -= fx; b.vy -= fy;
-  }
-  // Zentrierung + Integration
-  for (const nd of nodes) {
-    if (nd.fixed) { nd.vx = 0; nd.vy = 0; continue; }
-    nd.vx += (0.5 - nd.xf) * SIM.centerPull;
-    nd.vy += (0.5 - nd.yf) * SIM.centerPull;
-    nd.vx *= SIM.damping; nd.vy *= SIM.damping;
-    // Geschwindigkeit begrenzen
-    nd.vx = Math.max(-SIM.maxV, Math.min(SIM.maxV, nd.vx));
-    nd.vy = Math.max(-SIM.maxV, Math.min(SIM.maxV, nd.vy));
-    nd.xf = Math.max(0.03, Math.min(0.97, nd.xf + nd.vx));
-    nd.yf = Math.max(0.03, Math.min(0.97, nd.yf + nd.vy));
-  }
 }
 
 function hexRgb(hex: string) {
@@ -249,10 +201,9 @@ export default function Graph(props: Props) {
     hovered: null as HitResult | null,
     drag: null as DragState | null,
     suppressClick: false,
-    // Force-Simulation: Knoten + schneller Lookup + Verbindungen
-    simNodes: [] as SimNode[],
-    simById: new Map<string, SimNode>(),
-    simLinks: [] as SimLink[],
+    // Notizen, die der User manuell verschoben hat — bleiben an ihrer Stelle,
+    // auch wenn der zugehörige Thread danach bewegt wird.
+    pinnedNotes: new Set<string>(),
     noise: null as HTMLCanvasElement | null,
     particles: [] as Particle[],
     layout: null as GraphData | null,
@@ -305,52 +256,64 @@ export default function Graph(props: Props) {
     function GX(f: number) { return GW() / 2 + (f - 0.5 - rt.current.camX) * rt.current.camZ * GW(); }
     function GY(f: number) { return TOPBAR_H + GH() / 2 + (f - 0.5 - rt.current.camY) * rt.current.camZ * GH(); }
 
-    // Baut/aktualisiert die GraphData-Ansicht aus den Sim-Knoten.
-    // Beim Datenwechsel werden Knoten + Links frisch erzeugt (kompletter Neustart).
     function getLayout(): GraphData {
       const r = rt.current;
       const p = propsRef.current;
-      if (r.layoutData !== p.data) {
+      if (!r.layout || r.layoutData !== p.data) {
+        r.layout = layoutNodes(p.data);
         r.layoutData = p.data;
-        r.simNodes = buildSimNodes(p.data);
-        r.simById = new Map(r.simNodes.map(n => [n.id, n]));
-        r.simLinks = buildSimLinks(p.data);
-        r.particles = p.data.similarities.map(s => ({
+        // Gepinnte Notizen aus dem Speicher übernehmen (überleben Reload).
+        r.pinnedNotes = new Set(Object.keys(loadNotePositions()));
+        r.particles = r.layout.similarities.map(s => ({
           threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
           p: Math.random(), s: 0.001 + Math.random() * 0.0015,
         }));
       }
-      const by = r.simById;
-      const threads = p.data.threads.map(t => {
-        const nd = by.get(t.id);
-        return nd ? { ...t, xf: nd.xf, yf: nd.yf } : t;
-      });
-      const notes = p.data.notes.map(n => {
-        const nd = by.get(n.id);
-        return nd ? { ...n, xf: nd.xf, yf: nd.yf } : n;
-      });
-      const similarities = p.data.similarities.map((s, i) => {
-        const a = by.get(s.threadId1), b = by.get(s.threadId2);
-        if (!a || !b) return s;
-        return simPos(s, a.xf, a.yf, b.xf, b.yf, i);
-      });
-      r.layout = { threads, notes, similarities };
       return r.layout;
     }
 
-    // Drag wirkt direkt auf den Sim-Knoten (er ist während des Drags fixiert).
     function moveThread(threadId: string, xf: number, yf: number) {
-      const nd = rt.current.simById.get(threadId);
-      if (!nd) return;
-      nd.xf = Math.max(0.03, Math.min(0.97, xf));
-      nd.yf = Math.max(0.03, Math.min(0.97, yf));
+      const layout = rt.current.layout;
+      if (!layout) return;
+      const cxf = Math.max(0.02, Math.min(0.98, xf));
+      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const old = layout.threads.find(t => t.id === threadId);
+      // Verschiebung des Threads, um manuell platzierte Notizen relativ mitzuziehen.
+      const dxf = old?.xf !== undefined ? cxf - old.xf : 0;
+      const dyf = old?.yf !== undefined ? cyf - old.yf : 0;
+      const threads = layout.threads.map(t => t.id === threadId ? { ...t, xf: cxf, yf: cyf } : t);
+      const tm = new Map(threads.map(t => [t.id, t]));
+      const nc = new Map<string, number>();
+      const pinned = rt.current.pinnedNotes;
+      const notes = layout.notes.map(note => {
+        if (note.threadId !== threadId) return note;
+        // Manuell verschobene Notizen behalten ihren Offset zum Thread:
+        // sie bewegen sich mit, springen aber nicht in die Umlaufbahn zurück.
+        if (pinned.has(note.id)) {
+          if (note.xf === undefined) return note;
+          return { ...note, xf: note.xf + dxf, yf: note.yf! + dyf };
+        }
+        const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
+        const [ox, oy] = noteOffset(idx);
+        return { ...note, xf: cxf + ox * NOTE_ORBIT_SCALE / 0.11, yf: cyf + oy * NOTE_ORBIT_SCALE / 0.11 };
+      });
+      const similarities = layout.similarities.map((s, i) => {
+        if (s.threadId1 !== threadId && s.threadId2 !== threadId) return s;
+        const a = tm.get(s.threadId1), b = tm.get(s.threadId2);
+        if (!a || !b || a.xf === undefined) return s;
+        return simPos(s, a.xf, a.yf!, b.xf!, b.yf!, i);
+      });
+      rt.current.layout = { threads, notes, similarities };
     }
 
     function moveNote(noteId: string, xf: number, yf: number) {
-      const nd = rt.current.simById.get(noteId);
-      if (!nd) return;
-      nd.xf = Math.max(0.03, Math.min(0.97, xf));
-      nd.yf = Math.max(0.03, Math.min(0.97, yf));
+      const layout = rt.current.layout;
+      if (!layout) return;
+      const cxf = Math.max(0.02, Math.min(0.98, xf));
+      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
+      rt.current.pinnedNotes.add(noteId);
+      rt.current.layout = { ...layout, notes };
     }
 
     function getNodeAt(mx: number, my: number): HitResult | null {
@@ -379,15 +342,13 @@ export default function Graph(props: Props) {
     function onMouseDown(e: MouseEvent) {
       const hit = getNodeAt(e.clientX, e.clientY);
       if (hit?.type === 'thread') {
-        const nd = rt.current.simById.get(hit.id);
-        if (!nd) return;
-        nd.fixed = true; // Physik lässt den gezogenen Knoten in Ruhe
-        rt.current.drag = { kind: 'thread', threadId: hit.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: nd.xf, startYf: nd.yf, moved: false };
+        const th = getLayout().threads.find(t => t.id === hit.id);
+        if (!th || th.xf === undefined) return;
+        rt.current.drag = { kind: 'thread', threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
       } else if (hit?.type === 'note') {
-        const nd = rt.current.simById.get(hit.id);
-        if (!nd) return;
-        nd.fixed = true;
-        rt.current.drag = { kind: 'note', noteId: hit.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: nd.xf, startYf: nd.yf, moved: false };
+        const n = getLayout().notes.find(n => n.id === hit.id);
+        if (!n || n.xf === undefined) return;
+        rt.current.drag = { kind: 'note', noteId: n.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: n.xf, startYf: n.yf!, moved: false };
       } else if (!hit) {
         // pan the camera
         rt.current.drag = { kind: 'pan', startMouseX: e.clientX, startMouseY: e.clientY, startCamX: rt.current.camXt, startCamY: rt.current.camYt, moved: false };
@@ -435,27 +396,48 @@ export default function Graph(props: Props) {
     function onWindowMouseUp() {
       const { drag } = rt.current;
       if (!drag) return;
-      // Gezogenen Sim-Knoten wieder der Physik überlassen.
-      if (drag.threadId) { const nd = rt.current.simById.get(drag.threadId); if (nd) nd.fixed = false; }
-      if (drag.noteId)   { const nd = rt.current.simById.get(drag.noteId);   if (nd) nd.fixed = false; }
-
-      if (drag.kind === 'thread' && !drag.moved) {
-        // Reiner Klick auf Thread → Kamera zentrieren + Thread-Panel öffnen.
-        const th = getLayout().threads.find(t => t.id === drag.threadId);
-        if (th && th.xf !== undefined) {
-          const { activeThreadId } = propsRef.current;
-          if (activeThreadId === th.id) {
-            rt.current.camXt = 0; rt.current.camYt = 0; rt.current.camZt = 1.0;
-          } else {
-            rt.current.camXt = (th.xf - 0.5) - (-0.18);
-            rt.current.camYt = (th.yf! - 0.5);
-            rt.current.camZt = 1.5;
+      if (drag.kind === 'thread') {
+        if (drag.moved) {
+          const saved = loadPositions();
+          for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
+          savePositions(saved);
+          // Gepinnte Notizen sind mitgewandert → ihre neuen Positionen sichern.
+          const pinned = rt.current.pinnedNotes;
+          if (pinned.size > 0) {
+            const sn = loadNotePositions();
+            for (const note of getLayout().notes) {
+              if (pinned.has(note.id) && note.xf !== undefined) sn[note.id] = { xf: note.xf, yf: note.yf! };
+            }
+            saveNotePositions(sn);
           }
-          propsRef.current.onThreadClick(th);
+        } else {
+          const th = getLayout().threads.find(t => t.id === drag.threadId);
+          if (th && th.xf !== undefined) {
+            const { activeThreadId } = propsRef.current;
+            if (activeThreadId === th.id) {
+              rt.current.camXt = 0; rt.current.camYt = 0; rt.current.camZt = 1.0;
+            } else {
+              // Shift thread slightly left of center so the modal has space on the right
+              const targetZ = 1.5;
+              rt.current.camXt = (th.xf - 0.5) - (-0.18);
+              rt.current.camYt = (th.yf! - 0.5);
+              rt.current.camZt = targetZ;
+            }
+            propsRef.current.onThreadClick(th);
+          }
         }
       }
-      // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
-      if (drag.kind === 'note' && drag.moved) rt.current.suppressClick = true;
+      if (drag.kind === 'note' && drag.moved) {
+        // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
+        rt.current.suppressClick = true;
+        // Position persistieren, damit sie Reload/Navigation überlebt.
+        const n = getLayout().notes.find(nn => nn.id === drag.noteId);
+        if (n && n.xf !== undefined) {
+          const sn = loadNotePositions();
+          sn[n.id] = { xf: n.xf, yf: n.yf! };
+          saveNotePositions(sn);
+        }
+      }
       // pan drag: camera target already set in mousemove, nothing extra needed
       rt.current.drag = null;
       canvas.style.cursor = 'default';
@@ -498,12 +480,9 @@ export default function Graph(props: Props) {
     let raf = 0;
     function draw() {
       lerpCam();
-      getLayout(); // initialisiert Sim-Knoten beim ersten Frame / Datenwechsel
-      // Physik-Tick (dauerhaft lebendig) — gezogene Knoten sind via fixed ausgenommen.
-      stepSim(rt.current.simNodes, rt.current.simLinks, rt.current.simById);
       const { animT, hovered, drag, noise, particles } = rt.current;
       const z = rt.current.camZ;
-      const layout = getLayout(); // liest die soeben aktualisierten Positionen
+      const layout = getLayout();
       const { activeFilter, activeThreadId, activeSimilarityId } = propsRef.current;
       const W = canvas.width, H = canvas.height;
 
