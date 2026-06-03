@@ -27,6 +27,7 @@ interface ThoughtsContextType {
   pinThread: (threadId: string) => void;
   unpinThread: (threadId: string) => void;
   clearAllThreads: () => void;
+  resyncForUser: (userId: string) => Promise<void>;
 }
 
 const ThoughtsContext = createContext<ThoughtsContextType>({} as ThoughtsContextType);
@@ -49,10 +50,43 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const deviceIdRef = useRef<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Realtime-Subscription für einen User aufbauen (vorherige wird abgebaut).
+  const subscribeForUser = useCallback((deviceId: string) => {
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    unsubscribeRef.current = subscribeThreads(deviceId, (event) => {
+      if (event.type === 'delete') {
+        setThreads((prev) => {
+          const next = prev.filter((t) => t.id !== event.threadId);
+          saveThreads(next).catch(() => {});
+          return next;
+        });
+        return;
+      }
+      setThreads((prev) => {
+        const idx = prev.findIndex((t) => t.id === event.thread.id);
+        let next: Thread[];
+        if (idx === -1) {
+          next = [event.thread, ...prev];
+        } else {
+          next = [...prev];
+          next[idx] = event.thread;
+        }
+        next.sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        );
+        saveThreads(next).catch(() => {});
+        return next;
+      });
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const unsubscribers: Array<() => void> = [];
 
     (async () => {
       const localThreads = await loadThreads();
@@ -74,33 +108,8 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
         setThreads(merged);
         await saveThreads(merged);
 
-        unsubscribers.push(
-          subscribeThreads(deviceId, (event) => {
-            if (event.type === 'delete') {
-              setThreads((prev) => {
-                const next = prev.filter((t) => t.id !== event.threadId);
-                saveThreads(next).catch(() => {});
-                return next;
-              });
-              return;
-            }
-            setThreads((prev) => {
-              const idx = prev.findIndex((t) => t.id === event.thread.id);
-              let next: Thread[];
-              if (idx === -1) {
-                next = [event.thread, ...prev];
-              } else {
-                next = [...prev];
-                next[idx] = event.thread;
-              }
-              next.sort(
-                (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-              );
-              saveThreads(next).catch(() => {});
-              return next;
-            });
-          }),
-        );
+        if (cancelled) return;
+        subscribeForUser(deviceId);
       } catch (e) {
         console.warn('[brainstorm] sync init failed', e);
       }
@@ -108,11 +117,30 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
-      for (const unsub of unsubscribers) {
-        try { unsub(); } catch {}
+      if (unsubscribeRef.current) {
+        try { unsubscribeRef.current(); } catch {}
+        unsubscribeRef.current = null;
       }
     };
-  }, []);
+  }, [subscribeForUser]);
+
+  // Nach An-/Abmelden: Threads des neuen Users frisch laden (nur Remote) und
+  // Realtime-Subscription auf den neuen User umstellen.
+  const resyncForUser = useCallback(async (userId: string) => {
+    deviceIdRef.current = userId;
+    if (!isSyncConfigured()) return;
+    try {
+      const remoteThreads = await pullThreads(userId);
+      const next = (remoteThreads ?? []).slice().sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      setThreads(next);
+      await saveThreads(next);
+      subscribeForUser(userId);
+    } catch (e) {
+      console.warn('[brainstorm] resync failed', e);
+    }
+  }, [subscribeForUser]);
 
   const archiveThread = useCallback((threadId: string) => {
     setThreads((prev) => {
@@ -179,7 +207,7 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThoughtsContext.Provider
-      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread, clearAllThreads }}
+      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread, clearAllThreads, resyncForUser }}
     >
       {children}
     </ThoughtsContext.Provider>

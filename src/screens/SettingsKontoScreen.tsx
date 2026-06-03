@@ -9,14 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useTheme, Text } from 'react-native-paper';
+import { useTheme, Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { getSupabase } from '../sync/supabaseClient';
-import { clearUserIdCache } from '../sync/userId';
+import { clearUserIdCache, getUserId } from '../sync/userId';
 import { migrateAndDeleteAnonUser } from '../sync/deleteAnonUser';
 import { useNotes } from '../context/NotesContext';
+import { useThoughts } from '../context/ThoughtsContext';
 import { Tokens } from '../theme/theme';
 import { Fonts, Type } from '../theme/typography';
 
@@ -178,7 +179,7 @@ function PrimaryButton({
       ]}
     >
       {loading ? (
-        <MaterialCommunityIcons name="loading" size={18} color={fg} />
+        <ActivityIndicator size={18} color={fg} />
       ) : (
         <Text style={[btnStyles.label, { color: fg }]}>{label}</Text>
       )}
@@ -204,6 +205,7 @@ export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { resyncForUser } = useNotes();
+  const { resyncForUser: resyncThreadsForUser } = useThoughts();
 
   const [accountState, setAccountState] = useState<AccountState>('loading');
   const [anonTab, setAnonTab] = useState<AnonTab>('signup');
@@ -260,17 +262,32 @@ export default function SettingsKontoScreen() {
 
   // ── Actions ──
   const handleSignOut = async () => {
-    setLoading(true);
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    await supabase.auth.signOut();
-    clearUserIdCache();
-    if (currentUser) await AsyncStorage.setItem(SIGNED_OUT_KEY, currentUser.id);
-    setLoading(false);
-    setEmail('');
-    setAccountState('signed-out');
-    navigation.navigate('Home', { screen: 'Threads' });
+    if (!supabase) {
+      showToast('Sync ist nicht konfiguriert.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      await supabase.auth.signOut();
+      clearUserIdCache();
+      if (currentUser) await AsyncStorage.setItem(SIGNED_OUT_KEY, currentUser.id);
+      // Neuen (anonymen) User holen und beide Contexts darauf umstellen, damit
+      // die Notizen/Threads des abgemeldeten Kontos nicht mehr angezeigt werden.
+      const newUid = await getUserId();
+      if (newUid) {
+        await resyncForUser(newUid);
+        await resyncThreadsForUser(newUid);
+      }
+      setEmail('');
+      setAccountState('signed-out');
+      navigation.navigate('Home', { screen: 'Threads' });
+    } catch (e: any) {
+      showToast('Abmeldung fehlgeschlagen: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSignIn = async () => {
@@ -278,26 +295,42 @@ export default function SettingsKontoScreen() {
       showToast('Bitte E-Mail und Passwort eingeben.', 'error');
       return;
     }
-    setLoading(true);
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { data: { user: anonUser } } = await supabase.auth.getUser();
-    const anonUid = anonUser?.is_anonymous ? anonUser.id : null;
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: inputEmail.trim(),
-      password: inputPassword,
-    });
-    setLoading(false);
-    if (error) {
-      showToast('Anmeldung fehlgeschlagen: ' + error.message, 'error');
-    } else {
-      if (anonUid) await migrateAndDeleteAnonUser(anonUid, data.user.id);
-      await resyncForUser(data.user.id);
+    if (!supabase) {
+      showToast('Sync ist nicht konfiguriert.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: { user: anonUser } } = await supabase.auth.getUser();
+      const anonUid = anonUser?.is_anonymous ? anonUser.id : null;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: inputEmail.trim(),
+        password: inputPassword,
+      });
+      if (error) {
+        showToast('Anmeldung fehlgeschlagen: ' + error.message, 'error');
+        return;
+      }
+      const newUser = data.user;
+      if (!newUser) {
+        showToast('Anmeldung unvollständig. Bitte E-Mail bestätigen.', 'error');
+        return;
+      }
+      if (anonUid && anonUid !== newUser.id) {
+        await migrateAndDeleteAnonUser(anonUid, newUser.id);
+      }
+      await resyncForUser(newUser.id);
+      await resyncThreadsForUser(newUser.id);
       await AsyncStorage.removeItem(SIGNED_OUT_KEY);
-      setEmail(data.user?.email ?? '');
+      setEmail(newUser.email ?? '');
       clearFields();
       setAccountState('signed-in');
       navigation.navigate('Home', { screen: 'Threads' });
+    } catch (e: any) {
+      showToast('Anmeldung fehlgeschlagen: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -314,21 +347,29 @@ export default function SettingsKontoScreen() {
       showToast('Passwort muss mindestens 6 Zeichen haben.', 'error');
       return;
     }
-    setLoading(true);
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { error } = await supabase.auth.updateUser({
-      email: inputEmail.trim(),
-      password: inputPassword,
-    });
-    setLoading(false);
-    if (error) {
-      showToast('Fehler: ' + error.message, 'error');
-    } else {
+    if (!supabase) {
+      showToast('Sync ist nicht konfiguriert.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        email: inputEmail.trim(),
+        password: inputPassword,
+      });
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error');
+        return;
+      }
       setAccountState('signed-in');
       setEmail(inputEmail.trim());
       clearFields();
       showToast('Konto gesichert! Bitte E-Mail bestätigen.', 'success');
+    } catch (e: any) {
+      showToast('Fehler: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -345,16 +386,24 @@ export default function SettingsKontoScreen() {
       showToast('Passwort muss mindestens 6 Zeichen haben.', 'error');
       return;
     }
-    setLoading(true);
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { error } = await supabase.auth.updateUser({ password: inputPassword });
-    setLoading(false);
-    if (error) {
-      showToast('Fehler: ' + error.message, 'error');
-    } else {
+    if (!supabase) {
+      showToast('Sync ist nicht konfiguriert.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: inputPassword });
+      if (error) {
+        showToast('Fehler: ' + error.message, 'error');
+        return;
+      }
       clearFields();
       showToast('Passwort erfolgreich geändert.', 'success');
+    } catch (e: any) {
+      showToast('Fehler: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
     }
   };
 

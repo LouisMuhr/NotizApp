@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useNotes } from '../context/NotesContext';
+import { getSupabase } from '../sync/supabaseClient';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: APP_VERSION } = require('../../package.json') as { version: string };
 
@@ -85,8 +86,22 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { tier } = useNotes();
+  const [isSignedIn, setIsSignedIn] = useState(false);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsSignedIn(!!user && !user.is_anonymous);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setIsSignedIn(!!session?.user && !session.user.is_anonymous);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const tierLabel = tier === 'pro' ? 'Pro-Plan' : tier === 'basic' ? 'Basic-Plan' : 'Free-Plan';
+  const kontoSublabel = isSignedIn ? 'E-Mail, Passwort, Abmelden' : 'E-Mail, Passwort, Anmelden';
 
   const colors = {
     amber: Tokens.amberDeep,
@@ -130,7 +145,7 @@ export default function SettingsScreen() {
           icon="account-circle-outline"
           iconBg={colors.amberMid}
           label="Konto & Sicherheit"
-          sublabel="E-Mail, Passwort, Abmelden"
+          sublabel={kontoSublabel}
           onPress={() => navigation.navigate('SettingsKonto')}
         />
         <NavRow
