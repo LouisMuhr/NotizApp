@@ -264,14 +264,22 @@ export default function Graph(props: Props) {
       if (!layout) return;
       const cxf = Math.max(0.02, Math.min(0.98, xf));
       const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const old = layout.threads.find(t => t.id === threadId);
+      // Verschiebung des Threads, um manuell platzierte Notizen relativ mitzuziehen.
+      const dxf = old?.xf !== undefined ? cxf - old.xf : 0;
+      const dyf = old?.yf !== undefined ? cyf - old.yf : 0;
       const threads = layout.threads.map(t => t.id === threadId ? { ...t, xf: cxf, yf: cyf } : t);
       const tm = new Map(threads.map(t => [t.id, t]));
       const nc = new Map<string, number>();
       const pinned = rt.current.pinnedNotes;
       const notes = layout.notes.map(note => {
         if (note.threadId !== threadId) return note;
-        // Manuell verschobene Notizen behalten ihre Position.
-        if (pinned.has(note.id)) return note;
+        // Manuell verschobene Notizen behalten ihren Offset zum Thread:
+        // sie bewegen sich mit, springen aber nicht in die Umlaufbahn zurück.
+        if (pinned.has(note.id)) {
+          if (note.xf === undefined) return note;
+          return { ...note, xf: note.xf + dxf, yf: note.yf! + dyf };
+        }
         const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
         const [ox, oy] = noteOffset(idx);
         return { ...note, xf: cxf + ox * NOTE_ORBIT_SCALE / 0.11, yf: cyf + oy * NOTE_ORBIT_SCALE / 0.11 };
