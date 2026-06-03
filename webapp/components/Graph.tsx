@@ -40,12 +40,21 @@ const NOTE_R           = 5;
 const SIM_R            = 10;
 const NOTE_ORBIT_SCALE = 0.11;
 const LS_KEY           = 'notiz_thread_positions';
+const LS_KEY_NOTES     = 'notiz_note_positions';
 
 function loadPositions(): Record<string, { xf: number; yf: number }> {
   try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '{}'); } catch { return {}; }
 }
 function savePositions(pos: Record<string, { xf: number; yf: number }>) {
   localStorage.setItem(LS_KEY, JSON.stringify(pos));
+}
+
+// Nur manuell verschobene Notizen werden persistiert (eigener Key).
+function loadNotePositions(): Record<string, { xf: number; yf: number }> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY_NOTES) ?? '{}'); } catch { return {}; }
+}
+function saveNotePositions(pos: Record<string, { xf: number; yf: number }>) {
+  localStorage.setItem(LS_KEY_NOTES, JSON.stringify(pos));
 }
 
 type HitType = 'thread' | 'note' | 'similarity';
@@ -61,6 +70,7 @@ function noteOffset(idx: number): [number, number] {
 
 function layoutNodes(data: GraphData): GraphData {
   const saved = loadPositions();
+  const savedNotes = loadNotePositions();
   const n = data.threads.length;
   const threads = data.threads.map((th, i) => {
     if (saved[th.id]) return { ...th, xf: saved[th.id].xf, yf: saved[th.id].yf };
@@ -71,6 +81,8 @@ function layoutNodes(data: GraphData): GraphData {
   const threadMap = new Map(threads.map(t => [t.id, t]));
   const noteCount = new Map<string, number>();
   const notes = data.notes.map(note => {
+    // Manuell verschobene Notiz: gespeicherte Position wiederherstellen.
+    if (savedNotes[note.id]) return { ...note, xf: savedNotes[note.id].xf, yf: savedNotes[note.id].yf };
     if (note.xf !== undefined && note.yf !== undefined) return note;
     const th = threadMap.get(note.threadId);
     if (!th || th.xf === undefined) return note;
@@ -250,7 +262,8 @@ export default function Graph(props: Props) {
       if (!r.layout || r.layoutData !== p.data) {
         r.layout = layoutNodes(p.data);
         r.layoutData = p.data;
-        r.pinnedNotes.clear(); // neuer Datensatz → manuelle Notiz-Positionen zurücksetzen
+        // Gepinnte Notizen aus dem Speicher übernehmen (überleben Reload).
+        r.pinnedNotes = new Set(Object.keys(loadNotePositions()));
         r.particles = r.layout.similarities.map(s => ({
           threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
           p: Math.random(), s: 0.001 + Math.random() * 0.0015,
@@ -388,6 +401,15 @@ export default function Graph(props: Props) {
           const saved = loadPositions();
           for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
           savePositions(saved);
+          // Gepinnte Notizen sind mitgewandert → ihre neuen Positionen sichern.
+          const pinned = rt.current.pinnedNotes;
+          if (pinned.size > 0) {
+            const sn = loadNotePositions();
+            for (const note of getLayout().notes) {
+              if (pinned.has(note.id) && note.xf !== undefined) sn[note.id] = { xf: note.xf, yf: note.yf! };
+            }
+            saveNotePositions(sn);
+          }
         } else {
           const th = getLayout().threads.find(t => t.id === drag.threadId);
           if (th && th.xf !== undefined) {
@@ -405,8 +427,17 @@ export default function Graph(props: Props) {
           }
         }
       }
-      // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
-      if (drag.kind === 'note' && drag.moved) rt.current.suppressClick = true;
+      if (drag.kind === 'note' && drag.moved) {
+        // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
+        rt.current.suppressClick = true;
+        // Position persistieren, damit sie Reload/Navigation überlebt.
+        const n = getLayout().notes.find(nn => nn.id === drag.noteId);
+        if (n && n.xf !== undefined) {
+          const sn = loadNotePositions();
+          sn[n.id] = { xf: n.xf, yf: n.yf! };
+          saveNotePositions(sn);
+        }
+      }
       // pan drag: camera target already set in mousemove, nothing extra needed
       rt.current.drag = null;
       canvas.style.cursor = 'default';
