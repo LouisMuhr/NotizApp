@@ -144,12 +144,22 @@ Antworte NUR mit einem einzigen validen JSON-Objekt, ohne Markdown, ohne Erklär
   ]
 }
 
-Regeln:
-- Threads ohne neue Notiz seit >21 Tagen: als {"id":"...","status":"dormant","summary":"<unverändert>"} in thread_updates
-- Notizen ≤14 Zeichen ohne Aussage (einzelnes Wort, "ok", "ja"): ignorieren
-- Pro Notiz: A) passt zu bestehendem Thread → thread_updates; B) verwandt mit anderen neuen → neuer gemeinsamer Thread; C) isoliert → Single-Thread
-- note_ids in thread_updates = VOLLSTÄNDIGE Liste (bestehende + neue)
-- Summary: Deutsch, Fließtext, max. 4 Sätze, beschreibt das Thema sachlich
+Vorsortierung & Pruning:
+- Notizen ≤14 Zeichen ohne Aussage (einzelnes Wort, "ok", "ja", "erledigen"): ignorieren, keinen Thread anlegen
+- Dormant-Pruning: Threads ohne neue Notiz seit >21 Tagen als {"id":"...","status":"dormant","summary":"<unverändert>"} in thread_updates markieren UND aus dem Relevanz-Vergleich mit aktuellen Notizen ausschließen (nicht mit ihnen vergleichen)
+
+Entscheidungsbaum pro Notiz (nach Vorsortierung):
+- A) Passt sie zum Kernanliegen eines bestehenden (aktiven, nicht-dormant) Threads? → thread_updates. Bei Unsicherheit: nein. Summary organisch neu schreiben, kein bloßes Anhängen.
+- B) Verwandt mit anderen neuen Notizen, aber kein bestehender Thread passt? → neuer gemeinsamer Thread
+- C) Völlig isoliert? → Single-Thread (Titel = kürzester treffender Ausdruck, 3-5 Worte)
+
+Summary-Qualität:
+- Deutsch, Fließtext, keine Bullet-Points, max. 3-4 Sätze — verdichtend, nicht auflistend
+- Beschreibe das übergeordnete THEMA selbst, nicht die Gedanken als Objekte ("Es geht um …", nicht "Die Notiz sagt …")
+- Bekommt ein Thread ≥5 neue Notizen: einen Satz einfügen, der beschreibt was seit dem letzten Mal neu hinzugekommen ist ("Neu hinzugekommen ist …")
+
+Format-Regeln:
+- note_ids in thread_updates = VOLLSTÄNDIGE Liste (bestehende aus active_threads + neue)
 - UUIDs für neue Threads selbst generieren (Format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)`;
 
 export default async function handler(req: any, res: any) {
