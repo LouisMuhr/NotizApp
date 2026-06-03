@@ -13,14 +13,6 @@ import { DEMO_DATA } from '@/lib/demoData';
 
 const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
-const FILTER_PILLS = [
-  { label: 'Alle',       value: 'all',        color: 'var(--amber)' },
-  { label: 'Lernen',     value: 'Lernen',     color: '#5A8FC0' },
-  { label: 'Arbeit',     value: 'Arbeit',     color: '#5AA46A' },
-  { label: 'Ideen',      value: 'Ideen',      color: '#B0A040' },
-  { label: 'Persönlich', value: 'Persönlich', color: '#B07090' },
-];
-
 const EMPTY: GraphData = { threads: [], notes: [], similarities: [] };
 
 export default function Home() {
@@ -118,7 +110,8 @@ export default function Home() {
   const [selectedNote,   setSelectedNote]   = useState<Note | null>(null);
   const [selectedSim,    setSelectedSim]    = useState<Similarity | null>(null);
 
-  const [activeFilter, setActiveFilter] = useState('all');
+  // Filter-Pills wurden entfernt → Graph zeigt immer alle Knoten.
+  const activeFilter = 'all';
   const [tooltip, setTooltip]           = useState<{ label: string; x: number; y: number } | null>(null);
 
   const graphHandle = useRef<GraphHandle | null>(null);
@@ -204,10 +197,6 @@ export default function Home() {
   const simThread1 = selectedSim ? graphData.threads.find(t => t.id === selectedSim.threadId1) : undefined;
   const simThread2 = selectedSim ? graphData.threads.find(t => t.id === selectedSim.threadId2) : undefined;
 
-  const threadCount = graphData.threads.length;
-  const noteCount   = graphData.notes.length;
-  const catCount    = new Set(graphData.notes.map(n => n.category).filter(Boolean)).size;
-
   // ── render ────────────────────────────────────────────────────────────────
 
   if (authLoading) return (
@@ -257,7 +246,7 @@ export default function Home() {
 
       {/* TOP BAR */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: 'rgba(14,12,9,0.75)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', padding: '0 22px', zIndex: 50, pointerEvents: 'none' }}>
-        {/* Left: logo + stats */}
+        {/* Left: logo + title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
           <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #FBCB96, #C05C1A 70%)', boxShadow: '0 0 16px rgba(244,162,97,0.5)', flexShrink: 0 }} />
           <div>
@@ -265,27 +254,9 @@ export default function Home() {
             <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Second Brain</div>
           </div>
         </div>
-        <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 20px' }} />
-        {!loading && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[
-              { dot: 'var(--amber)', n: threadCount, label: 'Threads' },
-              { dot: '#5AA46A',      n: noteCount,   label: 'Notizen' },
-              { dot: 'var(--purple)',n: catCount,     label: 'Kategorien' },
-            ].map(({ dot, n, label }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 20, padding: '4px 12px', fontSize: 12, color: 'var(--t2)' }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: dot, flexShrink: 0 }} />
-                <span style={{ color: 'var(--t1)', fontWeight: 500 }}>{n}</span> {label}
-              </div>
-            ))}
-          </div>
-        )}
 
-        {/* Right: hint + create button + user chip */}
+        {/* Right: create button + user chip */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'all' }}>
-          <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
-            Klick auf <strong style={{ color: 'var(--amber)' }}>Thread</strong> oder <strong style={{ color: '#5AA46A' }}>Notiz</strong>
-          </span>
           {/* + Notiz Button */}
           {!user.isDemo && (
             <button
@@ -310,46 +281,6 @@ export default function Home() {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* FILTER PILLS */}
-      <div style={{ position: 'absolute', top: 70, left: 20, display: 'flex', flexDirection: 'column', gap: 5, zIndex: 20 }}>
-        {FILTER_PILLS.map((pill, i) => (
-          <div key={pill.value}>
-            {i === 1 && <div style={{ height: 1, background: 'var(--border)', margin: '3px 0' }} />}
-            <button
-              onClick={() => setActiveFilter(pill.value)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: activeFilter === pill.value ? 'rgba(244,162,97,0.1)' : 'rgba(14,12,9,0.7)',
-                border: `1px solid ${activeFilter === pill.value ? 'rgba(244,162,97,0.3)' : 'var(--border)'}`,
-                borderRadius: 20, padding: '6px 14px',
-                fontSize: 12, color: activeFilter === pill.value ? 'var(--amber)' : 'var(--t2)',
-                cursor: 'pointer', backdropFilter: 'blur(12px)', transition: 'all 0.18s',
-                userSelect: 'none', whiteSpace: 'nowrap',
-              }}
-            >
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: pill.color, flexShrink: 0 }} />
-              {pill.label}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* LEGEND */}
-      <div style={{ position: 'absolute', bottom: 28, left: 20, background: 'rgba(14,12,9,0.7)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px', backdropFilter: 'blur(12px)', zIndex: 20, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
-        <div style={{ fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>Legende</div>
-        {[
-          { dot: { background: 'var(--amber)', boxShadow: '0 0 8px var(--amber)' }, label: 'Thread (klickbar)' },
-          { dot: { background: '#5AA46A',      boxShadow: '0 0 6px #5AA46A' },      label: 'Notiz (klickbar)' },
-          { dot: { border: '1.5px dashed var(--purple)', background: 'transparent' }, label: 'Kategorie' },
-          { dot: { background: 'var(--amber)', transform: 'rotate(45deg)', borderRadius: 2 }, label: 'KI-Verbindung (klickbar)' },
-        ].map(({ dot, label }, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--t2)' }}>
-            <div style={{ width: i === 3 ? 11 : i === 0 ? 14 : i === 1 ? 9 : 11, height: i === 3 ? 11 : i === 0 ? 14 : i === 1 ? 9 : 11, borderRadius: i === 3 ? 2 : '50%', flexShrink: 0, ...dot }} />
-            {label}
-          </div>
-        ))}
       </div>
 
       {/* ZOOM BUTTONS */}
