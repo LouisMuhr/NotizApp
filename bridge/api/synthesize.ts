@@ -360,7 +360,6 @@ export default async function handler(req: any, res: any) {
 
     // -----------------------------------------------------------------------
     // Thread-Verbindungen (similarities) — komplett neu aufbauen
-    // device_id-Spalte trägt hier die user_id (RLS = allow-all, kein Filter)
     // -----------------------------------------------------------------------
     let similarities_written = 0;
     // Gültige Thread-IDs des Users: bestehende aktive + frisch eingefügte.
@@ -384,7 +383,7 @@ export default async function handler(req: any, res: any) {
         return true;
       })
       .map((s: any) => ({
-        device_id: userId,
+        user_id: userId,
         thread_id_1: s.thread_id_1,
         thread_id_2: s.thread_id_2,
         label: s.label ?? '',
@@ -392,7 +391,7 @@ export default async function handler(req: any, res: any) {
 
     // Alte Verbindungen des Users löschen, dann neue schreiben (frischer Stand)
     await sbDelete(SUPABASE_URL, SUPABASE_SERVICE_KEY,
-      `thread_similarities?device_id=eq.${uid}`);
+      `thread_similarities?user_id=eq.${uid}`);
     if (simRows.length > 0) {
       await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'thread_similarities', simRows);
       similarities_written = simRows.length;
