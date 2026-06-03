@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useTheme, Text } from 'react-native-paper';
+import { useTheme, Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -179,7 +179,7 @@ function PrimaryButton({
       ]}
     >
       {loading ? (
-        <MaterialCommunityIcons name="loading" size={18} color={fg} />
+        <ActivityIndicator size={18} color={fg} />
       ) : (
         <Text style={[btnStyles.label, { color: fg }]}>{label}</Text>
       )}
