@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
 
   const threads: Thread[] = [];
   const notes: Note[] = [];
-  const addedNoteIds = new Set<string>();
 
   for (const row of threadRows ?? []) {
     threads.push({
@@ -43,22 +42,30 @@ export async function GET(req: NextRequest) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
+  }
 
-    for (const noteId of row.note_ids ?? []) {
-      if (!addedNoteIds.has(noteId) && noteMap.has(noteId)) {
-        const n = noteMap.get(noteId)!;
-        notes.push({
-          id: n.id,
-          threadId: row.id,
-          title: n.title ?? '',
-          content: n.content ?? '',
-          category: n.category ?? '',
-          createdAt: n.created_at,
-          updatedAt: n.updated_at,
-        });
-        addedNoteIds.add(noteId);
-      }
+  // Notizen einmalig erzeugen, dabei ALLE zugehörigen Threads sammeln.
+  // Eine Notiz kann legitim zu mehreren Threads gehören (geteilte Notiz).
+  const threadIdsByNote = new Map<string, string[]>();
+  for (const t of threads) {
+    for (const noteId of t.noteIds) {
+      if (!threadIdsByNote.has(noteId)) threadIdsByNote.set(noteId, []);
+      threadIdsByNote.get(noteId)!.push(t.id);
     }
+  }
+  for (const [noteId, threadIds] of threadIdsByNote) {
+    const n = noteMap.get(noteId);
+    if (!n) continue;
+    notes.push({
+      id: n.id,
+      threadId: threadIds[0],   // primärer Thread für Layout/Drag
+      threadIds,                // alle Zuordnungen
+      title: n.title ?? '',
+      content: n.content ?? '',
+      category: n.category ?? '',
+      createdAt: n.created_at,
+      updatedAt: n.updated_at,
+    });
   }
 
   const similarities: Similarity[] = (similarityRows ?? []).map((row: any) => ({
