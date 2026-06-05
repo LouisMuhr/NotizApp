@@ -204,7 +204,7 @@ const btnStyles = StyleSheet.create({
 export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
-  const { resyncForUser } = useNotes();
+  const { resyncForUser, refreshSubscription } = useNotes();
   const { resyncForUser: resyncThreadsForUser } = useThoughts();
 
   const [accountState, setAccountState] = useState<AccountState>('loading');
@@ -280,6 +280,8 @@ export default function SettingsKontoScreen() {
         await resyncForUser(newUid);
         await resyncThreadsForUser(newUid);
       }
+      // Tier-Anzeige (Free/Basic/Pro) auf den neuen anonymen User aktualisieren.
+      await refreshSubscription();
       setEmail('');
       setAccountState('signed-out');
       navigation.navigate('Home', { screen: 'Threads' });
@@ -322,6 +324,8 @@ export default function SettingsKontoScreen() {
       }
       await resyncForUser(newUser.id);
       await resyncThreadsForUser(newUser.id);
+      // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
+      await refreshSubscription();
       await AsyncStorage.removeItem(SIGNED_OUT_KEY);
       setEmail(newUser.email ?? '');
       clearFields();
