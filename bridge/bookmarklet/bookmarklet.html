@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>NotizApp Bookmarklet</title>
+<title>Velm Bookmarklet</title>
 <link rel="icon" type="image/png" href="/bookmarklet/favicon.png">
 <link rel="apple-touch-icon" href="/bookmarklet/favicon.png">
 <style>
@@ -17,7 +17,7 @@
 </style>
 </head>
 <body>
-<h1>📝 NotizApp Bookmarklet</h1>
+<h1>📝 Velm Bookmarklet</h1>
 <p>Markiere Text auf einer beliebigen Webseite, klick das Bookmark, und der Text landet direkt als Notiz in deiner App — mit Kategorie, Pin-Option und optionaler Erinnerung.</p>
 
 <div class="step">
@@ -29,7 +29,7 @@
 
 <div class="step" id="result" style="display:none">
   <strong>Schritt 2:</strong> Zieh diesen Link in deine Lesezeichen-Leiste:<br>
-  <a id="bm" class="bm" href="#">📝NotizApp</a>
+  <a id="bm" class="bm" href="#">📝Velm</a>
   <p><strong>Schritt 3:</strong> Text auf einer Webseite markieren → Bookmarklet klicken → Panel ausfüllen → Speichern. Die Notiz erscheint sofort in der App.</p>
 </div>
 
@@ -108,7 +108,7 @@ shadow.appendChild(style);
 var div=document.createElement('div');
 div.id='panel';
 div.innerHTML=[
-  '<header><span class="hd-title" id="hd-title-span">NotizApp</span><button id="cls">✕</button></header>',
+  '<header><span class="hd-title" id="hd-title-span">Velm</span><button id="cls">✕</button></header>',
   '<div class="body" id="form-body">',
     '<label>Titel</label>',
     '<input type="text" id="ttl" maxlength="200">',

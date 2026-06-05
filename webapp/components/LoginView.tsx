@@ -60,7 +60,7 @@ export default function LoginView({ onLogin }: Props) {
   };
 
   const demoLogin = () => {
-    onLogin({ id: 'demo', email: 'demo@notizapp.de', name: 'Demo', initial: 'D', isDemo: true });
+    onLogin({ id: 'demo', email: 'demo@velm.app', name: 'Demo', initial: 'D', isDemo: true });
   };
 
   const isReg = mode === 'register';
@@ -80,9 +80,9 @@ export default function LoginView({ onLogin }: Props) {
       <div style={s.card}>
         {/* Logo */}
         <div style={s.logo}>
-          <div style={s.logoMark}>N</div>
+          <div style={s.logoMark}>V</div>
           <div>
-            <div style={s.logoName}>NotizApp</div>
+            <div style={s.logoName}>Velm</div>
             <div style={s.logoSub}>Second Brain</div>
           </div>
         </div>

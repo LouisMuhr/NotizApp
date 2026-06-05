@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "NotizApp",
+    "name": "Velm",
     "slug": "NotizApp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.notizapp.app",
+      "bundleIdentifier": "com.velm.app",
       "buildNumber": "1"
     },
     "android": {
@@ -25,7 +25,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.notizapp.app",
+      "package": "com.velm.app",
       "versionCode": 1,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",

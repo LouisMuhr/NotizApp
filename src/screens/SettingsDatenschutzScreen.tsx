@@ -104,7 +104,7 @@ export default function SettingsDatenschutzScreen() {
         <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
           <Text style={[styles.cardTitle, { color: theme.colors.onSurface }]}>Deine Daten</Text>
           <Text style={[styles.cardBody, { color: theme.colors.onSurfaceVariant }]}>
-            NotizApp speichert deine Notizen lokal auf diesem Gerät. Optional werden sie
+            Velm speichert deine Notizen lokal auf diesem Gerät. Optional werden sie
             verschlüsselt über Supabase synchronisiert. Es werden keine Daten an Dritte weitergegeben.
           </Text>
         </View>

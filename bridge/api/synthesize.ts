@@ -126,7 +126,7 @@ async function sbDelete(url: string, serviceKey: string, path: string) {
   if (!r.ok) throw new Error(`supabase DELETE ${path}: ${r.status} ${await r.text()}`);
 }
 
-const SYSTEM_PROMPT = `Du bist ein Brainstorm-Synthese-Agent für die NotizApp.
+const SYSTEM_PROMPT = `Du bist ein Brainstorm-Synthese-Agent für Velm.
 Deine Aufgabe: Notizen (feed_notes) thematisch gruppieren und als "Threads" mit KI-generierten Zusammenfassungen ausgeben.
 
 Du erhältst JSON mit:

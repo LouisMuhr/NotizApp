@@ -48,7 +48,7 @@ export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideW
     <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
       {/* Logo — kein Parallax, bleibt stabil */}
       <Animated.View style={[styles.logoRow, { opacity }]}>
-        <Text style={styles.logo}>Notiz</Text>
+        <Text style={styles.logo}>Velm</Text>
         <View style={styles.logoDot} />
         <Text style={styles.version}>v 2.4</Text>
       </Animated.View>

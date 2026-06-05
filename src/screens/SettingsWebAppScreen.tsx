@@ -34,7 +34,7 @@ export default function SettingsWebAppScreen() {
         <View style={[styles.heroIcon, { backgroundColor: Tokens.ink }]}>
           <MaterialCommunityIcons name="graph-outline" size={32} color={Tokens.paper} />
         </View>
-        <Text style={[styles.heroTitle, { color: Tokens.ink }]}>NotizApp Web</Text>
+        <Text style={[styles.heroTitle, { color: Tokens.ink }]}>Velm Web</Text>
         <Text style={[styles.heroSub, { color: Tokens.inkDim }]}>
           Deine Notizen und Gedanken als interaktiver Graph — direkt im Browser.
         </Text>
