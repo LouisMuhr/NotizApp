@@ -38,14 +38,23 @@ const TOPBAR_H         = 54;
 const THREAD_R         = 15;
 const NOTE_R           = 5;
 const SIM_R            = 10;
-const NOTE_ORBIT_SCALE = 0.11;
+const NOTE_SPREAD      = 1.7; // wie weit Notizen aus der Thread-Mitte sitzen
 const LS_KEY           = 'notiz_thread_positions';
+const LS_KEY_NOTES     = 'notiz_note_positions';
 
 function loadPositions(): Record<string, { xf: number; yf: number }> {
   try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '{}'); } catch { return {}; }
 }
 function savePositions(pos: Record<string, { xf: number; yf: number }>) {
   localStorage.setItem(LS_KEY, JSON.stringify(pos));
+}
+
+// Nur manuell verschobene Notizen werden persistiert (eigener Key).
+function loadNotePositions(): Record<string, { xf: number; yf: number }> {
+  try { return JSON.parse(localStorage.getItem(LS_KEY_NOTES) ?? '{}'); } catch { return {}; }
+}
+function saveNotePositions(pos: Record<string, { xf: number; yf: number }>) {
+  localStorage.setItem(LS_KEY_NOTES, JSON.stringify(pos));
 }
 
 type HitType = 'thread' | 'note' | 'similarity';
@@ -61,23 +70,31 @@ function noteOffset(idx: number): [number, number] {
 
 function layoutNodes(data: GraphData): GraphData {
   const saved = loadPositions();
+  const savedNotes = loadNotePositions();
   const n = data.threads.length;
+  // Mehr Threads → größerer Ring, damit die Cluster Platz haben.
+  // (Die Kamera zoomt anschließend automatisch passend heran.)
+  const ringR = 0.27 + Math.max(0, n - 5) * 0.05;
+  // Notizen weiter aus der Thread-Mitte herausziehen.
+  const noteSpread = NOTE_SPREAD;
   const threads = data.threads.map((th, i) => {
     if (saved[th.id]) return { ...th, xf: saved[th.id].xf, yf: saved[th.id].yf };
     if (th.xf !== undefined && th.yf !== undefined) return th;
     const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-    return { ...th, xf: 0.5 + 0.27 * Math.cos(angle), yf: 0.5 + 0.27 * Math.sin(angle) };
+    return { ...th, xf: 0.5 + ringR * Math.cos(angle), yf: 0.5 + ringR * Math.sin(angle) };
   });
   const threadMap = new Map(threads.map(t => [t.id, t]));
   const noteCount = new Map<string, number>();
   const notes = data.notes.map(note => {
+    // Manuell verschobene Notiz: gespeicherte Position wiederherstellen.
+    if (savedNotes[note.id]) return { ...note, xf: savedNotes[note.id].xf, yf: savedNotes[note.id].yf };
     if (note.xf !== undefined && note.yf !== undefined) return note;
     const th = threadMap.get(note.threadId);
     if (!th || th.xf === undefined) return note;
     const idx = noteCount.get(note.threadId) ?? 0;
     noteCount.set(note.threadId, idx + 1);
     const [ox, oy] = noteOffset(idx);
-    return { ...note, xf: th.xf + ox * NOTE_ORBIT_SCALE / 0.11, yf: th.yf! + oy * NOTE_ORBIT_SCALE / 0.11 };
+    return { ...note, xf: th.xf + ox * noteSpread, yf: th.yf! + oy * noteSpread };
   });
   const similarities = data.similarities.map((s, i) => {
     const a = threadMap.get(s.threadId1), b = threadMap.get(s.threadId2);
@@ -159,8 +176,8 @@ function buildNoise(): HTMLCanvasElement {
 
 interface Particle { threadId1: string; threadId2: string; simId: string; p: number; s: number }
 interface DragState {
-  kind: 'thread' | 'pan';
-  threadId?: string; startMouseX: number; startMouseY: number;
+  kind: 'thread' | 'note' | 'pan';
+  threadId?: string; noteId?: string; startMouseX: number; startMouseY: number;
   startXf?: number; startYf?: number;
   startCamX?: number; startCamY?: number;
   moved: boolean;
@@ -188,6 +205,10 @@ export default function Graph(props: Props) {
     animT: 0,
     hovered: null as HitResult | null,
     drag: null as DragState | null,
+    suppressClick: false,
+    // Notizen, die der User manuell verschoben hat — bleiben an ihrer Stelle,
+    // auch wenn der zugehörige Thread danach bewegt wird.
+    pinnedNotes: new Set<string>(),
     noise: null as HTMLCanvasElement | null,
     particles: [] as Particle[],
     layout: null as GraphData | null,
@@ -195,6 +216,8 @@ export default function Graph(props: Props) {
     // camera (fractional offset + zoom, lerped each frame like the mockup)
     camX: 0, camY: 0, camZ: 1,
     camXt: 0, camYt: 0, camZt: 1,
+    // zuletzt berechnete "fit to content"-Zielwerte (für Zoom-Reset-Button)
+    fitX: 0, fitY: 0, fitZ: 1,
   });
 
   // Props mirror — always current, no stale closures
@@ -211,7 +234,8 @@ export default function Graph(props: Props) {
       },
       zoomReset: () => {
         const r = rt.current;
-        r.camXt = 0; r.camYt = 0; r.camZt = 1;
+        // Zurück zur automatischen "Alles im Bild"-Ansicht.
+        r.camXt = r.fitX; r.camYt = r.fitY; r.camZt = r.fitZ;
       },
     };
   });
@@ -246,12 +270,41 @@ export default function Graph(props: Props) {
       if (!r.layout || r.layoutData !== p.data) {
         r.layout = layoutNodes(p.data);
         r.layoutData = p.data;
+        // Gepinnte Notizen aus dem Speicher übernehmen (überleben Reload).
+        r.pinnedNotes = new Set(Object.keys(loadNotePositions()));
         r.particles = r.layout.similarities.map(s => ({
           threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
           p: Math.random(), s: 0.001 + Math.random() * 0.0015,
         }));
+        fitToContent(r.layout); // Kamera so setzen, dass alle Knoten ins Bild passen
       }
       return r.layout;
+    }
+
+    // Bounding-Box aller Knoten berechnen und Kamera (Ziel-Werte) so wählen,
+    // dass alles mit etwas Rand sichtbar ist. Der Lerp animiert sanft dorthin.
+    function fitToContent(layout: GraphData) {
+      const pts: Array<{ xf?: number; yf?: number }> = [...layout.threads, ...layout.notes];
+      let minX = 1, maxX = 0, minY = 1, maxY = 0, found = false;
+      for (const pt of pts) {
+        if (pt.xf === undefined || pt.yf === undefined) continue;
+        found = true;
+        minX = Math.min(minX, pt.xf); maxX = Math.max(maxX, pt.xf);
+        minY = Math.min(minY, pt.yf); maxY = Math.max(maxY, pt.yf);
+      }
+      if (!found) return;
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      // Spannweite + Rand für Labels/Knotenradius; gegen 0 absichern.
+      const spanX = Math.max(0.001, maxX - minX) + 0.18;
+      const spanY = Math.max(0.001, maxY - minY) + 0.18;
+      // camZ so, dass die größere Achse genau ins Bild passt (Spannweite·camZ ≈ 1).
+      const z = Math.max(0.4, Math.min(2.5, Math.min(1 / spanX, 1 / spanY)));
+      rt.current.fitX = cx - 0.5;
+      rt.current.fitY = cy - 0.5;
+      rt.current.fitZ = z;
+      rt.current.camXt = rt.current.fitX;
+      rt.current.camYt = rt.current.fitY;
+      rt.current.camZt = rt.current.fitZ;
     }
 
     function moveThread(threadId: string, xf: number, yf: number) {
@@ -259,15 +312,25 @@ export default function Graph(props: Props) {
       if (!layout) return;
       const cxf = Math.max(0.02, Math.min(0.98, xf));
       const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const old = layout.threads.find(t => t.id === threadId);
+      // Verschiebung des Threads, um manuell platzierte Notizen relativ mitzuziehen.
+      const dxf = old?.xf !== undefined ? cxf - old.xf : 0;
+      const dyf = old?.yf !== undefined ? cyf - old.yf : 0;
       const threads = layout.threads.map(t => t.id === threadId ? { ...t, xf: cxf, yf: cyf } : t);
       const tm = new Map(threads.map(t => [t.id, t]));
       const nc = new Map<string, number>();
+      const pinned = rt.current.pinnedNotes;
       const notes = layout.notes.map(note => {
         if (note.threadId !== threadId) return note;
-        const th = tm.get(note.threadId)!;
+        // Manuell verschobene Notizen behalten ihren Offset zum Thread:
+        // sie bewegen sich mit, springen aber nicht in die Umlaufbahn zurück.
+        if (pinned.has(note.id)) {
+          if (note.xf === undefined) return note;
+          return { ...note, xf: note.xf + dxf, yf: note.yf! + dyf };
+        }
         const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
         const [ox, oy] = noteOffset(idx);
-        return { ...note, xf: cxf + ox * NOTE_ORBIT_SCALE / 0.11, yf: cyf + oy * NOTE_ORBIT_SCALE / 0.11 };
+        return { ...note, xf: cxf + ox * NOTE_SPREAD, yf: cyf + oy * NOTE_SPREAD };
       });
       const similarities = layout.similarities.map((s, i) => {
         if (s.threadId1 !== threadId && s.threadId2 !== threadId) return s;
@@ -276,6 +339,16 @@ export default function Graph(props: Props) {
         return simPos(s, a.xf, a.yf!, b.xf!, b.yf!, i);
       });
       rt.current.layout = { threads, notes, similarities };
+    }
+
+    function moveNote(noteId: string, xf: number, yf: number) {
+      const layout = rt.current.layout;
+      if (!layout) return;
+      const cxf = Math.max(0.02, Math.min(0.98, xf));
+      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
+      rt.current.pinnedNotes.add(noteId);
+      rt.current.layout = { ...layout, notes };
     }
 
     function getNodeAt(mx: number, my: number): HitResult | null {
@@ -307,6 +380,10 @@ export default function Graph(props: Props) {
         const th = getLayout().threads.find(t => t.id === hit.id);
         if (!th || th.xf === undefined) return;
         rt.current.drag = { kind: 'thread', threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
+      } else if (hit?.type === 'note') {
+        const n = getLayout().notes.find(n => n.id === hit.id);
+        if (!n || n.xf === undefined) return;
+        rt.current.drag = { kind: 'note', noteId: n.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: n.xf, startYf: n.yf!, moved: false };
       } else if (!hit) {
         // pan the camera
         rt.current.drag = { kind: 'pan', startMouseX: e.clientX, startMouseY: e.clientY, startCamX: rt.current.camXt, startCamY: rt.current.camYt, moved: false };
@@ -326,6 +403,8 @@ export default function Graph(props: Props) {
           const z = rt.current.camZ;
           if (drag.kind === 'thread') {
             moveThread(drag.threadId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
+          } else if (drag.kind === 'note') {
+            moveNote(drag.noteId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
           } else {
             // pan: pixel delta → fractional delta (divide by zoom scale)
             rt.current.camXt = drag.startCamX! - dx / (GW() * z);
@@ -337,7 +416,7 @@ export default function Graph(props: Props) {
       }
       const hit = getNodeAt(e.clientX, e.clientY);
       rt.current.hovered = hit;
-      canvas.style.cursor = hit?.type === 'thread' ? 'grab' : hit ? 'pointer' : 'default';
+      canvas.style.cursor = hit?.type === 'thread' || hit?.type === 'note' ? 'grab' : hit ? 'pointer' : 'default';
       if (hit) {
         const layout = getLayout();
         const label = hit.type === 'thread' ? layout.threads.find(t => t.id === hit.id)?.title ?? ''
@@ -357,12 +436,22 @@ export default function Graph(props: Props) {
           const saved = loadPositions();
           for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
           savePositions(saved);
+          // Gepinnte Notizen sind mitgewandert → ihre neuen Positionen sichern.
+          const pinned = rt.current.pinnedNotes;
+          if (pinned.size > 0) {
+            const sn = loadNotePositions();
+            for (const note of getLayout().notes) {
+              if (pinned.has(note.id) && note.xf !== undefined) sn[note.id] = { xf: note.xf, yf: note.yf! };
+            }
+            saveNotePositions(sn);
+          }
         } else {
           const th = getLayout().threads.find(t => t.id === drag.threadId);
           if (th && th.xf !== undefined) {
             const { activeThreadId } = propsRef.current;
             if (activeThreadId === th.id) {
-              rt.current.camXt = 0; rt.current.camYt = 0; rt.current.camZt = 1.0;
+              // Zurück zur "Alles im Bild"-Ansicht statt fix auf Zoom 1.
+              rt.current.camXt = rt.current.fitX; rt.current.camYt = rt.current.fitY; rt.current.camZt = rt.current.fitZ;
             } else {
               // Shift thread slightly left of center so the modal has space on the right
               const targetZ = 1.5;
@@ -372,6 +461,17 @@ export default function Graph(props: Props) {
             }
             propsRef.current.onThreadClick(th);
           }
+        }
+      }
+      if (drag.kind === 'note' && drag.moved) {
+        // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
+        rt.current.suppressClick = true;
+        // Position persistieren, damit sie Reload/Navigation überlebt.
+        const n = getLayout().notes.find(nn => nn.id === drag.noteId);
+        if (n && n.xf !== undefined) {
+          const sn = loadNotePositions();
+          sn[n.id] = { xf: n.xf, yf: n.yf! };
+          saveNotePositions(sn);
         }
       }
       // pan drag: camera target already set in mousemove, nothing extra needed
@@ -385,6 +485,7 @@ export default function Graph(props: Props) {
 
     function onClick(e: MouseEvent) {
       if (rt.current.drag) return;
+      if (rt.current.suppressClick) { rt.current.suppressClick = false; return; }
       const hit = getNodeAt(e.clientX, e.clientY);
       if (!hit || hit.type === 'thread') return;
       const layout = getLayout();
@@ -462,7 +563,7 @@ export default function Graph(props: Props) {
         const a=layout.threads.find(t=>t.id===sim.threadId1), b=layout.threads.find(t=>t.id===sim.threadId2);
         if (!a||!b||a.xf===undefined||b.xf===undefined) continue;
         const lit=linkLit(sim.id,sim.threadId1,sim.threadId2);
-        const col=lit?C.amber:'rgba(150,100,50,0.4)', al=lit?0.38:0.07, w=lit?1.6*z:0.55*z;
+        const col=lit?C.amber:'rgba(190,130,70,0.7)', al=lit?0.42:0.24, w=lit?1.6*z:0.85*z;
         const sx=GX(sim.xf),sy=GY(sim.yf!);
         drawCurve(ctx,GX(a.xf),GY(a.yf!),sx,sy,GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),col,al,w);
         drawCurve(ctx,GX(b.xf),GY(b.yf!),sx,sy,GX((b.xf+sim.xf)/2),GY((b.yf!+sim.yf!)/2),col,al,w);
@@ -478,7 +579,7 @@ export default function Graph(props: Props) {
         const catCol=getCategoryColor(note.category);
         const catRgb=hexRgb(catCol);
         drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-          hovN?C.white:lit?catCol:`rgba(${catRgb},0.35)`, hovN?0.6:lit?0.3:0.07, hovN?1.4*z:lit?1.0*z:0.45*z);
+          hovN?C.white:lit?catCol:`rgba(${catRgb},0.7)`, hovN?0.6:lit?0.36:0.22, hovN?1.4*z:lit?1.0*z:0.7*z);
       }
 
       // particles

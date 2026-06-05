@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     if (userErr || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const noteData: Record<string, unknown> = {
+      id: crypto.randomUUID(),
       title: title.trim(),
       content: content?.trim() ?? '',
       category: category ?? '',
