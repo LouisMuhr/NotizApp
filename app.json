@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "privacyPolicyUrl": "https://notizapp.vercel.app/privacy",
+    "privacyPolicyUrl": "https://www.velmnote.com/privacy",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

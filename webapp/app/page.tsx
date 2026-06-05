@@ -255,7 +255,7 @@ export default function Home() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
           <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #FBCB96, #C05C1A 70%)', boxShadow: '0 0 16px rgba(244,162,97,0.5)', flexShrink: 0 }} />
           <div>
-            <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 15, fontWeight: 500, color: 'var(--t1)', letterSpacing: '-0.01em' }}>Notiz</div>
+            <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 15, fontWeight: 500, color: 'var(--t1)', letterSpacing: '-0.01em' }}>Velm</div>
             <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Second Brain</div>
           </div>
         </div>
