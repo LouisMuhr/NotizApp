@@ -6,8 +6,7 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 
-// Platzhalter — wird ersetzt sobald die Webapp deployed ist
-const WEBAPP_URL = 'https://notizapp.vercel.app';
+const WEBAPP_URL = 'https://www.velmnote.com';
 
 function FeatureRow({ icon, label, description }: { icon: string; label: string; description: string }) {
   const theme = useTheme();
