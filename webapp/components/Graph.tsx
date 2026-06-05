@@ -89,6 +89,16 @@ function layoutNodes(data: GraphData): GraphData {
     // Manuell verschobene Notiz: gespeicherte Position wiederherstellen.
     if (savedNotes[note.id]) return { ...note, xf: savedNotes[note.id].xf, yf: savedNotes[note.id].yf };
     if (note.xf !== undefined && note.yf !== undefined) return note;
+    const tids = note.threadIds?.length ? note.threadIds : [note.threadId];
+    // Geteilte Notiz (mehrere Threads): Mittelpunkt aller Threads → sitzt sichtbar dazwischen.
+    if (tids.length > 1) {
+      const pts = tids.map(id => threadMap.get(id)).filter(t => t && t.xf !== undefined) as Thread[];
+      if (pts.length > 1) {
+        const mx = pts.reduce((s, t) => s + t.xf!, 0) / pts.length;
+        const my = pts.reduce((s, t) => s + t.yf!, 0) / pts.length;
+        return { ...note, xf: mx, yf: my };
+      }
+    }
     const th = threadMap.get(note.threadId);
     if (!th || th.xf === undefined) return note;
     const idx = noteCount.get(note.threadId) ?? 0;
@@ -569,17 +579,20 @@ export default function Graph(props: Props) {
         drawCurve(ctx,GX(b.xf),GY(b.yf!),sx,sy,GX((b.xf+sim.xf)/2),GY((b.yf!+sim.yf!)/2),col,al,w);
       }
 
-      // curves: note–thread
+      // curves: note–thread (eine Linie pro zugehörigem Thread → geteilte Notizen sichtbar)
       for (const note of layout.notes) {
         if (note.xf===undefined) continue;
         if (activeFilter!=='all'&&note.category!==activeFilter) continue;
-        const th=layout.threads.find(t=>t.id===note.threadId);
-        if (!th||th.xf===undefined) continue;
         const lit=noteLit(note), hovN=hovered?.type==='note'&&hovered.id===note.id;
         const catCol=getCategoryColor(note.category);
         const catRgb=hexRgb(catCol);
-        drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-          hovN?C.white:lit?catCol:`rgba(${catRgb},0.7)`, hovN?0.6:lit?0.36:0.22, hovN?1.4*z:lit?1.0*z:0.7*z);
+        const tids=note.threadIds?.length?note.threadIds:[note.threadId];
+        for (const tid of tids) {
+          const th=layout.threads.find(t=>t.id===tid);
+          if (!th||th.xf===undefined) continue;
+          drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
+            hovN?C.white:lit?catCol:`rgba(${catRgb},0.7)`, hovN?0.6:lit?0.36:0.22, hovN?1.4*z:lit?1.0*z:0.7*z);
+        }
       }
 
       // particles
@@ -604,7 +617,18 @@ export default function Graph(props: Props) {
         const lit=noteLit(note), isHov=hovered?.type==='note'&&hovered.id===note.id;
         const catCol=getCategoryColor(note.category);
         const catDim=getCategoryColorDim(note.category);
-        drawOrb(ctx,GX(note.xf),GY(note.yf!),lit?7:NOTE_R,isHov?C.white:lit?catCol:catDim,0.08,animT,lit,isHov);
+        const shared=(note.threadIds?.length ?? 1) > 1;
+        const nx=GX(note.xf), ny=GY(note.yf!);
+        // Geteilte Notiz (gehört zu mehreren Threads): gestrichelter Amber-Ring als Marker.
+        if (shared) {
+          const rr=(lit?7:NOTE_R)*z+6*z;
+          ctx.save();
+          ctx.globalAlpha=lit||isHov?0.85:0.5; ctx.strokeStyle=C.amber; ctx.lineWidth=1.4*z;
+          ctx.setLineDash([3*z,3*z]); ctx.lineDashOffset=animT*8;
+          ctx.beginPath(); ctx.arc(nx,ny,rr,0,Math.PI*2); ctx.stroke();
+          ctx.restore();
+        }
+        drawOrb(ctx,nx,ny,lit?7:NOTE_R,isHov?C.white:lit?catCol:catDim,0.08,animT,lit,isHov);
       }
 
       // similarity nodes

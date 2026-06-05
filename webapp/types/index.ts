@@ -16,7 +16,11 @@ export interface Thread {
 
 export interface Note {
   id: string;
+  /** Primärer Thread (erster Treffer) — für Layout/Drag-Logik. */
   threadId: string;
+  /** Alle Threads, denen die Notiz angehört (kann >1 sein → geteilte Notiz).
+   *  Optional für Rückwärtskompatibilität mit altem sessionStorage-Cache. */
+  threadIds?: string[];
   title: string;
   content: string;
   category: string;
