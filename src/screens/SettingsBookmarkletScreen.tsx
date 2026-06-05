@@ -103,7 +103,7 @@ export default function SettingsBookmarkletScreen() {
           Webseiten als Notiz speichern
         </Text>
         <Text style={[styles.heroSub, { color: theme.colors.onSurfaceVariant }]}>
-          Markiere Text auf einer beliebigen Webseite und speichere ihn mit einem Klick direkt in NotizApp — von jedem Computer.
+          Markiere Text auf einer beliebigen Webseite und speichere ihn mit einem Klick direkt in Velm — von jedem Computer.
         </Text>
       </View>
 
@@ -146,7 +146,7 @@ export default function SettingsBookmarkletScreen() {
         <Step number={3} title="Bookmarklet in die Leiste ziehen">
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
             Auf der Einrichtungsseite: Deine ID eintragen → Den gelben Button{' '}
-            <Text style={{ fontFamily: Fonts.sansSemibold }}>"📝 In NotizApp speichern"</Text>{' '}
+            <Text style={{ fontFamily: Fonts.sansSemibold }}>"📝 In Velm speichern"</Text>{' '}
             mit der Maus in die Lesezeichen-Leiste deines Browsers ziehen. Fertig!
           </Text>
         </Step>

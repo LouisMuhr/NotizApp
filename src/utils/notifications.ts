@@ -154,7 +154,7 @@ export async function openExactAlarmSettings(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
     await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM', [
-      { key: 'android.provider.Settings.EXTRA_APP_PACKAGE', value: 'com.notizapp.app' },
+      { key: 'android.provider.Settings.EXTRA_APP_PACKAGE', value: 'com.velm.app' },
     ]);
   } catch {
     await Linking.openSettings();

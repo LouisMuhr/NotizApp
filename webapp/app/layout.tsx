@@ -16,7 +16,7 @@ const lora = Lora({
 });
 
 export const metadata: Metadata = {
-  title: 'Notiz — Second Brain',
+  title: 'Velm — Second Brain',
   description: 'Knowledge Graph für deine Threads und Notizen',
 };
 
