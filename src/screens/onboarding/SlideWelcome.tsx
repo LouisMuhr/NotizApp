@@ -5,6 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
 import { shared } from './shared';
+import VelmLogo from '../../components/VelmLogo';
 
 const { width: W } = Dimensions.get('window');
 
@@ -48,6 +49,7 @@ export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideW
     <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
       {/* Logo — kein Parallax, bleibt stabil */}
       <Animated.View style={[styles.logoRow, { opacity }]}>
+        <VelmLogo size={28} />
         <Text style={styles.logo}>Velm</Text>
         <View style={styles.logoDot} />
         <Text style={styles.version}>v 2.4</Text>

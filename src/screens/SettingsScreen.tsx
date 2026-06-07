@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert } from 'react-native';
 import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useNotes } from '../context/NotesContext';
 import { getSupabase } from '../sync/supabaseClient';
+import { ONBOARDING_KEY } from './onboarding/shared';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: APP_VERSION } = require('../../package.json') as { version: string };
 
@@ -99,6 +101,15 @@ export default function SettingsScreen() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // [DEV-HELPER] Onboarding zurücksetzen — nur in __DEV__ sichtbar. Vor Release entfernen.
+  const resetOnboarding = async () => {
+    await AsyncStorage.removeItem(ONBOARDING_KEY);
+    Alert.alert(
+      'Onboarding zurückgesetzt',
+      'Beim nächsten App-Start (bzw. Reload) erscheint das Onboarding wieder.'
+    );
+  };
 
   const tierLabel = tier === 'pro' ? 'Pro-Plan' : tier === 'basic' ? 'Basic-Plan' : 'Free-Plan';
   const kontoSublabel = isSignedIn ? 'E-Mail, Passwort, Abmelden' : 'E-Mail, Passwort, Anmelden';
@@ -225,6 +236,25 @@ export default function SettingsScreen() {
           showDivider={false}
         />
       </View>
+
+      {/* ── Entwicklung [DEV-HELPER] — nur in __DEV__, vor Release entfernen ── */}
+      {__DEV__ && (
+        <>
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+            Entwicklung
+          </Text>
+          <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <NavRow
+              icon="restart"
+              iconBg={colors.inkFaint}
+              label="Onboarding zurücksetzen"
+              sublabel="Onboarding beim nächsten Start neu zeigen"
+              onPress={resetOnboarding}
+              showDivider={false}
+            />
+          </View>
+        </>
+      )}
 
       {/* ── Version ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>

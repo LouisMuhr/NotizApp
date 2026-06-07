@@ -8,6 +8,7 @@ import ThreadPanel from '@/components/ThreadPanel';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
 import { NoteViewModal, NoteCreateModal, NoteCreateData } from '@/components/NoteModal';
 import LoginView, { AppUser } from '@/components/LoginView';
+import VelmIcon from '@/components/VelmIcon';
 import { supabase } from '@/lib/supabase';
 import { DEMO_DATA } from '@/lib/demoData';
 
@@ -253,7 +254,7 @@ export default function Home() {
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: 'rgba(14,12,9,0.75)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', padding: '0 22px', zIndex: 50, pointerEvents: 'none' }}>
         {/* Left: logo + title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #FBCB96, #C05C1A 70%)', boxShadow: '0 0 16px rgba(244,162,97,0.5)', flexShrink: 0 }} />
+          <VelmIcon size={30} radius={8} />
           <div>
             <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 15, fontWeight: 500, color: 'var(--t1)', letterSpacing: '-0.01em' }}>Velm</div>
             <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Second Brain</div>

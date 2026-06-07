@@ -150,6 +150,12 @@ Inter (UI/Body) via `expo-font` in App.tsx. Kategorien: Hue-Rotation via
 `src/theme/categoryAccents.ts` — **keine LinearGradient-Importe mehr in `src/`**.
 Neue Themedateien: `typography.ts`, `categoryAccents.ts`.
 
+### App-Icon (Velm)
+„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: lokaler Design-Handoff `Velm Icon - Final.html` (gitignored).
+PNGs reproduzierbar aus SVG: `node scripts/generate-icons.mjs` → `assets/*.png`.
+Als Komponente: `src/components/VelmLogo.tsx` (App, RN-SVG), `webapp/components/VelmIcon.tsx` (Web),
+Webapp-Favicon: `webapp/app/icon.svg`.
+
 ### Webapp (graph visualizer)
 `webapp/` ist ein eigenständiges Next.js-Projekt. Es liest Notizen, Threads und
 Ähnlichkeiten direkt aus Supabase und stellt sie als interaktiven Force-Graph dar.

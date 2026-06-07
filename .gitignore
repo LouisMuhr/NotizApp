@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Design-Handoffs (lokale Referenz, nicht eingecheckt)
+Velm Icon - Final.html
+
 # Expo
 .expo/
 dist/
