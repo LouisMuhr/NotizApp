@@ -42,6 +42,21 @@ const NOTE_SPREAD      = 1.7; // wie weit Notizen aus der Thread-Mitte sitzen
 const LS_KEY           = 'notiz_thread_positions';
 const LS_KEY_NOTES     = 'notiz_note_positions';
 
+// ── Grenzen für das initiale Layout ─────────────────────
+// Positionen sind fraktional (0=links/oben, 1=rechts/unten, 0.5=Mitte).
+// Draggen ist auf 0.02…0.98 geklemmt (DRAG_MIN/MAX). Damit Threads und ihre
+// Notizen beim ersten Aufbau NICHT am Rand kleben, halten wir alles innerhalb
+// eines kleineren "sicheren" Radius um die Mitte. Der maximale Note-Offset
+// (noteOffset · NOTE_SPREAD) wird mit eingerechnet, damit auch die äußersten
+// Notizen komfortabel im Bild liegen.
+const DRAG_MIN         = 0.02;
+const DRAG_MAX         = 0.98;
+const MAX_NOTE_OFFSET  = 0.14 * NOTE_SPREAD;   // größter Betrag aus noteOffset()
+const LAYOUT_MARGIN    = 0.06;                 // zusätzlicher Puffer zum Rand
+// Threads dürfen höchstens so weit aus der Mitte sitzen, dass selbst ihre
+// am weitesten außen liegende Notiz noch innerhalb von [MIN, MAX] bleibt.
+const SAFE_RING_R      = 0.5 - LAYOUT_MARGIN - MAX_NOTE_OFFSET;
+
 function loadPositions(): Record<string, { xf: number; yf: number }> {
   try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '{}'); } catch { return {}; }
 }
@@ -60,6 +75,11 @@ function saveNotePositions(pos: Record<string, { xf: number; yf: number }>) {
 type HitType = 'thread' | 'note' | 'similarity';
 interface HitResult { type: HitType; id: string }
 
+// Hält eine fraktionale Koordinate innerhalb der Drag-Grenzen (Rand-Clamp).
+function clampFrac(v: number): number {
+  return Math.max(DRAG_MIN, Math.min(DRAG_MAX, v));
+}
+
 function noteOffset(idx: number): [number, number] {
   const offsets: [number, number][] = [
     [-0.09,-0.09],[0.10,-0.07],[0.12,0.06],[0.05,0.13],[-0.07,0.14],
@@ -74,7 +94,9 @@ function layoutNodes(data: GraphData): GraphData {
   const n = data.threads.length;
   // Mehr Threads → größerer Ring, damit die Cluster Platz haben.
   // (Die Kamera zoomt anschließend automatisch passend heran.)
-  const ringR = 0.27 + Math.max(0, n - 5) * 0.05;
+  // Gegen SAFE_RING_R gedeckelt, damit Threads + Notizen zentral im Bild
+  // liegen und nicht an die Drag-Grenze (0.02…0.98) stoßen.
+  const ringR = Math.min(SAFE_RING_R, 0.27 + Math.max(0, n - 5) * 0.05);
   // Notizen weiter aus der Thread-Mitte herausziehen.
   const noteSpread = NOTE_SPREAD;
   const threads = data.threads.map((th, i) => {
@@ -96,7 +118,7 @@ function layoutNodes(data: GraphData): GraphData {
       if (pts.length > 1) {
         const mx = pts.reduce((s, t) => s + t.xf!, 0) / pts.length;
         const my = pts.reduce((s, t) => s + t.yf!, 0) / pts.length;
-        return { ...note, xf: mx, yf: my };
+        return { ...note, xf: clampFrac(mx), yf: clampFrac(my) };
       }
     }
     const th = threadMap.get(note.threadId);
@@ -104,7 +126,7 @@ function layoutNodes(data: GraphData): GraphData {
     const idx = noteCount.get(note.threadId) ?? 0;
     noteCount.set(note.threadId, idx + 1);
     const [ox, oy] = noteOffset(idx);
-    return { ...note, xf: th.xf + ox * noteSpread, yf: th.yf! + oy * noteSpread };
+    return { ...note, xf: clampFrac(th.xf + ox * noteSpread), yf: clampFrac(th.yf! + oy * noteSpread) };
   });
   const similarities = data.similarities.map((s, i) => {
     const a = threadMap.get(s.threadId1), b = threadMap.get(s.threadId2);
@@ -320,8 +342,8 @@ export default function Graph(props: Props) {
     function moveThread(threadId: string, xf: number, yf: number) {
       const layout = rt.current.layout;
       if (!layout) return;
-      const cxf = Math.max(0.02, Math.min(0.98, xf));
-      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const cxf = clampFrac(xf);
+      const cyf = clampFrac(yf);
       const old = layout.threads.find(t => t.id === threadId);
       // Verschiebung des Threads, um manuell platzierte Notizen relativ mitzuziehen.
       const dxf = old?.xf !== undefined ? cxf - old.xf : 0;
@@ -354,8 +376,8 @@ export default function Graph(props: Props) {
     function moveNote(noteId: string, xf: number, yf: number) {
       const layout = rt.current.layout;
       if (!layout) return;
-      const cxf = Math.max(0.02, Math.min(0.98, xf));
-      const cyf = Math.max(0.02, Math.min(0.98, yf));
+      const cxf = clampFrac(xf);
+      const cyf = clampFrac(yf);
       const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
       rt.current.pinnedNotes.add(noteId);
       rt.current.layout = { ...layout, notes };
