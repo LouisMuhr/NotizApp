@@ -3,9 +3,9 @@ import { StyleSheet, View, ScrollView, Pressable } from 'react-native';
 import { Text, useTheme, IconButton, Chip, Checkbox, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
-import { WEEKDAY_LABELS } from '../models/Note';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   navigation: any;
@@ -14,6 +14,7 @@ interface Props {
 
 export default function NoteDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
+  const { t, locale } = useLanguage();
   const { notes, togglePin, updateNote } = useNotes();
   const noteId = route.params?.noteId as string;
   const note = notes.find((n) => n.id === noteId);
@@ -21,15 +22,16 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
   if (!note) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <Text style={{ color: theme.colors.onSurfaceVariant }}>Notiz nicht gefunden</Text>
+        <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('noteDetail.notFound')}</Text>
       </View>
     );
   }
 
   const catAccent = getCategoryAccent(note.category);
+  const dateLocale = locale === 'en' ? 'en-US' : 'de-DE';
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('de-DE', {
+    new Date(iso).toLocaleDateString(dateLocale, {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
@@ -38,18 +40,18 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
     });
 
   const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    new Date(iso).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
 
   const getReminderLabel = (): string | null => {
     if (!note.reminderAt) return null;
     const time = formatTime(note.reminderAt);
     switch (note.reminderRecurrence) {
       case 'daily':
-        return `Täglich um ${time}`;
+        return t('editor.reminderDaily', { time });
       case 'weekly':
-        return `Jeden ${WEEKDAY_LABELS[note.reminderWeekday ?? 2]} um ${time}`;
+        return t('editor.reminderWeekly', { weekday: t('editor.weekdays')[note.reminderWeekday ?? 2], time });
       case 'monthly':
-        return `Jeden ${note.reminderDayOfMonth ?? 1}. um ${time}`;
+        return t('editor.reminderMonthly', { day: note.reminderDayOfMonth ?? 1, time });
       default:
         return formatDate(note.reminderAt);
     }
@@ -105,7 +107,7 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
 
         {/* Title */}
         <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-          {note.title || 'Ohne Titel'}
+          {note.title || t('common.untitled')}
         </Text>
 
         {/* Date */}
@@ -148,7 +150,7 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
                 color={theme.colors.secondary}
               />
               <Text style={[styles.checklistLabel, { color: theme.colors.secondary }]}>
-                Checkliste ({checkedCount}/{totalCount})
+                {t('noteDetail.checklistTitle', { done: checkedCount, total: totalCount })}
               </Text>
             </View>
             {note.checklist.map((item) => (
@@ -184,18 +186,18 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
           onDismiss={() => setShowResetDialog(false)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>Alle erledigt!</Dialog.Title>
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('editor.allDoneTitle')}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>
-              Checkliste zurücksetzen, um sie erneut zu verwenden?
+              {t('editor.resetChecklistBody')}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setShowResetDialog(false)} textColor={theme.colors.onSurfaceVariant}>
-              Behalten
+              {t('common.keep')}
             </Button>
             <Button onPress={resetChecklist} mode="contained" style={{ borderRadius: 12 }}>
-              Zurücksetzen
+              {t('common.reset')}
             </Button>
           </Dialog.Actions>
         </Dialog>

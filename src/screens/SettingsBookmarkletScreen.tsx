@@ -13,6 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import { getSupabase } from '../sync/supabaseClient';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 const BRIDGE_URL = 'https://bridge-three-coral.vercel.app';
 
@@ -41,6 +42,7 @@ function Step({
 
 function CopyBox({ label, value }: { label: string; value: string }) {
   const theme = useTheme();
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -69,7 +71,7 @@ function CopyBox({ label, value }: { label: string; value: string }) {
             size={14}
             color={Tokens.paper}
           />
-          <Text style={styles.copyBadgeText}>{copied ? 'Kopiert!' : 'Kopieren'}</Text>
+          <Text style={styles.copyBadgeText}>{copied ? t('settingsBookmarklet.copyValueCopied') : t('settingsBookmarklet.copyValueCopy')}</Text>
         </View>
       </TouchableOpacity>
     </View>
@@ -78,6 +80,7 @@ function CopyBox({ label, value }: { label: string; value: string }) {
 
 export default function SettingsBookmarkletScreen() {
   const theme = useTheme();
+  const { t } = useLanguage();
   const [userId, setUserId] = useState('');
   const [snack, setSnack] = useState('');
 
@@ -100,31 +103,31 @@ export default function SettingsBookmarkletScreen() {
       <View style={[styles.hero, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
         <MaterialCommunityIcons name="bookmark-plus-outline" size={36} color={Tokens.amberDeep} />
         <Text style={[styles.heroTitle, { color: theme.colors.onSurface }]}>
-          Webseiten als Notiz speichern
+          {t('settingsBookmarklet.heroTitle')}
         </Text>
         <Text style={[styles.heroSub, { color: theme.colors.onSurfaceVariant }]}>
-          Markiere Text auf einer beliebigen Webseite und speichere ihn mit einem Klick direkt in Velm — von jedem Computer.
+          {t('settingsBookmarklet.heroBody')}
         </Text>
       </View>
 
       {/* Steps */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Einrichtung
+        {t('settingsBookmarklet.setupSection')}
       </Text>
 
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
-        <Step number={1} title="Deine persönliche ID kopieren">
+        <Step number={1} title={t('settingsBookmarklet.step1Title')}>
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            Diese ID gehört nur zu dir. Sie sagt dem Bookmarklet, wo deine Notizen gespeichert werden sollen.
+            {t('settingsBookmarklet.step1Body')}
           </Text>
-          <CopyBox label="Deine Nutzer-ID" value={userId} />
+          <CopyBox label={t('settingsBookmarklet.step1CopyLabel')} value={userId} />
         </Step>
 
         <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />
 
-        <Step number={2} title="Einrichtungsseite öffnen">
+        <Step number={2} title={t('settingsBookmarklet.step2Title')}>
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            Öffne die Einrichtungsseite auf deinem Computer im Browser. Dort gibst du deine ID ein und bekommst das Bookmarklet.
+            {t('settingsBookmarklet.step2Body')}
           </Text>
           <TouchableOpacity
             activeOpacity={0.75}
@@ -133,7 +136,7 @@ export default function SettingsBookmarkletScreen() {
           >
             <MaterialCommunityIcons name="open-in-new" size={16} color={Tokens.amberDeep} />
             <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
-              Einrichtungsseite öffnen
+              {t('settingsBookmarklet.step2Button')}
             </Text>
           </TouchableOpacity>
           <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>
@@ -143,25 +146,25 @@ export default function SettingsBookmarkletScreen() {
 
         <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />
 
-        <Step number={3} title="Bookmarklet in die Leiste ziehen">
+        <Step number={3} title={t('settingsBookmarklet.step3Title')}>
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            Auf der Einrichtungsseite: Deine ID eintragen → Den gelben Button{' '}
-            <Text style={{ fontFamily: Fonts.sansSemibold }}>"📝 In Velm speichern"</Text>{' '}
-            mit der Maus in die Lesezeichen-Leiste deines Browsers ziehen. Fertig!
+            {t('settingsBookmarklet.step3BodyPrefix')}
+            <Text style={{ fontFamily: Fonts.sansSemibold }}>{t('settingsBookmarklet.step3BodyBold')}</Text>
+            {t('settingsBookmarklet.step3BodySuffix')}
           </Text>
         </Step>
       </View>
 
       {/* How to use */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        So funktioniert es
+        {t('settingsBookmarklet.howSection')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
         {[
-          { icon: 'cursor-text' as const, text: 'Text auf einer Webseite markieren' },
-          { icon: 'bookmark-outline' as const, text: 'Auf das Bookmarklet in der Lesezeichen-Leiste klicken' },
-          { icon: 'card-text-outline' as const, text: 'Titel, Kategorie und Erinnerung anpassen' },
-          { icon: 'check-circle-outline' as const, text: 'Auf "Speichern" klicken — Notiz erscheint sofort in der App' },
+          { icon: 'cursor-text' as const, text: t('settingsBookmarklet.how1') },
+          { icon: 'bookmark-outline' as const, text: t('settingsBookmarklet.how2') },
+          { icon: 'card-text-outline' as const, text: t('settingsBookmarklet.how3') },
+          { icon: 'check-circle-outline' as const, text: t('settingsBookmarklet.how4') },
         ].map((item, i, arr) => (
           <React.Fragment key={i}>
             <View style={styles.howRow}>
@@ -181,7 +184,7 @@ export default function SettingsBookmarkletScreen() {
       <View style={[styles.tip, { backgroundColor: Tokens.amberDeep + '18', borderColor: Tokens.amberDeep + '40' }]}>
         <MaterialCommunityIcons name="lightbulb-outline" size={16} color={Tokens.amberDeep} style={{ marginTop: 1 }} />
         <Text style={[styles.tipText, { color: theme.colors.onSurface }]}>
-          Das Bookmarklet funktioniert auf jedem Computer — egal ob Windows, Mac oder Linux. Du brauchst nur einen modernen Browser.
+          {t('settingsBookmarklet.tip')}
         </Text>
       </View>
 

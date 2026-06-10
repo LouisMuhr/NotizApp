@@ -9,6 +9,7 @@ import { Type, Fonts } from '../theme/typography';
 import { useNotes } from '../context/NotesContext';
 import { getSupabase } from '../sync/supabaseClient';
 import { ONBOARDING_KEY } from './onboarding/shared';
+import { useLanguage } from '../context/LanguageContext';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version: APP_VERSION } = require('../../package.json') as { version: string };
 
@@ -88,6 +89,7 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { tier } = useNotes();
+  const { t } = useLanguage();
   const [isSignedIn, setIsSignedIn] = useState(false);
 
   useEffect(() => {
@@ -106,13 +108,13 @@ export default function SettingsScreen() {
   const resetOnboarding = async () => {
     await AsyncStorage.removeItem(ONBOARDING_KEY);
     Alert.alert(
-      'Onboarding zurückgesetzt',
-      'Beim nächsten App-Start (bzw. Reload) erscheint das Onboarding wieder.'
+      t('settings.resetOnboardingAlertTitle'),
+      t('settings.resetOnboardingAlertBody')
     );
   };
 
-  const tierLabel = tier === 'pro' ? 'Pro-Plan' : tier === 'basic' ? 'Basic-Plan' : 'Free-Plan';
-  const kontoSublabel = isSignedIn ? 'E-Mail, Passwort, Abmelden' : 'E-Mail, Passwort, Anmelden';
+  const tierLabel = tier === 'pro' ? t('settings.tierPro') : tier === 'basic' ? t('settings.tierBasic') : t('settings.tierFree');
+  const kontoSublabel = isSignedIn ? t('settings.accountSubSignedIn') : t('settings.accountSubSignedOut');
 
   const colors = {
     amber: Tokens.amberDeep,
@@ -129,19 +131,19 @@ export default function SettingsScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Einstellungen</Text>
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
       </View>
 
       {/* ── Allgemein ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Allgemein
+        {t('settings.sectionGeneral')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="palette-outline"
           iconBg={colors.amber}
-          label="Darstellung"
-          sublabel="Vibration & Feedback"
+          label={t('settings.appearance')}
+          sublabel={t('settings.appearanceSub')}
           onPress={() => navigation.navigate('SettingsDarstellung')}
           showDivider={false}
         />
@@ -149,20 +151,20 @@ export default function SettingsScreen() {
 
       {/* ── Konto ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Konto
+        {t('settings.sectionAccount')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="account-circle-outline"
           iconBg={colors.amberMid}
-          label="Konto & Sicherheit"
+          label={t('settings.accountSecurity')}
           sublabel={kontoSublabel}
           onPress={() => navigation.navigate('SettingsKonto')}
         />
         <NavRow
           icon="crown-outline"
           iconBg={colors.amber}
-          label="Mein Abo"
+          label={t('settings.subscription')}
           sublabel={tierLabel}
           onPress={() => navigation.navigate('SettingsAbo')}
           showDivider={false}
@@ -171,14 +173,14 @@ export default function SettingsScreen() {
 
       {/* ── Inhalte ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Inhalte
+        {t('settings.sectionContent')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="tag-outline"
           iconBg={colors.amberMid}
-          label="Kategorien"
-          sublabel="Kategorien verwalten"
+          label={t('settings.categories')}
+          sublabel={t('settings.categoriesSub')}
           onPress={() => navigation.navigate('SettingsKategorien')}
           showDivider={false}
         />
@@ -186,37 +188,37 @@ export default function SettingsScreen() {
 
       {/* ── System ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        System
+        {t('settings.sectionSystem')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         {Platform.OS === 'android' && (
           <NavRow
             icon="bell-outline"
             iconBg={colors.ink}
-            label="Benachrichtigungen"
-            sublabel="Alarme & Akkuoptimierung"
+            label={t('settings.notifications')}
+            sublabel={t('settings.notificationsSub')}
             onPress={() => navigation.navigate('SettingsBenachrichtigungen')}
           />
         )}
         <NavRow
           icon="cloud-sync-outline"
           iconBg={colors.inkDim}
-          label="Synchronisation"
-          sublabel="Claude-Bridge & Nutzer-ID"
+          label={t('settings.sync')}
+          sublabel={t('settings.syncSub')}
           onPress={() => navigation.navigate('SettingsSynchronisation')}
         />
         <NavRow
           icon="bookmark-plus-outline"
           iconBg={colors.amberMid}
-          label="Bookmarklet"
-          sublabel="Webseiten als Notiz speichern"
+          label={t('settings.bookmarklet')}
+          sublabel={t('settings.bookmarkletSub')}
           onPress={() => navigation.navigate('SettingsBookmarklet')}
         />
         <NavRow
           icon="graph-outline"
           iconBg={colors.ink}
-          label="Web App"
-          sublabel="Notizen im Browser als Graph"
+          label={t('settings.webApp')}
+          sublabel={t('settings.webAppSub')}
           onPress={() => navigation.navigate('SettingsWebApp')}
           showDivider={false}
         />
@@ -224,14 +226,14 @@ export default function SettingsScreen() {
 
       {/* ── Datenschutz ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Datenschutz
+        {t('settings.sectionPrivacy')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <NavRow
           icon="shield-account-outline"
           iconBg={colors.ink}
-          label="Datenschutz & DSGVO"
-          sublabel="Export, Datenlöschung"
+          label={t('settings.privacy')}
+          sublabel={t('settings.privacySub')}
           onPress={() => navigation.navigate('SettingsDatenschutz')}
           showDivider={false}
         />
@@ -241,14 +243,14 @@ export default function SettingsScreen() {
       {__DEV__ && (
         <>
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-            Entwicklung
+            {t('settings.sectionDev')}
           </Text>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
             <NavRow
               icon="restart"
               iconBg={colors.inkFaint}
-              label="Onboarding zurücksetzen"
-              sublabel="Onboarding beim nächsten Start neu zeigen"
+              label={t('settings.resetOnboarding')}
+              sublabel={t('settings.resetOnboardingSub')}
               onPress={resetOnboarding}
               showDivider={false}
             />
@@ -258,13 +260,13 @@ export default function SettingsScreen() {
 
       {/* ── Version ── */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Version
+        {t('settings.sectionVersion')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <InfoRow
           icon="application-outline"
           iconBg={colors.inkFaint}
-          label="Version"
+          label={t('settings.version')}
           value={APP_VERSION}
         />
       </View>

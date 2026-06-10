@@ -19,6 +19,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 import { ThemeProvider } from './src/context/ThemeContext';
+import { LanguageProvider } from './src/context/LanguageContext';
 import { NotesProvider } from './src/context/NotesContext';
 import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme, Tokens } from './src/theme/theme';
@@ -112,11 +113,13 @@ export default function App() {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <OnboardingScreen
-            onDone={() => handleOnboardingDone()}
-            onSignup={() => handleOnboardingDone('SettingsKonto')}
-            onLogin={() => handleOnboardingDone('SettingsKonto')}
-          />
+          <LanguageProvider>
+            <OnboardingScreen
+              onDone={() => handleOnboardingDone()}
+              onSignup={() => handleOnboardingDone('SettingsKonto')}
+              onLogin={() => handleOnboardingDone('SettingsKonto')}
+            />
+          </LanguageProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
@@ -125,29 +128,31 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <PaperProvider theme={AppTheme}>
-            <NavigationContainer
-              theme={navTheme}
-              ref={navigationRef}
-              onReady={() => {
-                if (pendingNavigate.current) {
-                  (navigationRef as any).navigate(pendingNavigate.current);
-                  pendingNavigate.current = null;
-                }
-              }}
-            >
-              <NotesProvider>
-                <ThoughtsProvider>
-                  <NotificationBootstrap />
-                  <ShareHandler />
-                  <AppNavigator />
-                  <StatusBar style="dark" />
-                </ThoughtsProvider>
-              </NotesProvider>
-            </NavigationContainer>
-          </PaperProvider>
-        </ThemeProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <PaperProvider theme={AppTheme}>
+              <NavigationContainer
+                theme={navTheme}
+                ref={navigationRef}
+                onReady={() => {
+                  if (pendingNavigate.current) {
+                    (navigationRef as any).navigate(pendingNavigate.current);
+                    pendingNavigate.current = null;
+                  }
+                }}
+              >
+                <NotesProvider>
+                  <ThoughtsProvider>
+                    <NotificationBootstrap />
+                    <ShareHandler />
+                    <AppNavigator />
+                    <StatusBar style="dark" />
+                  </ThoughtsProvider>
+                </NotesProvider>
+              </NavigationContainer>
+            </PaperProvider>
+          </ThemeProvider>
+        </LanguageProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

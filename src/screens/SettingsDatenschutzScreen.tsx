@@ -11,6 +11,7 @@ import { getUserId, clearUserIdCache } from '../sync/userId';
 import { deleteAccountCompletely } from '../sync/deleteAnonUser';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 function Toast({ message, type }: { message: string; type: 'error' | 'success' | 'info' }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -52,6 +53,7 @@ export default function SettingsDatenschutzScreen() {
   const navigation = useNavigation<any>();
   const { notes, archivedNotes, deleteAllData } = useNotes();
   const { threads, clearAllThreads } = useThoughts();
+  const { t } = useLanguage();
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -68,7 +70,7 @@ export default function SettingsDatenschutzScreen() {
     try {
       await exportNotesAsJson(notes, archivedNotes, threads);
     } catch (e: any) {
-      showToast(e?.message ?? 'Export fehlgeschlagen.', 'error');
+      showToast(e?.message ?? t('settingsDatenschutz.toastExportFailed'), 'error');
     } finally {
       setExportLoading(false);
     }
@@ -106,10 +108,10 @@ export default function SettingsDatenschutzScreen() {
         await getUserId().catch(() => {});
       }
 
-      showToast('Konto und alle Daten wurden gelöscht.', 'success');
+      showToast(t('settingsDatenschutz.toastDeleted'), 'success');
       navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
-      showToast(e?.message ?? 'Fehler beim Löschen.', 'error');
+      showToast(e?.message ?? t('settingsDatenschutz.toastDeleteError'), 'error');
     } finally {
       setDeleteLoading(false);
     }
@@ -123,16 +125,15 @@ export default function SettingsDatenschutzScreen() {
 
         {/* Info-Karte */}
         <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.cardTitle, { color: theme.colors.onSurface }]}>Deine Daten</Text>
+          <Text style={[styles.cardTitle, { color: theme.colors.onSurface }]}>{t('settingsDatenschutz.dataCardTitle')}</Text>
           <Text style={[styles.cardBody, { color: theme.colors.onSurfaceVariant }]}>
-            Velm speichert deine Notizen lokal auf diesem Gerät. Optional werden sie
-            verschlüsselt über Supabase synchronisiert. Es werden keine Daten an Dritte weitergegeben.
+            {t('settingsDatenschutz.dataCardBody')}
           </Text>
         </View>
 
         {/* Export */}
         <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-          Datenportabilität
+          {t('settingsDatenschutz.portabilitySection')}
         </Text>
         <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.row}>
@@ -141,10 +142,10 @@ export default function SettingsDatenschutzScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontFamily: Fonts.sansMedium }}>
-                Notizen exportieren
+                {t('settingsDatenschutz.exportTitle')}
               </Text>
               <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 1 }}>
-                Alle Notizen & Threads als JSON
+                {t('settingsDatenschutz.exportSub')}
               </Text>
             </View>
           </View>
@@ -155,21 +156,19 @@ export default function SettingsDatenschutzScreen() {
             disabled={exportLoading}
             style={styles.button}
           >
-            Exportieren
+            {t('settingsDatenschutz.exportButton')}
           </Button>
         </View>
 
         {/* Löschen */}
         <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-          Datenlöschung
+          {t('settingsDatenschutz.deletionSection')}
         </Text>
         <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
           <View style={[styles.banner, { backgroundColor: theme.colors.errorContainer, borderColor: theme.colors.error + '44' }]}>
             <MaterialCommunityIcons name="alert-outline" size={18} color={theme.colors.error} />
             <Text style={[styles.bannerText, { color: theme.colors.onErrorContainer }]}>
-              Löscht dein Konto und alle Daten (inkl. E-Mail-Adresse) endgültig —
-              lokal und auf dem Server. Nicht rückgängig zu machen. Sichere deine
-              Daten vorher per Export.
+              {t('settingsDatenschutz.deletionBanner')}
             </Text>
           </View>
           <Button
@@ -182,7 +181,7 @@ export default function SettingsDatenschutzScreen() {
             style={styles.button}
             icon="delete-outline"
           >
-            Konto & alle Daten löschen
+            {t('settingsDatenschutz.deleteAccountButton')}
           </Button>
         </View>
 
@@ -204,12 +203,10 @@ export default function SettingsDatenschutzScreen() {
               <MaterialCommunityIcons name="delete-alert-outline" size={26} color="#fff" />
             </View>
             <Text style={[styles.modalTitle, { color: theme.colors.onSurface }]}>
-              Wirklich alles löschen?
+              {t('settingsDatenschutz.confirmTitle')}
             </Text>
             <Text style={[styles.modalBody, { color: theme.colors.onSurfaceVariant }]}>
-              Dein Konto wird vollständig gelöscht: alle Notizen, Archive, Threads
-              und deine E-Mail-Adresse werden unwiderruflich von diesem Gerät und
-              vom Server entfernt. Diese Aktion kann nicht rückgängig gemacht werden.
+              {t('settingsDatenschutz.confirmBody')}
             </Text>
             <View style={styles.modalActions}>
               <Button
@@ -218,7 +215,7 @@ export default function SettingsDatenschutzScreen() {
                 onPress={() => setConfirmVisible(false)}
                 style={styles.modalBtn}
               >
-                Abbrechen
+                {t('settingsDatenschutz.cancel')}
               </Button>
               <Button
                 mode="contained"
@@ -227,7 +224,7 @@ export default function SettingsDatenschutzScreen() {
                 onPress={handleDeleteAll}
                 style={styles.modalBtn}
               >
-                Endgültig löschen
+                {t('settingsDatenschutz.confirmDelete')}
               </Button>
             </View>
           </Pressable>

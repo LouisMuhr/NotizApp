@@ -13,6 +13,7 @@ import { Radii, Shadows } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   navigation: any;
@@ -21,6 +22,7 @@ interface Props {
 export default function HomeScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { locale, t } = useLanguage();
   const { notes, categories, loading, deleteNote, togglePin } = useNotes();
 
   const [filters, setFilters] = useState<FilterOptions>({
@@ -136,14 +138,14 @@ export default function HomeScreen({ navigation }: Props) {
     Animated.spring(fabScale, { toValue: 1, friction: 4, tension: 220, useNativeDriver: true }).start();
   };
 
-  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const today = new Date().toLocaleDateString(locale === 'en' ? 'en-US' : 'de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
-      {/* Header — Serif h1 "Notizen", Datum als Eyebrow */}
+      {/* Header — Serif h1, Datum als Eyebrow */}
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>{today}</Text>
-        <Text style={styles.headerTitle}>Notizen</Text>
+        <Text style={styles.headerTitle}>{t('home.title')}</Text>
       </View>
 
       <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
@@ -167,13 +169,13 @@ export default function HomeScreen({ navigation }: Props) {
             variant="titleMedium"
             style={[styles.emptyTitle, { color: theme.colors.onSurface }]}
           >
-            {notes.length === 0 ? 'Noch keine Notizen' : 'Keine Treffer'}
+            {notes.length === 0 ? t('home.emptyTitleNoNotes') : t('home.emptyTitleNoMatches')}
           </Text>
           <Text
             variant="bodySmall"
             style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}
           >
-            {notes.length === 0 ? 'Tippe auf + um loszulegen' : 'Passe deine Filter an'}
+            {notes.length === 0 ? t('home.emptyHintNoNotes') : t('home.emptyHintNoMatches')}
           </Text>
         </View>
       ) : (

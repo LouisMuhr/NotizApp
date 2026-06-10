@@ -10,14 +10,15 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { groupNotesByTime } from '../utils/timeGrouping';
 import TimelineSection from '../components/TimelineSection';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   navigation: any;
   route: any;
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('de-DE', {
+function formatDateTime(iso: string, locale: string): string {
+  return new Date(iso).toLocaleString(locale === 'en' ? 'en-US' : 'de-DE', {
     day: '2-digit',
     month: '2-digit',
     year: '2-digit',
@@ -29,11 +30,12 @@ function formatDateTime(iso: string): string {
 export default function ThreadDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t, locale } = useLanguage();
   const { threads, loading } = useThoughts();
   const { notes } = useNotes();
 
   const threadId = route.params?.threadId as string;
-  const thread = threads.find((t) => t.id === threadId);
+  const thread = threads.find((th) => th.id === threadId);
 
   if (loading) {
     return (
@@ -46,14 +48,14 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
   if (!thread) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <Text style={{ color: theme.colors.onSurfaceVariant }}>Thread nicht gefunden</Text>
+        <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('threadDetail.notFound')}</Text>
       </View>
     );
   }
 
-  const lastSynth = thread.lastSynthesizedAt ? formatDateTime(thread.lastSynthesizedAt) : null;
+  const lastSynth = thread.lastSynthesizedAt ? formatDateTime(thread.lastSynthesizedAt, locale) : null;
   const threadNotes = notes.filter((n) => thread.noteIds.includes(n.id));
-  const groupedNotes = groupNotesByTime(threadNotes, new Date());
+  const groupedNotes = groupNotesByTime(threadNotes, new Date(), t);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -67,14 +69,13 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
             <MaterialCommunityIcons name="creation" size={20} color={Tokens.amberDeep} />
           </View>
 
-          <Text style={styles.summaryLabel}>KI-Zusammenfassung</Text>
+          <Text style={styles.summaryLabel}>{t('threadDetail.aiSummary')}</Text>
 
           {thread.summary ? (
             <Text style={styles.summaryText}>{thread.summary}</Text>
           ) : (
             <Text style={styles.summaryEmpty}>
-              Noch keine Zusammenfassung vorhanden.{'\n'}
-              Der Worker wird sie beim nächsten Lauf erstellen.
+              {t('threadDetail.emptySummary')}
             </Text>
           )}
 
@@ -87,7 +88,7 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
               style={{ marginRight: 4 }}
             />
             <Text style={styles.metaText}>
-              {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
+              {t('threadDetail.noteCount', { count: thread.noteCount })}
             </Text>
             {lastSynth && (
               <>
@@ -107,7 +108,7 @@ export default function ThreadDetailScreen({ navigation, route }: Props) {
         {/* Timeline */}
         {groupedNotes.length > 0 && (
           <View style={styles.timeline}>
-            <Text style={styles.timelineHeader}>Enthaltene Notizen</Text>
+            <Text style={styles.timelineHeader}>{t('threadDetail.includedNotes')}</Text>
             {groupedNotes.map((group) => (
               <TimelineSection
                 key={group.label}

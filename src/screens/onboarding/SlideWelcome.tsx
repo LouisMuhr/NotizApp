@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
+import { useLanguage } from '../../context/LanguageContext';
 import { shared } from './shared';
 import VelmLogo from '../../components/VelmLogo';
 
@@ -25,6 +26,7 @@ const HERO_ROWS = [
 ];
 
 export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideWidth }: Props) {
+  const { t } = useLanguage();
   // Hero-Text: stärkerer Parallax (0.35) — fühlt sich dramatischer an auf dem letzten Slide
   const heroTranslate = scrollX.interpolate({
     inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
@@ -95,10 +97,10 @@ export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideW
         style={[styles.footer, { transform: [{ translateX: btnTranslate }], opacity }]}
       >
         <TouchableOpacity onPress={onSignup} activeOpacity={0.85} style={styles.primaryBtn}>
-          <Text style={styles.primaryBtnText}>Konto erstellen →</Text>
+          <Text style={styles.primaryBtnText}>{t('onboarding.welcomeCreateAccount')}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onLogin} activeOpacity={0.7} style={styles.secondaryBtn}>
-          <Text style={styles.secondaryBtnText}>Ich habe schon ein Konto</Text>
+          <Text style={styles.secondaryBtnText}>{t('onboarding.welcomeHaveAccount')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>

@@ -6,6 +6,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isSyncConfigured } from '../sync/supabaseClient';
 import { getUserId } from '../sync/userId';
 import { withAlpha } from '../utils/categoryColors';
+import { useLanguage } from '../context/LanguageContext';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -41,6 +42,7 @@ function InfoRow({
 
 export default function SettingsSynchronisationScreen() {
   const theme = useTheme();
+  const { t } = useLanguage();
   const [userId, setUserId] = useState('');
   const [snack, setSnack] = useState(false);
   const syncOn = isSyncConfigured();
@@ -61,31 +63,31 @@ export default function SettingsSynchronisationScreen() {
       contentContainerStyle={styles.content}
     >
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Claude-Bridge
+        {t('settingsSynchronisation.section')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <InfoRow
           icon="cloud-sync-outline"
-          label="Status"
+          label={t('settingsSynchronisation.status')}
           trailing={
             <Text style={{
               color: syncOn ? theme.colors.tertiary : theme.colors.onSurfaceVariant,
               fontSize: 14,
               fontWeight: '600',
             }}>
-              {syncOn ? 'Verbunden' : 'Nicht konfiguriert'}
+              {syncOn ? t('settingsSynchronisation.statusConnected') : t('settingsSynchronisation.statusNotConfigured')}
             </Text>
           }
         />
         <InfoRow
           icon="identifier"
-          label="Nutzer-ID"
+          label={t('settingsSynchronisation.userId')}
           showDivider={false}
           trailing={
             <View style={styles.deviceRow}>
               <View>
                 <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, textAlign: 'right' }}>
-                  Supabase Auth
+                  {t('settingsSynchronisation.userIdSub')}
                 </Text>
                 <Text
                   numberOfLines={1}
@@ -108,12 +110,12 @@ export default function SettingsSynchronisationScreen() {
 
       {!syncOn && (
         <Text style={[styles.configHint, { color: theme.colors.onSurfaceVariant }]}>
-          Setze EXPO_PUBLIC_SUPABASE_URL und EXPO_PUBLIC_SUPABASE_ANON_KEY in der .env, dann App neu starten.
+          {t('settingsSynchronisation.configHint')}
         </Text>
       )}
 
       <Snackbar visible={snack} onDismiss={() => setSnack(false)} duration={1500}>
-        Nutzer-ID kopiert
+        {t('settingsSynchronisation.userIdCopied')}
       </Snackbar>
     </ScrollView>
   );

@@ -4,6 +4,7 @@ import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { openExactAlarmSettings, openBatteryOptimizationSettings, scheduleTestNotification } from '../utils/notifications';
 import { withAlpha } from '../utils/categoryColors';
+import { useLanguage } from '../context/LanguageContext';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -48,6 +49,7 @@ function ActionRow({
 
 export default function SettingsBenachrichtigungenScreen() {
   const theme = useTheme();
+  const { t } = useLanguage();
 
   return (
     <ScrollView
@@ -55,40 +57,40 @@ export default function SettingsBenachrichtigungenScreen() {
       contentContainerStyle={styles.content}
     >
       <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
-        Damit Erinnerungen pünktlich ankommen, müssen{' '}
-        <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Genaue Alarme</Text>{' '}
-        erlaubt und die{' '}
-        <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>Akkuoptimierung</Text>{' '}
-        deaktiviert sein. Auf Xiaomi/MIUI zusätzlich Autostart aktivieren.
+        <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>{t('settingsBenachrichtigungen.hintExactAlarms')}</Text>
+        {' & '}
+        <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>{t('settingsBenachrichtigungen.hintBatteryOpt')}</Text>
+        {'. '}
+        {t('settingsBenachrichtigungen.hintXiaomi')}
       </Text>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Berechtigungen
+        {t('settingsBenachrichtigungen.permissionsSection')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <ActionRow
           icon="bell-cog-outline"
-          label="Genaue Alarme erlauben"
-          sublabel="Öffnet die Systemeinstellungen"
+          label={t('settingsBenachrichtigungen.allowExactAlarms')}
+          sublabel={t('settingsBenachrichtigungen.opensSettings')}
           onPress={() => openExactAlarmSettings()}
         />
         <ActionRow
           icon="battery-off-outline"
-          label="Akkuoptimierung deaktivieren"
-          sublabel="Öffnet die Systemeinstellungen"
+          label={t('settingsBenachrichtigungen.disableBatteryOpt')}
+          sublabel={t('settingsBenachrichtigungen.opensSettings')}
           showDivider={false}
           onPress={() => openBatteryOptimizationSettings()}
         />
       </View>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Test
+        {t('settingsBenachrichtigungen.testSection')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <ActionRow
           icon="bell-ring-outline"
-          label="Test-Benachrichtigung senden"
-          sublabel="Wird in 5 Sekunden ausgelöst"
+          label={t('settingsBenachrichtigungen.sendTestNotification')}
+          sublabel={t('settingsBenachrichtigungen.triggersIn5Sec')}
           showDivider={false}
           onPress={() => scheduleTestNotification()}
         />

@@ -3,6 +3,7 @@ import { Animated, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
+import { useLanguage } from '../../context/LanguageContext';
 import { Dots, NextButton, SkipRow } from './components';
 import { CREAM, shared } from './shared';
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth }: Props) {
+  const { t } = useLanguage();
   const translateX = scrollX.interpolate({
     inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
     outputRange: [-slideWidth * 0.25, 0, slideWidth * 0.25],
@@ -30,7 +32,7 @@ export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth
   return (
     <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
       <Animated.View style={[styles.inner, { transform: [{ translateX }], opacity }]}>
-        <SkipRow label="I / III" onSkip={onSkip} />
+        <SkipRow label={t('onboarding.pageLabel1')} onSkip={onSkip} />
 
         <View style={{ marginTop: 28 }}>
           {[
@@ -72,13 +74,13 @@ export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth
         <View style={{ flex: 1 }} />
 
         <View style={{ paddingTop: 14 }}>
-          <Text style={shared.kapitel}>Kapitel 01 — Schreiben</Text>
-          <Text style={styles.caption}>Text, Stimme oder Liste — die Notiz passt sich an, nicht du.</Text>
+          <Text style={shared.kapitel}>{t('onboarding.chapter01')}</Text>
+          <Text style={styles.caption}>{t('onboarding.v1Caption')}</Text>
         </View>
 
         <View style={shared.footerRow}>
           <Dots count={3} active={0} />
-          <NextButton label="weiter →" onPress={onNext} />
+          <NextButton label={t('onboarding.next')} onPress={onNext} />
         </View>
       </Animated.View>
     </SafeAreaView>

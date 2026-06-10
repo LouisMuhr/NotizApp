@@ -16,6 +16,7 @@ import { getCategoryAccent } from '../theme/categoryAccents';
 import { Tokens } from '../theme/theme';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   filters: FilterOptions;
@@ -23,18 +24,25 @@ interface Props {
   onFiltersChange: (filters: FilterOptions) => void;
 }
 
-const SORT_OPTIONS: { label: string; description: string; field: SortField; order: SortOrder; icon: string }[] = [
-  { label: 'Neueste zuerst', description: 'Zuletzt bearbeitet oben', field: 'updatedAt', order: 'desc', icon: 'clock-outline' },
-  { label: 'Älteste zuerst', description: 'Älteste Notizen oben', field: 'updatedAt', order: 'asc',  icon: 'clock-check-outline' },
-  { label: 'A → Z',          description: 'Alphabetisch aufsteigend', field: 'title',     order: 'asc',  icon: 'sort-alphabetical-ascending' },
-  { label: 'Z → A',          description: 'Alphabetisch absteigend', field: 'title',     order: 'desc', icon: 'sort-alphabetical-descending' },
-  { label: 'Kategorie',      description: 'Nach Kategorie gruppiert', field: 'category',  order: 'asc',  icon: 'tag-outline' },
-];
+type SortOption = { label: string; description: string; field: SortField; order: SortOrder; icon: string };
+
+function getSortOptions(t: ReturnType<typeof useLanguage>['t']): SortOption[] {
+  return [
+    { label: t('filterBar.sortNewestLabel'), description: t('filterBar.sortNewestSub'), field: 'updatedAt', order: 'desc', icon: 'clock-outline' },
+    { label: t('filterBar.sortOldestLabel'), description: t('filterBar.sortOldestSub'), field: 'updatedAt', order: 'asc',  icon: 'clock-check-outline' },
+    { label: t('filterBar.sortAZLabel'),     description: t('filterBar.sortAZSub'),     field: 'title',     order: 'asc',  icon: 'sort-alphabetical-ascending' },
+    { label: t('filterBar.sortZALabel'),     description: t('filterBar.sortZASub'),     field: 'title',     order: 'desc', icon: 'sort-alphabetical-descending' },
+    { label: t('filterBar.sortCategoryLabel'), description: t('filterBar.sortCategorySub'), field: 'category', order: 'asc',  icon: 'tag-outline' },
+  ];
+}
 
 export default function FilterBar({ filters, categories, onFiltersChange }: Props) {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [sheetVisible, setSheetVisible] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const SORT_OPTIONS = getSortOptions(t);
 
   const activeSort = SORT_OPTIONS.find(
     (o) => o.field === filters.sortField && o.order === filters.sortOrder,
@@ -60,7 +68,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
     }).start(() => setSheetVisible(false));
   };
 
-  const selectSort = (opt: (typeof SORT_OPTIONS)[0]) => {
+  const selectSort = (opt: SortOption) => {
     haptics.tap();
     onFiltersChange({ ...filters, sortField: opt.field, sortOrder: opt.order });
     closeSheet();
@@ -80,7 +88,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
       {/* Suchzeile */}
       <View style={styles.searchRow}>
         <Searchbar
-          placeholder="Suchen..."
+          placeholder={t('filterBar.searchPlaceholder')}
           value={filters.searchQuery}
           onChangeText={(q) => onFiltersChange({ ...filters, searchQuery: q })}
           style={styles.searchbar}
@@ -121,7 +129,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
               { color: filters.category === null ? Tokens.paper : Tokens.inkDim },
             ]}
           >
-            Alle
+            {t('filterBar.all')}
           </Text>
         </Pressable>
 
@@ -172,7 +180,7 @@ export default function FilterBar({ filters, categories, onFiltersChange }: Prop
               <View style={styles.handle} />
             </View>
 
-            <Text style={styles.sheetTitle}>Sortierung</Text>
+            <Text style={styles.sheetTitle}>{t('filterBar.sortSheetTitle')}</Text>
 
             {SORT_OPTIONS.map((opt) => {
               const isActive = opt.field === filters.sortField && opt.order === filters.sortOrder;
