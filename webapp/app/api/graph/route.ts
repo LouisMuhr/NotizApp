@@ -11,17 +11,29 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServerClient(token);
 
+  // User aus dem JWT auflösen und ALLE Queries explizit darauf filtern.
+  // Nicht allein auf RLS verlassen — fehlende/permissive Policies haben fremde
+  // Threads durchsickern lassen.
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const userId = user.id;
+
   const [{ data: threadRows }, { data: noteRows }, { data: similarityRows }] = await Promise.all([
     supabase
       .from('threads')
       .select('id, title, summary, status, is_pinned, note_ids, last_synthesized_at, created_at, updated_at')
+      .eq('user_id', userId)
       .eq('status', 'active'),
     supabase
       .from('notes')
-      .select('id, title, content, category, created_at, updated_at'),
+      .select('id, title, content, category, created_at, updated_at')
+      .eq('user_id', userId),
     supabase
       .from('thread_similarities')
-      .select('id, thread_id_1, thread_id_2, label'),
+      .select('id, thread_id_1, thread_id_2, label')
+      .eq('user_id', userId),
   ]);
 
   const noteMap = new Map((noteRows ?? []).map((n: any) => [n.id, n]));

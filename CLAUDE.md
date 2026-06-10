@@ -139,8 +139,10 @@ GestureHandlerRootView
   `upsertRemote()` / `deleteRemote()`. Tombstone set prevents re-sync of deleted notes.
 
 ### Supabase schema
-Tables: `notes`, `thoughts`, `threads`, `thought_threads`.
-`threads` has `is_pinned` (Slice 5 migration — run once in SQL editor).
+Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.
+Jede Zeile gehört einem `auth.users`-User via `user_id` (Ausnahme `thought_threads`:
+gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) — Queries
+MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
 Schema source: `supabase-schema.sql`.
 
 ### Theme
