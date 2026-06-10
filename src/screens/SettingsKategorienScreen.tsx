@@ -56,7 +56,7 @@ export default function SettingsKategorienScreen() {
       ) : (
         <>
           <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
-            {t(categories.length === 1 ? 'settingsKategorien.countLabel_one' : 'settingsKategorien.countLabel_other', { count: categories.length })}
+            {t('settingsKategorien.countLabel', { count: categories.length })}
           </Text>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
             {categories.map((cat, index) => {
