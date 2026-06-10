@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SRC = resolve(__dirname, '../docs/screenshot-story');
+const SRC = resolve(__dirname, '../docs/Screenshot-story');
 const OUT = resolve(SRC, 'play');
 mkdirSync(OUT, { recursive: true });
 
@@ -91,7 +91,7 @@ const ORDER = [
   'ThreadsScreen.jpeg',        // 03
   'ThreadsDetailScreen.jpeg',  // 04
   'filtered-NotesScreen.jpeg', // 05
-  'VoiceScreen.jpeg',          // 06
+  'VoiceScreen_fixed.jpeg',    // 06 (dev-build hint painted out)
   'SubscribtionScreen.jpeg',   // 07 (optional / abo)
 ];
 
