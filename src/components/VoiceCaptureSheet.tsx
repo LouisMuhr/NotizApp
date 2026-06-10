@@ -15,7 +15,7 @@ import {
   Pressable,
   TextInput,
   Platform,
-  KeyboardAvoidingView,
+  Keyboard,
   Animated,
   Easing,
 } from 'react-native';
@@ -67,6 +67,23 @@ export default function VoiceCaptureSheet({
   const [partialTranscript, setPartialTranscript] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // On iOS the Modal does not resize for the keyboard, so we measure it and lift
+  // the sheet via marginBottom. On Android the translucent Modal window already
+  // resizes natively (adjustResize) — adding our own offset there would double the
+  // gap, so we keep keyboardHeight at 0 on Android and let the system handle it.
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const showSub = Keyboard.addListener('keyboardWillShow', (e) =>
+      setKeyboardHeight(e.endCoordinates?.height ?? 0),
+    );
+    const hideSub = Keyboard.addListener('keyboardWillHide', () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -117,6 +134,7 @@ export default function VoiceCaptureSheet({
       if (isListening) {
         ExpoSpeechRecognitionModule.stop();
       }
+      Keyboard.dismiss();
       setTranscript('');
       setPartialTranscript('');
       setIsListening(false);
@@ -158,6 +176,14 @@ export default function VoiceCaptureSheet({
     }
   };
 
+  // Switching modes must dismiss the keyboard. On Android, unmounting the focused
+  // TextInput alone doesn't reliably close it, so KeyboardAvoidingView keeps its
+  // shrunk frame and the sheet's button row stays pushed off-screen.
+  const switchMode = useCallback((next: 'voice' | 'text') => {
+    if (next === 'voice') Keyboard.dismiss();
+    setMode(next);
+  }, []);
+
   const handleSave = async () => {
     const content = (transcript + (partialTranscript ? ` ${partialTranscript}` : '')).trim();
     if (!content) return;
@@ -198,10 +224,7 @@ export default function VoiceCaptureSheet({
         onClose();
       }}
     >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={() => {
           if (isListening) stopListening();
           onClose();
@@ -215,6 +238,7 @@ export default function VoiceCaptureSheet({
             {
               backgroundColor: Tokens.paper,
               paddingBottom: Math.max(insets.bottom, 20),
+              marginBottom: keyboardHeight,
             },
           ]}
         >
@@ -299,7 +323,7 @@ export default function VoiceCaptureSheet({
                 </Text>
               )}
 
-              <Pressable onPress={() => setMode('text')} style={styles.switchRow}>
+              <Pressable onPress={() => switchMode('text')} style={styles.switchRow}>
                 <MaterialCommunityIcons
                   name="keyboard-outline"
                   size={16}
@@ -328,7 +352,7 @@ export default function VoiceCaptureSheet({
                   },
                 ]}
               />
-              <Pressable onPress={() => setMode('voice')} style={styles.switchRow}>
+              <Pressable onPress={() => switchMode('voice')} style={styles.switchRow}>
                 <MaterialCommunityIcons
                   name="microphone-outline"
                   size={16}
@@ -380,7 +404,7 @@ export default function VoiceCaptureSheet({
             </Pressable>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
