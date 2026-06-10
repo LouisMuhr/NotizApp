@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import VelmIcon from '@/components/VelmIcon';
 
 export interface AppUser {
   id: string;
@@ -80,7 +81,7 @@ export default function LoginView({ onLogin }: Props) {
       <div style={s.card}>
         {/* Logo */}
         <div style={s.logo}>
-          <div style={s.logoMark}>V</div>
+          <VelmIcon size={40} radius={10} />
           <div>
             <div style={s.logoName}>Velm</div>
             <div style={s.logoSub}>Second Brain</div>
@@ -172,13 +173,6 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: '0 8px 48px rgba(0,0,0,0.55)',
   },
   logo: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 },
-  logoMark: {
-    width: 40, height: 40, borderRadius: 10,
-    background: '#F4A261', color: '#0E0C09',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 22, fontWeight: 700,
-    boxShadow: '0 0 20px rgba(244,162,97,0.35)',
-  },
   logoName: { fontSize: 18, fontWeight: 600, color: '#F2EDE6', lineHeight: 1.2 },
   logoSub:  { fontSize: 12, color: 'rgba(160,144,128,0.7)', marginTop: 1 },
 
