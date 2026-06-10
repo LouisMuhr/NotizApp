@@ -12,10 +12,12 @@ import { useNotes } from '../context/NotesContext';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import { Tokens } from '../theme/theme';
 import { Fonts, Type } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function SettingsKategorienScreen() {
   const theme = useTheme();
   const { categories, addCategory, deleteCategory } = useNotes();
+  const { t } = useLanguage();
 
   const [newCatDialog, setNewCatDialog] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -46,15 +48,15 @@ export default function SettingsKategorienScreen() {
       {categories.length === 0 ? (
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="tag-off-outline" size={36} color={Tokens.inkFaint} />
-          <Text style={styles.emptyTitle}>Keine Kategorien</Text>
+          <Text style={styles.emptyTitle}>{t('settingsKategorien.emptyTitle')}</Text>
           <Text style={styles.emptySubtitle}>
-            Füge Kategorien hinzu, um deine Notizen zu ordnen.
+            {t('settingsKategorien.emptyHint')}
           </Text>
         </View>
       ) : (
         <>
           <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
-            {categories.length} {categories.length === 1 ? 'Kategorie' : 'Kategorien'}
+            {t(categories.length === 1 ? 'settingsKategorien.countLabel_one' : 'settingsKategorien.countLabel_other', { count: categories.length })}
           </Text>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
             {categories.map((cat, index) => {
@@ -105,7 +107,7 @@ export default function SettingsKategorienScreen() {
         activeOpacity={0.75}
       >
         <MaterialCommunityIcons name="plus" size={18} color={Tokens.amberDeep} />
-        <Text style={styles.addButtonLabel}>Kategorie hinzufügen</Text>
+        <Text style={styles.addButtonLabel}>{t('settingsKategorien.addButton')}</Text>
       </TouchableOpacity>
 
       {/* ── Dialog: Neue Kategorie ── */}
@@ -115,12 +117,12 @@ export default function SettingsKategorienScreen() {
           onDismiss={() => { setNewCatDialog(false); setNewCatName(''); }}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={styles.dialogTitle}>Neue Kategorie</Dialog.Title>
+          <Dialog.Title style={styles.dialogTitle}>{t('settingsKategorien.newCategoryTitle')}</Dialog.Title>
           <Dialog.Content style={styles.dialogContent}>
             <RNTextInput
               value={newCatName}
               onChangeText={setNewCatName}
-              placeholder="z. B. Arbeit, Rezepte, Ideen…"
+              placeholder={t('settingsKategorien.placeholder')}
               placeholderTextColor={Tokens.inkFaint}
               autoFocus
               returnKeyType="done"
@@ -136,7 +138,7 @@ export default function SettingsKategorienScreen() {
               const accent = getCategoryAccent(newCatName.trim());
               return (
                 <View style={styles.previewRow}>
-                  <Text style={[styles.previewLabel, { color: Tokens.inkFaint }]}>Vorschau</Text>
+                  <Text style={[styles.previewLabel, { color: Tokens.inkFaint }]}>{t('settingsKategorien.preview')}</Text>
                   <View style={[styles.previewChip, { backgroundColor: accent.soft }]}>
                     <Text style={[styles.previewChipText, { color: accent.deep }]}>
                       {newCatName.trim()}
@@ -151,7 +153,7 @@ export default function SettingsKategorienScreen() {
               onPress={() => { setNewCatDialog(false); setNewCatName(''); }}
               textColor={Tokens.inkDim}
             >
-              Abbrechen
+              {t('settingsKategorien.cancel')}
             </Button>
             <Button
               onPress={handleAdd}
@@ -160,7 +162,7 @@ export default function SettingsKategorienScreen() {
               style={styles.confirmBtn}
               labelStyle={{ fontFamily: Fonts.sansSemibold, fontSize: 13 }}
             >
-              Hinzufügen
+              {t('settingsKategorien.add')}
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -173,7 +175,7 @@ export default function SettingsKategorienScreen() {
           onDismiss={() => setDeleteCat(null)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={styles.dialogTitle}>Kategorie entfernen?</Dialog.Title>
+          <Dialog.Title style={styles.dialogTitle}>{t('settingsKategorien.removeDialogTitle')}</Dialog.Title>
           <Dialog.Content>
             {deleteCat && (() => {
               const accent = getCategoryAccent(deleteCat);
@@ -189,7 +191,7 @@ export default function SettingsKategorienScreen() {
                       {deleteCat}
                     </Text>
                     <Text style={styles.deleteHint}>
-                      Notizen behalten ihre bisherige Kategorie.
+                      {t('settingsKategorien.removeDialogBody')}
                     </Text>
                   </View>
                 </View>
@@ -198,7 +200,7 @@ export default function SettingsKategorienScreen() {
           </Dialog.Content>
           <Dialog.Actions style={styles.dialogActions}>
             <Button onPress={() => setDeleteCat(null)} textColor={Tokens.inkDim}>
-              Abbrechen
+              {t('settingsKategorien.cancel')}
             </Button>
             <Button
               onPress={handleDelete}
@@ -208,7 +210,7 @@ export default function SettingsKategorienScreen() {
               style={styles.confirmBtn}
               labelStyle={{ fontFamily: Fonts.sansSemibold, fontSize: 13 }}
             >
-              Entfernen
+              {t('settingsKategorien.remove')}
             </Button>
           </Dialog.Actions>
         </Dialog>

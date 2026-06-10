@@ -20,6 +20,7 @@ import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Tokens } from '../theme/theme';
 import { Fonts, Type } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 const SIGNED_OUT_KEY = '@notizapp_signed_out_uid';
 
@@ -206,6 +207,7 @@ export default function SettingsKontoScreen() {
   const navigation = useNavigation<any>();
   const { resyncForUser, refreshSubscription } = useNotes();
   const { resyncForUser: resyncThreadsForUser } = useThoughts();
+  const { t } = useLanguage();
 
   const [accountState, setAccountState] = useState<AccountState>('loading');
   const [anonTab, setAnonTab] = useState<AnonTab>('signup');
@@ -264,7 +266,7 @@ export default function SettingsKontoScreen() {
   const handleSignOut = async () => {
     const supabase = getSupabase();
     if (!supabase) {
-      showToast('Sync ist nicht konfiguriert.', 'error');
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
     setLoading(true);
@@ -286,7 +288,7 @@ export default function SettingsKontoScreen() {
       setAccountState('signed-out');
       navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
-      showToast('Abmeldung fehlgeschlagen: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+      showToast(t('settingsKonto.toastSignOutFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
       setLoading(false);
     }
@@ -294,12 +296,12 @@ export default function SettingsKontoScreen() {
 
   const handleSignIn = async () => {
     if (!inputEmail.trim() || !inputPassword) {
-      showToast('Bitte E-Mail und Passwort eingeben.', 'error');
+      showToast(t('settingsKonto.toastEnterEmailPassword'), 'error');
       return;
     }
     const supabase = getSupabase();
     if (!supabase) {
-      showToast('Sync ist nicht konfiguriert.', 'error');
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
     setLoading(true);
@@ -311,12 +313,12 @@ export default function SettingsKontoScreen() {
         password: inputPassword,
       });
       if (error) {
-        showToast('Anmeldung fehlgeschlagen: ' + error.message, 'error');
+        showToast(t('settingsKonto.toastSignInFailed') + error.message, 'error');
         return;
       }
       const newUser = data.user;
       if (!newUser) {
-        showToast('Anmeldung unvollständig. Bitte E-Mail bestätigen.', 'error');
+        showToast(t('settingsKonto.toastConfirmEmail'), 'error');
         return;
       }
       if (anonUid && anonUid !== newUser.id) {
@@ -332,7 +334,7 @@ export default function SettingsKontoScreen() {
       setAccountState('signed-in');
       navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
-      showToast('Anmeldung fehlgeschlagen: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+      showToast(t('settingsKonto.toastSignInFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
       setLoading(false);
     }
@@ -340,20 +342,20 @@ export default function SettingsKontoScreen() {
 
   const handleUpgrade = async () => {
     if (!inputEmail.trim() || !inputPassword) {
-      showToast('Bitte E-Mail und Passwort eingeben.', 'error');
+      showToast(t('settingsKonto.toastEnterEmailPassword'), 'error');
       return;
     }
     if (inputPassword !== inputPasswordConfirm) {
-      showToast('Passwörter stimmen nicht überein.', 'error');
+      showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
       return;
     }
     if (inputPassword.length < 6) {
-      showToast('Passwort muss mindestens 6 Zeichen haben.', 'error');
+      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
       return;
     }
     const supabase = getSupabase();
     if (!supabase) {
-      showToast('Sync ist nicht konfiguriert.', 'error');
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
     setLoading(true);
@@ -363,15 +365,15 @@ export default function SettingsKontoScreen() {
         password: inputPassword,
       });
       if (error) {
-        showToast('Fehler: ' + error.message, 'error');
+        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
       setAccountState('signed-in');
       setEmail(inputEmail.trim());
       clearFields();
-      showToast('Konto gesichert! Bitte E-Mail bestätigen.', 'success');
+      showToast(t('settingsKonto.toastAccountSecured'), 'success');
     } catch (e: any) {
-      showToast('Fehler: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
       setLoading(false);
     }
@@ -379,33 +381,33 @@ export default function SettingsKontoScreen() {
 
   const handleChangePassword = async () => {
     if (!inputPassword) {
-      showToast('Bitte neues Passwort eingeben.', 'error');
+      showToast(t('settingsKonto.toastEnterNewPassword'), 'error');
       return;
     }
     if (inputPassword !== inputPasswordConfirm) {
-      showToast('Passwörter stimmen nicht überein.', 'error');
+      showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
       return;
     }
     if (inputPassword.length < 6) {
-      showToast('Passwort muss mindestens 6 Zeichen haben.', 'error');
+      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
       return;
     }
     const supabase = getSupabase();
     if (!supabase) {
-      showToast('Sync ist nicht konfiguriert.', 'error');
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
     setLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: inputPassword });
       if (error) {
-        showToast('Fehler: ' + error.message, 'error');
+        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
       clearFields();
-      showToast('Passwort erfolgreich geändert.', 'success');
+      showToast(t('settingsKonto.toastPasswordChanged'), 'success');
     } catch (e: any) {
-      showToast('Fehler: ' + (e?.message ?? 'Unbekannter Fehler'), 'error');
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
       setLoading(false);
     }
@@ -442,7 +444,7 @@ export default function SettingsKontoScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[styles.tabLabel, anonTab === 'signup' && styles.tabLabelActive]}>
-                  Konto sichern
+                  {t('settingsKonto.tabSecure')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -451,7 +453,7 @@ export default function SettingsKontoScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[styles.tabLabel, anonTab === 'signin' && styles.tabLabelActive]}>
-                  Anmelden
+                  {t('settingsKonto.tabSignIn')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -465,9 +467,9 @@ export default function SettingsKontoScreen() {
                     <MaterialCommunityIcons name="shield-alert-outline" size={20} color={Tokens.amberDeep} />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.warningTitle}>Konto nicht gesichert</Text>
+                    <Text style={styles.warningTitle}>{t('settingsKonto.warningTitle')}</Text>
                     <Text style={styles.warningText}>
-                      Bei einer Neu-Installation oder einem Gerätewechsel gehen alle Sync-Daten verloren.
+                      {t('settingsKonto.warningBody')}
                     </Text>
                   </View>
                 </View>
@@ -475,30 +477,30 @@ export default function SettingsKontoScreen() {
                 {/* Formular */}
                 <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
                   <Field
-                    label="E-Mail-Adresse"
+                    label={t('settingsKonto.emailLabel')}
                     value={inputEmail}
                     onChangeText={setInputEmail}
-                    placeholder="deine@email.com"
+                    placeholder={t('settingsKonto.emailPlaceholder')}
                     keyboardType="email-address"
                     autoCapitalize="none"
                   />
                   <Field
-                    label="Passwort"
+                    label={t('settingsKonto.passwordLabel')}
                     value={inputPassword}
                     onChangeText={setInputPassword}
-                    placeholder="Mindestens 6 Zeichen"
+                    placeholder={t('settingsKonto.passwordPlaceholder')}
                     secure
                   />
                   <Field
-                    label="Passwort bestätigen"
+                    label={t('settingsKonto.confirmPasswordLabel')}
                     value={inputPasswordConfirm}
                     onChangeText={setInputPasswordConfirm}
-                    placeholder="Nochmals eingeben"
+                    placeholder={t('settingsKonto.confirmPasswordPlaceholder')}
                     secure
                     onSubmit={handleUpgrade}
                   />
                   <PrimaryButton
-                    label="Konto jetzt sichern"
+                    label={t('settingsKonto.secureNowButton')}
                     onPress={handleUpgrade}
                     loading={loading}
                     disabled={!inputEmail.trim() || !inputPassword || !inputPasswordConfirm}
@@ -511,23 +513,23 @@ export default function SettingsKontoScreen() {
             {anonTab === 'signin' && (
               <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
                 <Field
-                  label="E-Mail-Adresse"
+                  label={t('settingsKonto.emailLabel')}
                   value={inputEmail}
                   onChangeText={setInputEmail}
-                  placeholder="deine@email.com"
+                  placeholder={t('settingsKonto.emailPlaceholder')}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
                 <Field
-                  label="Passwort"
+                  label={t('settingsKonto.passwordLabel')}
                   value={inputPassword}
                   onChangeText={setInputPassword}
-                  placeholder="Dein Passwort"
+                  placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
                   secure
                   onSubmit={handleSignIn}
                 />
                 <PrimaryButton
-                  label="Anmelden"
+                  label={t('settingsKonto.signInButton')}
                   onPress={handleSignIn}
                   loading={loading}
                   disabled={!inputEmail.trim() || !inputPassword}
@@ -543,7 +545,7 @@ export default function SettingsKontoScreen() {
         {accountState === 'signed-in' && (
           <>
             {/* Konto-Info */}
-            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Konto</Text>
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.accountSection')}</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <View style={styles.accountRow}>
                 <View style={styles.avatarCircle}>
@@ -555,7 +557,7 @@ export default function SettingsKontoScreen() {
                   <Text style={styles.accountEmail}>{email}</Text>
                   <View style={styles.verifiedBadge}>
                     <MaterialCommunityIcons name="check-circle" size={12} color="#3D7A4A" />
-                    <Text style={styles.verifiedText}>Angemeldet</Text>
+                    <Text style={styles.verifiedText}>{t('settingsKonto.signedInBadge')}</Text>
                   </View>
                 </View>
               </View>
@@ -563,26 +565,26 @@ export default function SettingsKontoScreen() {
 
             {/* Passwort ändern */}
             <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
-              Passwort ändern
+              {t('settingsKonto.changePassword')}
             </Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <Field
-                label="Neues Passwort"
+                label={t('settingsKonto.newPasswordLabel')}
                 value={inputPassword}
                 onChangeText={setInputPassword}
-                placeholder="Mindestens 6 Zeichen"
+                placeholder={t('settingsKonto.passwordPlaceholder')}
                 secure
               />
               <Field
-                label="Passwort bestätigen"
+                label={t('settingsKonto.confirmPasswordLabel')}
                 value={inputPasswordConfirm}
                 onChangeText={setInputPasswordConfirm}
-                placeholder="Nochmals eingeben"
+                placeholder={t('settingsKonto.confirmPasswordPlaceholder')}
                 secure
                 onSubmit={handleChangePassword}
               />
               <PrimaryButton
-                label="Passwort aktualisieren"
+                label={t('settingsKonto.updatePasswordButton')}
                 onPress={handleChangePassword}
                 loading={loading}
                 disabled={!inputPassword || !inputPasswordConfirm}
@@ -590,10 +592,10 @@ export default function SettingsKontoScreen() {
             </View>
 
             {/* Abmelden */}
-            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Sitzung</Text>
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.sessionLabel')}</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <PrimaryButton
-                label="Abmelden"
+                label={t('settingsKonto.signOutButton')}
                 onPress={handleSignOut}
                 loading={loading}
                 danger
@@ -610,29 +612,29 @@ export default function SettingsKontoScreen() {
             {/* Info-Banner */}
             <View style={styles.infoBanner}>
               <MaterialCommunityIcons name="account-off-outline" size={20} color={Tokens.inkDim} />
-              <Text style={styles.infoText}>Du bist abgemeldet. Melde dich an, um deine Notizen zu synchronisieren.</Text>
+              <Text style={styles.infoText}>{t('settingsKonto.signedOutBanner')}</Text>
             </View>
 
-            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>Anmelden</Text>
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.signedOutEyebrow')}</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <Field
-                label="E-Mail-Adresse"
+                label={t('settingsKonto.emailLabel')}
                 value={inputEmail}
                 onChangeText={setInputEmail}
-                placeholder="deine@email.com"
+                placeholder={t('settingsKonto.emailPlaceholder')}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
               <Field
-                label="Passwort"
+                label={t('settingsKonto.passwordLabel')}
                 value={inputPassword}
                 onChangeText={setInputPassword}
-                placeholder="Dein Passwort"
+                placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
                 secure
                 onSubmit={handleSignIn}
               />
               <PrimaryButton
-                label="Anmelden"
+                label={t('settingsKonto.signInButton')}
                 onPress={handleSignIn}
                 loading={loading}
                 disabled={!inputEmail.trim() || !inputPassword}

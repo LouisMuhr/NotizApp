@@ -3,6 +3,7 @@ import { Animated, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
+import { useLanguage } from '../../context/LanguageContext';
 import { Dots, NextButton, SkipRow } from './components';
 import { shared } from './shared';
 
@@ -14,13 +15,14 @@ interface Props {
   slideWidth: number;
 }
 
-const LIST = [
-  ['01', 'Ende-zu-Ende verschlüsselt'],
-  ['02', 'KI-Verarbeitung nur, wenn du es anstößt'],
-  ['03', 'Export zu Markdown — jederzeit'],
-] as const;
-
 export default function SlideValue3({ onNext, onSkip, scrollX, index, slideWidth }: Props) {
+  const { t } = useLanguage();
+  const LIST = [
+    ['01', t('onboarding.v3List1')],
+    ['02', t('onboarding.v3List2')],
+    ['03', t('onboarding.v3List3')],
+  ] as const;
+
   const translateX = scrollX.interpolate({
     inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
     outputRange: [-slideWidth * 0.25, 0, slideWidth * 0.25],
@@ -36,10 +38,10 @@ export default function SlideValue3({ onNext, onSkip, scrollX, index, slideWidth
   return (
     <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
       <Animated.View style={[styles.inner, { transform: [{ translateX }], opacity }]}>
-        <SkipRow label="III / III" onSkip={onSkip} />
+        <SkipRow label={t('onboarding.pageLabel3')} onSkip={onSkip} />
 
         <View style={{ marginTop: 40 }}>
-          <Text style={styles.eyebrow}>— Eine Sache noch.</Text>
+          <Text style={styles.eyebrow}>{t('onboarding.v3Eyebrow')}</Text>
           <Text style={styles.headline}>
             Was du{'\n'}schreibst,{'\n'}
             <Text style={{ fontFamily: Fonts.serifItalic, color: Tokens.amberDeep }}>
@@ -62,7 +64,7 @@ export default function SlideValue3({ onNext, onSkip, scrollX, index, slideWidth
 
         <View style={shared.footerRow}>
           <Dots count={3} active={2} />
-          <NextButton label="loslegen →" onPress={onNext} />
+          <NextButton label={t('onboarding.start')} onPress={onNext} />
         </View>
       </Animated.View>
     </SafeAreaView>

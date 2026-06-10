@@ -3,12 +3,13 @@ import { StyleSheet, View, Pressable, Animated, Easing, Text as RNText } from 'r
 import { useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Note, WEEKDAY_LABELS } from '../models/Note';
+import { Note } from '../models/Note';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Fonts, Type } from '../theme/typography';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   note: Note;
@@ -25,6 +26,7 @@ const animatedOnce = new Set<string>();
 
 function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
   const theme = useTheme();
+  const { t, locale } = useLanguage();
   const accent = getCategoryAccent(note.category);
   const swipeableRef = useRef<Swipeable>(null);
 
@@ -52,16 +54,17 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
     Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 220 }).start();
   };
 
-  const formatDate = (iso: string) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
-  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const dateLocale = locale === 'en' ? 'en-US' : 'de-DE';
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' });
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
 
   const getReminderLabel = (n: Note): string => {
     if (!n.reminderAt) return '';
     const time = formatTime(n.reminderAt);
     switch (n.reminderRecurrence) {
-      case 'daily': return `Tägl. ${time}`;
-      case 'weekly': return `${WEEKDAY_LABELS[n.reminderWeekday ?? 2]?.substring(0, 2)} ${time}`;
-      case 'monthly': return `${n.reminderDayOfMonth ?? 1}. mtl. ${time}`;
+      case 'daily': return t('noteCard.reminderDaily', { time });
+      case 'weekly': return `${t('editor.weekdaysShort')[n.reminderWeekday ?? 2]} ${time}`;
+      case 'monthly': return t('noteCard.reminderMonthly', { day: n.reminderDayOfMonth ?? 1, time });
       default: return `${formatDate(n.reminderAt)} ${time}`;
     }
   };
@@ -77,7 +80,7 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
           <MaterialCommunityIcons name={note.isPinned ? 'pin-off' : 'pin'} size={22} color={Tokens.amberDeep} />
         </Animated.View>
         <RNText style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>
-          {note.isPinned ? 'Lösen' : 'Anpinnen'}
+          {note.isPinned ? t('noteCard.swipeUnpin') : t('noteCard.swipePin')}
         </RNText>
       </View>
     );
@@ -93,7 +96,7 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons name="trash-can-outline" size={22} color={theme.colors.error} />
         </Animated.View>
-        <RNText style={[styles.swipeLabel, { color: theme.colors.error }]}>Löschen</RNText>
+        <RNText style={[styles.swipeLabel, { color: theme.colors.error }]}>{t('noteCard.swipeDelete')}</RNText>
       </View>
     );
   };
@@ -132,7 +135,7 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
               <MaterialCommunityIcons name="pin" size={13} color={Tokens.amberDeep} style={styles.pinIcon} />
             )}
             <RNText style={styles.title} numberOfLines={1}>
-              {note.title || 'Ohne Titel'}
+              {note.title || t('common.untitled')}
             </RNText>
             <RNText style={styles.dateText}>{formatDate(note.updatedAt)}</RNText>
           </View>
@@ -152,7 +155,7 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
                 { backgroundColor: checklistDone === checklistTotal ? Tokens.amber : 'transparent', borderColor: Tokens.amber },
               ]} />
               <RNText style={styles.checklistText}>
-                {checklistDone}/{checklistTotal} erledigt
+                {t('noteCard.checklistDone', { done: checklistDone, total: checklistTotal })}
               </RNText>
             </View>
           )}

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
+import { useLanguage } from '../../context/LanguageContext';
 import { Dots, NextButton, SkipRow } from './components';
 import { CREAM, shared } from './shared';
 
@@ -22,6 +23,7 @@ const NODES = [
 ];
 
 export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth }: Props) {
+  const { t } = useLanguage();
   const translateX = scrollX.interpolate({
     inputRange: [(index - 1) * slideWidth, index * slideWidth, (index + 1) * slideWidth],
     outputRange: [-slideWidth * 0.25, 0, slideWidth * 0.25],
@@ -37,7 +39,7 @@ export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth
   return (
     <SafeAreaView style={[shared.screen, { backgroundColor: 'transparent' }]}>
       <Animated.View style={[styles.inner, { transform: [{ translateX }], opacity }]}>
-        <SkipRow label="II / III" onSkip={onSkip} />
+        <SkipRow label={t('onboarding.pageLabel2')} onSkip={onSkip} />
 
         <View style={styles.graphArea}>
           <Svg width="100%" height={220} style={StyleSheet.absoluteFillObject} pointerEvents="none">
@@ -79,19 +81,19 @@ export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth
         <View style={{ flex: 1 }} />
 
         <View style={{ paddingBottom: 25 }}>
-          <Text style={shared.kapitel}>Kapitel 02 — Verbinden</Text>
+          <Text style={shared.kapitel}>{t('onboarding.chapter02')}</Text>
           <Text style={styles.headline}>
             Die KI webt deine Notizen{'\n'}
             <Text style={{ fontFamily: Fonts.serifItalic }}>zu Threads.</Text>
           </Text>
           <Text style={styles.body}>
-            Was du an verschiedenen Tagen geschrieben hast, findet zueinander — als Faden, den du jederzeit wieder lesen kannst.
+            {t('onboarding.v2Body')}
           </Text>
         </View>
 
         <View style={shared.footerRow}>
           <Dots count={3} active={1} />
-          <NextButton label="weiter →" onPress={onNext} />
+          <NextButton label={t('onboarding.next')} onPress={onNext} />
         </View>
       </Animated.View>
     </SafeAreaView>

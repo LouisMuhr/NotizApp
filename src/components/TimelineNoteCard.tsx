@@ -6,6 +6,7 @@ import { Note } from '../models/Note';
 import { calculateReadTime, isNewNote, formatRelativeDate } from '../utils/timeGrouping';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   note: Note;
@@ -15,9 +16,10 @@ interface Props {
 const PREVIEW_LENGTH = 120;
 
 export default function TimelineNoteCard({ note, onPress }: Props) {
+  const { t } = useLanguage();
   const fresh = isNewNote(note.createdAt);
   const readTime = calculateReadTime(note.content);
-  const relDate = formatRelativeDate(note.createdAt);
+  const relDate = formatRelativeDate(note.createdAt, t);
 
   const preview = note.content.length > PREVIEW_LENGTH
     ? note.content.slice(0, PREVIEW_LENGTH).trimEnd() + '…'
@@ -54,7 +56,7 @@ export default function TimelineNoteCard({ note, onPress }: Props) {
               color={Tokens.inkFaint}
             />
             <Text style={styles.metaText}>
-              {' ~'}{readTime} Min. · {relDate}
+              {t('timeline.readTime', { minutes: readTime, date: relDate })}
             </Text>
           </View>
         </View>

@@ -20,21 +20,22 @@ import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
 import { getSupabase } from '../sync/supabaseClient';
 import ProBanner from '../components/ProBanner';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   navigation: any;
 }
 
-function formatRelativeTime(iso: string): string {
+function formatRelativeTime(iso: string, t: ReturnType<typeof useLanguage>['t']): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
   const hours = Math.floor(diff / 3_600_000);
   const days = Math.floor(diff / 86_400_000);
-  if (minutes < 1) return 'gerade eben';
-  if (minutes < 60) return `vor ${minutes} Min.`;
-  if (hours < 24) return `vor ${hours} Std.`;
-  if (days === 1) return 'gestern';
-  return `vor ${days} Tagen`;
+  if (minutes < 1) return t('threads.relativeJustNow');
+  if (minutes < 60) return t('threads.relativeMinutesAgo', { count: minutes });
+  if (hours < 24) return t('threads.relativeHoursAgo', { count: hours });
+  if (days === 1) return t('threads.relativeYesterday');
+  return t('threads.relativeDaysAgo', { count: days });
 }
 
 interface ThreadCardProps {
@@ -49,10 +50,11 @@ interface ThreadCardProps {
 
 function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
   const theme = useTheme();
+  const { t } = useLanguage();
   const swipeableRef = useRef<Swipeable>(null);
   const accent = getCategoryAccent(thread.title);
 
-  const lastUpdated = formatRelativeTime(thread.updatedAt);
+  const lastUpdated = formatRelativeTime(thread.updatedAt, t);
 
   const renderRightActions = (
     _progress: Animated.AnimatedInterpolation<number>,
@@ -69,7 +71,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
           <MaterialCommunityIcons name="archive-outline" size={26} color={Tokens.amberDeep} />
         </Animated.View>
         <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>
-          Archivieren
+          {t('threads.swipeArchive')}
         </Text>
       </View>
     );
@@ -94,7 +96,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
           />
         </Animated.View>
         <Text style={[styles.swipeLabel, { color: Tokens.ink }]}>
-          {thread.isPinned ? 'Lösen' : 'Fixieren'}
+          {thread.isPinned ? t('threads.swipeUnpin') : t('threads.swipePin')}
         </Text>
       </View>
     );
@@ -156,7 +158,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
               </Text>
               {newCount > 0 && (
                 <View style={[styles.badge, { backgroundColor: Tokens.amberSoft }]}>
-                  <Text style={[styles.badgeText, { color: Tokens.amberDeep }]}>{newCount} neu</Text>
+                  <Text style={[styles.badgeText, { color: Tokens.amberDeep }]}>{t('threads.newBadge', { count: newCount })}</Text>
                 </View>
               )}
               <MaterialCommunityIcons name="creation" size={14} color={Tokens.amber} />
@@ -169,7 +171,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
               </Text>
             ) : (
               <Text style={styles.summaryEmpty}>
-                Noch keine Zusammenfassung verfügbar.
+                {t('threads.noSummary')}
               </Text>
             )}
 
@@ -182,7 +184,7 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
                 style={{ marginRight: 4 }}
               />
               <Text style={styles.metaText}>
-                {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
+                {t('threadDetail.noteCount', { count: thread.noteCount })}
               </Text>
               <Text style={styles.metaDot}>·</Text>
               <Text style={styles.metaText}>{lastUpdated}</Text>
@@ -196,11 +198,11 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
 
 const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? '';
 
-async function runSynthesis(): Promise<{ message: string; next_allowed_at?: string }> {
+async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<{ message: string; next_allowed_at?: string }> {
   const supabase = getSupabase();
-  if (!supabase) throw new Error('Sync nicht konfiguriert');
+  if (!supabase) throw new Error(t('threads.syncNotConfigured'));
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Nicht eingeloggt');
+  if (!session) throw new Error(t('threads.notSignedIn'));
 
   const res = await fetch(`${BRIDGE_URL}/api/synthesize`, {
     method: 'POST',
@@ -214,18 +216,18 @@ async function runSynthesis(): Promise<{ message: string; next_allowed_at?: stri
   }
 
   if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
-  if (json.message === 'no_feed_notes') return { message: 'Keine neuen Notizen zum Verarbeiten.' };
+  if (json.message === 'no_feed_notes') return { message: t('threads.noNewNotes') };
   const created = json.threads_created ?? 0;
   const updated = json.threads_updated ?? 0;
   const parts: string[] = [];
-  if (created > 0) parts.push(`${created} ${created === 1 ? 'Thread erstellt' : 'Threads erstellt'}`);
-  if (updated > 0) parts.push(`${updated} ${updated === 1 ? 'Thread aktualisiert' : 'Threads aktualisiert'}`);
-  return { message: parts.length > 0 ? parts.join(', ') : 'Fertig — nichts Neues.' };
+  if (created > 0) parts.push(t('threads.threadsCreated', { count: created }));
+  if (updated > 0) parts.push(t('threads.threadsUpdated', { count: updated }));
+  return { message: parts.length > 0 ? parts.join(', ') : t('threads.nothingNew') };
 }
 
-/** Formats a Date into German short date: "Mo. 26. Mai" */
-function formatGermanDate(date: Date): string {
-  return date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long' });
+/** Formats a Date into a localized short date: "Mo. 26. Mai" / "Mon, May 26" */
+function formatLocalizedDate(date: Date, locale: string): string {
+  return date.toLocaleDateString(locale === 'en' ? 'en-US' : 'de-DE', { weekday: 'short', day: 'numeric', month: 'long' });
 }
 
 /** Calculates days until a future date (ceil) */
@@ -236,6 +238,7 @@ function daysUntil(date: Date): number {
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t, locale } = useLanguage();
   const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
   const { nextAllowedAt, refreshSubscription } = useNotes();
   const [synthesizing, setSynthesizing] = useState(false);
@@ -246,12 +249,12 @@ export default function ThreadsScreen({ navigation }: Props) {
   const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
 
   function getSynthesizeLabel(): string {
-    if (synthesizing) return 'Läuft…';
+    if (synthesizing) return t('threads.synthesizeRunning');
     if (isLimited) {
       const days = daysUntil(nextAllowedAt!);
-      return `In ${days} ${days === 1 ? 'Tag' : 'Tagen'} verfügbar`;
+      return t('threads.synthesizeAvailableIn', { count: days });
     }
-    return 'Synthetisieren';
+    return t('threads.synthesize');
   }
 
   async function handleSynthesize() {
@@ -259,19 +262,19 @@ export default function ThreadsScreen({ navigation }: Props) {
     haptics.medium();
     setSynthesizing(true);
     try {
-      const result = await runSynthesis();
+      const result = await runSynthesis(t);
       if (result.message === 'limit_reached' && result.next_allowed_at) {
         // Server says we're limited — refresh subscription state
         await refreshSubscription();
         const nextDate = new Date(result.next_allowed_at);
-        setSnackMessage(`Limit erreicht. Nächster Lauf: ${formatGermanDate(nextDate)}`);
+        setSnackMessage(`${t('threads.limitReached')}${formatLocalizedDate(nextDate, locale)}`);
       } else {
         // On success, also refresh (ai_last_run was updated server-side)
         await refreshSubscription();
         setSnackMessage(result.message);
       }
     } catch (e: any) {
-      setSnackMessage('Fehler: ' + (e?.message ?? 'Unbekannt'));
+      setSnackMessage(t('threads.errorPrefix') + (e?.message ?? 'Unbekannt'));
     } finally {
       setSynthesizing(false);
       setSnackVisible(true);
@@ -307,9 +310,9 @@ export default function ThreadsScreen({ navigation }: Props) {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.headerEyebrow}>
-              {activeThreads.length === 0 ? 'Noch keine Threads' : `${activeThreads.length} aktiv`}
+              {activeThreads.length === 0 ? t('threads.emptyEyebrow') : t('threads.activeCount', { count: activeThreads.length })}
             </Text>
-            <Text style={styles.headerTitle}>Threads</Text>
+            <Text style={styles.headerTitle}>{t('threads.title')}</Text>
           </View>
           <Pressable
             onPress={handleSynthesize}
@@ -345,11 +348,10 @@ export default function ThreadsScreen({ navigation }: Props) {
             <MaterialCommunityIcons name="creation" size={48} color={Tokens.amberDeep} />
           </View>
           <Text variant="titleMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-            Noch keine Threads
+            {t('threads.emptyTitle')}
           </Text>
           <Text variant="bodySmall" style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}>
-            Aktiviere bei Notizen den Thread-Feed,{'\n'}
-            um Ideen automatisch zu verknüpfen.
+            {t('threads.emptyHint')}
           </Text>
         </View>
       ) : (
@@ -377,7 +379,7 @@ export default function ThreadsScreen({ navigation }: Props) {
         onDismiss={() => setSnackVisible(false)}
         duration={3500}
         style={{ backgroundColor: Tokens.ink }}
-        action={{ label: 'OK', onPress: () => setSnackVisible(false), textColor: Tokens.amber }}
+        action={{ label: t('threads.snackbarOk'), onPress: () => setSnackVisible(false), textColor: Tokens.amber }}
       >
         <Text style={{ color: Tokens.paper, fontFamily: Fonts.sans, fontSize: 13 }}>{snackMessage}</Text>
       </Snackbar>

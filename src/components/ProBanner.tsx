@@ -5,18 +5,20 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   onPress: () => void;
 }
 
-const UPGRADE_HINTS = [
-  { tier: 'free' as const, text: 'KI täglich nutzen — upgrade auf Basic', sub: 'Ab 1,99 € / Monat' },
-  { tier: 'basic' as const, text: 'Bis zu 10× täglich synthetisieren', sub: 'Pro für 4,99 € / Monat' },
-];
-
 export default function ProBanner({ onPress }: Props) {
   const { tier } = useNotes();
+  const { t } = useLanguage();
+
+  const UPGRADE_HINTS = [
+    { tier: 'free' as const, text: t('proBanner.freeHint1'), sub: t('proBanner.freeHint2') },
+    { tier: 'basic' as const, text: t('proBanner.basicHint1'), sub: t('proBanner.basicHint2') },
+  ];
 
   const hint = UPGRADE_HINTS.find((h) => h.tier === tier);
   if (!hint) return null; // pro users see nothing
@@ -26,7 +28,7 @@ export default function ProBanner({ onPress }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.banner, pressed && { opacity: 0.82 }]}
       accessibilityRole="button"
-      accessibilityLabel="Upgrade-Angebot anzeigen"
+      accessibilityLabel={t('proBanner.accessibilityLabel')}
     >
       <View style={styles.iconWrap}>
         <MaterialCommunityIcons name="crown-outline" size={15} color={Tokens.amberDeep} />

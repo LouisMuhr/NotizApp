@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Tokens } from '../../theme/theme';
+import { useLanguage } from '../../context/LanguageContext';
 import { shared } from './shared';
 
 export function Dots({ count, active }: { count: number; active: number }) {
@@ -23,11 +24,12 @@ export function Dots({ count, active }: { count: number; active: number }) {
 }
 
 export function SkipRow({ label, onSkip }: { label: string; onSkip: () => void }) {
+  const { t } = useLanguage();
   return (
     <View style={shared.skipRow}>
       <Text style={shared.pageLabel}>{label}</Text>
       <TouchableOpacity onPress={onSkip}>
-        <Text style={shared.skipText}>Überspringen</Text>
+        <Text style={shared.skipText}>{t('onboarding.skip')}</Text>
       </TouchableOpacity>
     </View>
   );
