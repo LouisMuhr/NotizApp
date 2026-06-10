@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { Radii, Shadows, Insets } from '../theme/gradients';
+import { useLanguage } from '../context/LanguageContext';
 
 const WEBAPP_URL = 'https://www.velmnote.com';
 
@@ -25,6 +26,7 @@ function FeatureRow({ icon, label, description }: { icon: string; label: string;
 
 export default function SettingsWebAppScreen() {
   const theme = useTheme();
+  const { t } = useLanguage();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -33,13 +35,13 @@ export default function SettingsWebAppScreen() {
         <View style={[styles.heroIcon, { backgroundColor: Tokens.ink }]}>
           <MaterialCommunityIcons name="graph-outline" size={32} color={Tokens.paper} />
         </View>
-        <Text style={[styles.heroTitle, { color: Tokens.ink }]}>Velm Web</Text>
+        <Text style={[styles.heroTitle, { color: Tokens.ink }]}>{t('settingsWebApp.title')}</Text>
         <Text style={[styles.heroSub, { color: Tokens.inkDim }]}>
-          Deine Notizen und Gedanken als interaktiver Graph — direkt im Browser.
+          {t('settingsWebApp.subtitle')}
         </Text>
         <View style={[styles.badge, { backgroundColor: Tokens.amberSoft }]}>
           <MaterialCommunityIcons name="clock-outline" size={12} color={Tokens.amberDeep} />
-          <Text style={[styles.badgeText, { color: Tokens.amberDeep }]}>Demnächst verfügbar</Text>
+          <Text style={[styles.badgeText, { color: Tokens.amberDeep }]}>{t('settingsWebApp.badge')}</Text>
         </View>
       </View>
 
@@ -47,26 +49,26 @@ export default function SettingsWebAppScreen() {
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
         <FeatureRow
           icon="graph"
-          label="Notiz-Graph"
-          description="Alle Notizen und Threads als vernetztes Diagramm"
+          label={t('settingsWebApp.featureGraphTitle')}
+          description={t('settingsWebApp.featureGraphDesc')}
         />
         <View style={[styles.divider, { backgroundColor: Tokens.rule }]} />
         <FeatureRow
           icon="text-search"
-          label="Volltextsuche"
-          description="Schnelle Suche über alle Inhalte"
+          label={t('settingsWebApp.featureSearchTitle')}
+          description={t('settingsWebApp.featureSearchDesc')}
         />
         <View style={[styles.divider, { backgroundColor: Tokens.rule }]} />
         <FeatureRow
           icon="link-variant"
-          label="Ähnliche Notizen"
-          description="KI-basierte Ähnlichkeitsanalyse zwischen Notizen"
+          label={t('settingsWebApp.featureSimilarTitle')}
+          description={t('settingsWebApp.featureSimilarDesc')}
         />
         <View style={[styles.divider, { backgroundColor: Tokens.rule }]} />
         <FeatureRow
           icon="monitor"
-          label="Große Ansicht"
-          description="Optimiert für Desktop & Tablet"
+          label={t('settingsWebApp.featureLargeTitle')}
+          description={t('settingsWebApp.featureLargeDesc')}
         />
       </View>
 
@@ -77,7 +79,7 @@ export default function SettingsWebAppScreen() {
         style={[styles.ctaBtn, { backgroundColor: Tokens.ink }, Shadows.softWarm]}
       >
         <MaterialCommunityIcons name="open-in-new" size={18} color={Tokens.paper} />
-        <Text style={styles.ctaText}>Im Browser öffnen</Text>
+        <Text style={styles.ctaText}>{t('settingsWebApp.cta')}</Text>
       </TouchableOpacity>
 
       <Text style={[styles.urlHint, { color: Tokens.inkFaint }]}>{WEBAPP_URL}</Text>

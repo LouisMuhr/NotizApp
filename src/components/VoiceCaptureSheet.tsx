@@ -41,6 +41,7 @@ import { useNotes } from '../context/NotesContext';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   visible: boolean;
@@ -56,6 +57,7 @@ export default function VoiceCaptureSheet({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { addNote } = useNotes();
+  const { t, locale } = useLanguage();
 
   const [mode, setMode] = useState<'voice' | 'text'>(
     speechAvailable ? initialMode : 'text',
@@ -130,7 +132,7 @@ export default function VoiceCaptureSheet({
     if (!granted) return;
 
     ExpoSpeechRecognitionModule.start({
-      lang: 'de-DE',
+      lang: locale === 'en' ? 'en-US' : 'de-DE',
       continuous: true,
       interimResults: true,
       iosCategory: {
@@ -139,7 +141,7 @@ export default function VoiceCaptureSheet({
         mode: 'default',
       },
     });
-  }, []);
+  }, [locale]);
 
   const stopListening = useCallback(() => {
     if (speechAvailable && ExpoSpeechRecognitionModule) {
@@ -226,7 +228,7 @@ export default function VoiceCaptureSheet({
             variant="headlineSmall"
             style={[styles.title, { color: Tokens.ink }]}
           >
-            {mode === 'voice' ? 'Notiz sprechen' : 'Notiz tippen'}
+            {mode === 'voice' ? t('voiceCapture.titleVoice') : t('voiceCapture.titleText')}
           </Text>
 
           {mode === 'voice' ? (
@@ -256,8 +258,8 @@ export default function VoiceCaptureSheet({
                     ]}
                   >
                     {isListening
-                      ? 'Höre zu…'
-                      : 'Tippe auf das Mikrofon um zu sprechen'}
+                      ? t('voiceCapture.listening')
+                      : t('voiceCapture.tapToSpeak')}
                   </Text>
                 )}
               </View>
@@ -282,19 +284,18 @@ export default function VoiceCaptureSheet({
                   </Pressable>
                 </Animated.View>
                 <Text style={[styles.micLabel, { color: Tokens.inkDim }]}>
-                  {isListening ? 'Tippen zum Stoppen' : 'Tippen zum Sprechen'}
+                  {isListening ? t('voiceCapture.micStop') : t('voiceCapture.micStart')}
                 </Text>
               </View>
 
               {!speechAvailable && (
                 <Text style={[styles.hintText, { color: Tokens.inkFaint }]}>
-                  Spracherkennung benötigt einen Custom Dev Build.{'\n'}
-                  Bitte Text-Modus verwenden.
+                  {t('voiceCapture.speechUnavailable')}
                 </Text>
               )}
               {speechAvailable && permissionGranted === false && (
                 <Text style={[styles.hintText, { color: '#B14A3D' }]}>
-                  Mikrofon-Zugriff verweigert — bitte in den Einstellungen erlauben.
+                  {t('voiceCapture.micDenied')}
                 </Text>
               )}
 
@@ -305,7 +306,7 @@ export default function VoiceCaptureSheet({
                   color={Tokens.inkDim}
                 />
                 <Text style={[styles.switchText, { color: Tokens.inkDim }]}>
-                  Lieber tippen
+                  {t('voiceCapture.switchToText')}
                 </Text>
               </Pressable>
             </>
@@ -316,7 +317,7 @@ export default function VoiceCaptureSheet({
                 multiline
                 value={transcript}
                 onChangeText={setTranscript}
-                placeholder="Notiz eingeben…"
+                placeholder={t('voiceCapture.textPlaceholder')}
                 placeholderTextColor={Tokens.inkFaint}
                 style={[
                   styles.textInput,
@@ -334,7 +335,7 @@ export default function VoiceCaptureSheet({
                   color={Tokens.inkDim}
                 />
                 <Text style={[styles.switchText, { color: Tokens.inkDim }]}>
-                  Lieber sprechen
+                  {t('voiceCapture.switchToVoice')}
                 </Text>
               </Pressable>
             </>
@@ -353,7 +354,7 @@ export default function VoiceCaptureSheet({
               ]}
             >
               <Text style={{ color: Tokens.inkDim, fontWeight: '600', fontSize: 15 }}>
-                Abbrechen
+                {t('voiceCapture.cancel')}
               </Text>
             </Pressable>
 
@@ -374,7 +375,7 @@ export default function VoiceCaptureSheet({
                   fontSize: 15,
                 }}
               >
-                {isSaving ? 'Speichere…' : 'Speichern'}
+                {isSaving ? t('voiceCapture.saving') : t('voiceCapture.save')}
               </Text>
             </Pressable>
           </View>

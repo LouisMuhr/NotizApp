@@ -6,6 +6,8 @@ import { useNotes } from '../context/NotesContext';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
+import { useLanguage } from '../context/LanguageContext';
+import type { AppLocale } from '../i18n';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -27,51 +29,56 @@ interface PlanMeta {
   features: PlanFeature[];
 }
 
-const PLANS: Record<Tier, PlanMeta> = {
-  free: {
-    label: 'Free',
-    icon: 'star-outline',
-    color: Tokens.inkFaint,
-    price: 'Kostenlos',
-    priceDetail: 'Für immer',
-    features: [
-      { icon: 'notebook-outline', text: 'Unbegrenzte Notizen' },
-      { icon: 'tag-outline', text: 'Kategorien & Filter' },
-      { icon: 'bell-outline', text: 'Erinnerungen' },
-      { icon: 'brain', text: 'KI-Synthese 1× pro Woche' },
-    ],
-  },
-  basic: {
-    label: 'Basic',
-    icon: 'star-half-full',
-    color: Tokens.amber,
-    price: '1,99 €',
-    priceDetail: 'pro Monat',
-    features: [
-      { icon: 'check-circle-outline', text: 'Alles aus Free' },
-      { icon: 'brain', text: 'KI-Synthese 1× täglich' },
-      { icon: 'cloud-sync-outline', text: 'Geräte-Synchronisation' },
-      { icon: 'lightning-bolt-outline', text: 'Schnellere Synthese' },
-    ],
-  },
-  pro: {
-    label: 'Pro',
-    icon: 'star',
-    color: Tokens.amberDeep,
-    price: '4,99 €',
-    priceDetail: 'pro Monat',
-    features: [
-      { icon: 'check-circle-outline', text: 'Alles aus Basic' },
-      { icon: 'brain', text: 'KI-Synthese bis 10× täglich' },
-      { icon: 'priority-high', text: 'Prioritäts-Verarbeitung' },
-      { icon: 'graph-outline', text: 'Erweiterte Web-Visualisierung' },
-      { icon: 'headset', text: 'Premium-Support' },
-    ],
-  },
-};
+type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-function formatGermanDate(date: Date): string {
-  return date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+function getPlans(t: Translate): Record<Tier, PlanMeta> {
+  return {
+    free: {
+      label: t('settingsAbo.plans.free.label'),
+      icon: 'star-outline',
+      color: Tokens.inkFaint,
+      price: t('settingsAbo.plans.free.price'),
+      priceDetail: t('settingsAbo.plans.free.priceDetail'),
+      features: [
+        { icon: 'notebook-outline', text: t('settingsAbo.plans.free.features.0') },
+        { icon: 'tag-outline', text: t('settingsAbo.plans.free.features.1') },
+        { icon: 'bell-outline', text: t('settingsAbo.plans.free.features.2') },
+        { icon: 'brain', text: t('settingsAbo.plans.free.features.3') },
+      ],
+    },
+    basic: {
+      label: t('settingsAbo.plans.basic.label'),
+      icon: 'star-half-full',
+      color: Tokens.amber,
+      price: t('settingsAbo.plans.basic.price'),
+      priceDetail: t('settingsAbo.plans.basic.priceDetail'),
+      features: [
+        { icon: 'check-circle-outline', text: t('settingsAbo.plans.basic.features.0') },
+        { icon: 'brain', text: t('settingsAbo.plans.basic.features.1') },
+        { icon: 'cloud-sync-outline', text: t('settingsAbo.plans.basic.features.2') },
+        { icon: 'lightning-bolt-outline', text: t('settingsAbo.plans.basic.features.3') },
+      ],
+    },
+    pro: {
+      label: t('settingsAbo.plans.pro.label'),
+      icon: 'star',
+      color: Tokens.amberDeep,
+      price: t('settingsAbo.plans.pro.price'),
+      priceDetail: t('settingsAbo.plans.pro.priceDetail'),
+      features: [
+        { icon: 'check-circle-outline', text: t('settingsAbo.plans.pro.features.0') },
+        { icon: 'brain', text: t('settingsAbo.plans.pro.features.1') },
+        { icon: 'priority-high', text: t('settingsAbo.plans.pro.features.2') },
+        { icon: 'graph-outline', text: t('settingsAbo.plans.pro.features.3') },
+        { icon: 'headset', text: t('settingsAbo.plans.pro.features.4') },
+      ],
+    },
+  };
+}
+
+function formatLocalizedDate(date: Date, locale: AppLocale): string {
+  const intlLocale = locale === 'en' ? 'en-US' : 'de-DE';
+  return date.toLocaleDateString(intlLocale, { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 // ---------------------------------------------------------------------------
@@ -81,11 +88,13 @@ function formatGermanDate(date: Date): string {
 export default function SettingsAboScreen() {
   const theme = useTheme();
   const { tier, nextAllowedAt } = useNotes();
+  const { t, locale } = useLanguage();
+  const PLANS = getPlans(t);
   const currentPlan = PLANS[tier] ?? PLANS.free;
 
   const nextRunText: string = (() => {
-    if (!nextAllowedAt || nextAllowedAt <= new Date()) return 'Jetzt verfügbar';
-    return formatGermanDate(nextAllowedAt);
+    if (!nextAllowedAt || nextAllowedAt <= new Date()) return t('settingsAbo.nextRunAvailable');
+    return formatLocalizedDate(nextAllowedAt, locale);
   })();
 
   return (
@@ -100,7 +109,7 @@ export default function SettingsAboScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.heroLabel, { color: currentPlan.color }]}>{currentPlan.label}</Text>
-          <Text style={[styles.heroSub, { color: theme.colors.onSurfaceVariant }]}>Dein aktueller Plan</Text>
+          <Text style={[styles.heroSub, { color: theme.colors.onSurfaceVariant }]}>{t('settingsAbo.currentPlan')}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={[styles.heroPrice, { color: theme.colors.onSurface }]}>{currentPlan.price}</Text>
@@ -110,7 +119,7 @@ export default function SettingsAboScreen() {
 
       {/* Current plan features */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        Enthaltene Leistungen
+        {t('settingsAbo.enthaltenLeistungen')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         {currentPlan.features.map((f, i) => (
@@ -130,7 +139,7 @@ export default function SettingsAboScreen() {
 
       {/* Next AI run */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        KI-Synthese
+        {t('settingsAbo.aiSynthesis')}
       </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
         <View style={styles.infoRow}>
@@ -141,7 +150,7 @@ export default function SettingsAboScreen() {
             style={{ marginRight: 10 }}
           />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.infoLabel, { color: theme.colors.onSurface }]}>Nächster Lauf</Text>
+            <Text style={[styles.infoLabel, { color: theme.colors.onSurface }]}>{t('settingsAbo.nextRun')}</Text>
             <Text style={[styles.infoValue, { color: theme.colors.onSurfaceVariant }]}>{nextRunText}</Text>
           </View>
         </View>
@@ -151,10 +160,10 @@ export default function SettingsAboScreen() {
       {tier !== 'pro' && (
         <>
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-            Upgrade
+            {t('settingsAbo.upgrade')}
           </Text>
-          {(tier === 'free' ? (['basic', 'pro'] as const) : (['pro'] as const)).map((t) => (
-            <UpgradePlanCard key={t} targetTier={t} />
+          {(tier === 'free' ? (['basic', 'pro'] as const) : (['pro'] as const)).map((targetTier) => (
+            <UpgradePlanCard key={targetTier} targetTier={targetTier} />
           ))}
         </>
       )}
@@ -165,7 +174,7 @@ export default function SettingsAboScreen() {
         onPress={() => subscriptionService.openUpgradeFlow('basic')}
       >
         <Text style={[styles.restoreText, { color: theme.colors.onSurfaceVariant }]}>
-          Käufe wiederherstellen
+          {t('settingsAbo.restorePurchases')}
         </Text>
       </Pressable>
     </ScrollView>
@@ -178,7 +187,8 @@ export default function SettingsAboScreen() {
 
 function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
   const theme = useTheme();
-  const plan = PLANS[targetTier];
+  const { t } = useLanguage();
+  const plan = getPlans(t)[targetTier];
 
   return (
     <Pressable
@@ -215,7 +225,7 @@ function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
 
       {/* CTA */}
       <View style={[styles.upgradeCTA, { backgroundColor: plan.color }]}>
-        <Text style={styles.upgradeCTAText}>Auf {plan.label} upgraden</Text>
+        <Text style={styles.upgradeCTAText}>{t('settingsAbo.upgradeCta', { plan: plan.label })}</Text>
         <MaterialCommunityIcons name="arrow-right" size={15} color={Tokens.paper} />
       </View>
     </Pressable>

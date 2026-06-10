@@ -38,29 +38,30 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChecklistItem,
   ReminderRecurrence,
-  WEEKDAY_LABELS,
   WEEKDAY_ORDER,
 } from '../models/Note';
+import { useLanguage } from '../context/LanguageContext';
 
 interface Props {
   navigation: any;
   route: any;
 }
 
-const RECURRENCE_OPTIONS: { value: ReminderRecurrence; label: string }[] = [
-  { value: 'once', label: 'Einmalig' },
-  { value: 'daily', label: 'Täglich' },
-  { value: 'weekly', label: 'Wöchentl.' },
-  { value: 'monthly', label: 'Monatl.' },
-];
-
 export default function EditorScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { t, locale } = useLanguage();
   const { notes, categories, addNote, updateNote, addCategory } = useNotes();
   const categorySheetAnim = useRef(new Animated.Value(0)).current;
   const noteId = route.params?.noteId as string | undefined;
   const existingNote = noteId ? notes.find((n) => n.id === noteId) : undefined;
+
+  const RECURRENCE_OPTIONS: { value: ReminderRecurrence; label: string }[] = [
+    { value: 'once', label: t('editor.recurrenceOnce') },
+    { value: 'daily', label: t('editor.recurrenceDaily') },
+    { value: 'weekly', label: t('editor.recurrenceWeekly') },
+    { value: 'monthly', label: t('editor.recurrenceMonthly') },
+  ];
 
   const [title, setTitle] = useState(existingNote?.title ?? '');
   const [content, setContent] = useState(existingNote?.content ?? '');
@@ -94,9 +95,9 @@ export default function EditorScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     navigation.setOptions({
-      title: existingNote ? 'Bearbeiten' : 'Neue Notiz',
+      title: existingNote ? t('editor.titleEdit') : t('editor.titleNew'),
     });
-  }, [existingNote, navigation]);
+  }, [existingNote, navigation, t]);
 
   const saveNoteRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const hasSavedRef = useRef(false);
@@ -234,25 +235,27 @@ export default function EditorScreen({ navigation, route }: Props) {
     }
   }, [reminderAt, recurrence]);
 
+  const dateLocale = locale === 'en' ? 'en-US' : 'de-DE';
+
   const formatTime = (date: Date) =>
-    date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    date.toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' });
 
   const formatReminder = (date: Date) =>
-    date.toLocaleDateString('de-DE', {
+    date.toLocaleDateString(dateLocale, {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
 
   const getReminderSummary = (): string => {
-    if (!reminderAt) return 'Erinnerung setzen';
+    if (!reminderAt) return t('editor.reminderSet');
     const time = formatTime(reminderAt);
     switch (recurrence) {
       case 'daily':
-        return `Täglich um ${time}`;
+        return t('editor.reminderDaily', { time });
       case 'weekly':
-        return `Jeden ${WEEKDAY_LABELS[weekday]} um ${time}`;
+        return t('editor.reminderWeekly', { weekday: t('editor.weekdays')[weekday], time });
       case 'monthly':
-        return `Jeden ${dayOfMonth}. um ${time}`;
+        return t('editor.reminderMonthly', { day: dayOfMonth, time });
       default:
         return formatReminder(reminderAt);
     }
@@ -275,7 +278,7 @@ export default function EditorScreen({ navigation, route }: Props) {
         {/* Pin + Title */}
         <View style={styles.titleRow}>
           <TextInput
-            label="Titel"
+            label={t('editor.titlePlaceholder')}
             value={title}
             onChangeText={setTitle}
             mode="outlined"
@@ -300,7 +303,7 @@ export default function EditorScreen({ navigation, route }: Props) {
 
         {/* Content */}
         <TextInput
-          label="Inhalt"
+          label={t('editor.contentPlaceholder')}
           value={content}
           onChangeText={setContent}
           mode="outlined"
@@ -343,7 +346,7 @@ export default function EditorScreen({ navigation, route }: Props) {
             color: showChecklist ? theme.colors.secondary : theme.colors.onSurfaceVariant,
           }}
         >
-          Checkliste{checklist.length > 0 ? ` (${checklist.filter((i) => i.checked).length}/${checklist.length})` : ''}
+          {t('editor.checklist')}{checklist.length > 0 ? ` (${checklist.filter((i) => i.checked).length}/${checklist.length})` : ''}
         </Chip>
 
         {/* Checklist Items */}
@@ -382,7 +385,7 @@ export default function EditorScreen({ navigation, route }: Props) {
               <TextInput
                 value={newChecklistText}
                 onChangeText={setNewChecklistText}
-                placeholder="Neuer Punkt..."
+                placeholder={t('editor.newItemPlaceholder')}
                 mode="outlined"
                 dense
                 style={[styles.input, { flex: 1 }]}
@@ -409,7 +412,7 @@ export default function EditorScreen({ navigation, route }: Props) {
 
         {/* Category */}
         <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
-          KATEGORIE
+          {t('editor.categorySection')}
         </Text>
         <Pressable onPress={openCategorySheet} style={styles.categoryTrigger}>
           <MaterialCommunityIcons name="tag-outline" size={15} color={Tokens.inkDim} />
@@ -450,7 +453,7 @@ export default function EditorScreen({ navigation, route }: Props) {
               <View style={styles.sheetHandleRow}>
                 <View style={[styles.sheetHandle, { backgroundColor: Tokens.rule }]} />
               </View>
-              <Text style={styles.sheetTitle}>Kategorie</Text>
+              <Text style={styles.sheetTitle}>{t('editor.categorySheetTitle')}</Text>
 
               <ScrollView
                 showsVerticalScrollIndicator={false}
@@ -487,7 +490,7 @@ export default function EditorScreen({ navigation, route }: Props) {
                 style={[styles.newCategoryBtn, { borderColor: Tokens.rule }]}
               >
                 <MaterialCommunityIcons name="plus" size={16} color={Tokens.inkDim} />
-                <Text style={[styles.newCategoryText, { color: Tokens.inkDim }]}>Neue Kategorie</Text>
+                <Text style={[styles.newCategoryText, { color: Tokens.inkDim }]}>{t('editor.newCategory')}</Text>
               </Pressable>
             </Animated.View>
           </View>
@@ -497,10 +500,10 @@ export default function EditorScreen({ navigation, route }: Props) {
         <View style={styles.feedsThreadsRow}>
           <View style={styles.feedsThreadsLabel}>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }}>
-              In Threads einbeziehen
+              {t('editor.includeInThreads')}
             </Text>
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-              Wird vom KI-Worker verknüpft
+              {t('editor.includeInThreadsHint')}
             </Text>
           </View>
           <Switch
@@ -515,7 +518,7 @@ export default function EditorScreen({ navigation, route }: Props) {
 
         {/* Reminder */}
         <Text style={[styles.sectionLabel, { color: theme.colors.onSurfaceVariant }]}>
-          ERINNERUNG
+          {t('editor.reminderSection')}
         </Text>
 
         <SegmentedButtons
@@ -563,7 +566,7 @@ export default function EditorScreen({ navigation, route }: Props) {
                   color: weekday === wd ? theme.colors.primary : theme.colors.onSurfaceVariant,
                 }}
               >
-                {WEEKDAY_LABELS[wd].substring(0, 2)}
+                {t('editor.weekdaysShort')[wd]}
               </Chip>
             ))}
           </View>
@@ -573,7 +576,7 @@ export default function EditorScreen({ navigation, route }: Props) {
         {recurrence === 'monthly' && (
           <View style={styles.dayOfMonthRow}>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              Am
+              {t('editor.onDay')}
             </Text>
             <View style={styles.daySelector}>
               <IconButton
@@ -595,7 +598,7 @@ export default function EditorScreen({ navigation, route }: Props) {
               />
             </View>
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-              des Monats
+              {t('editor.ofMonth')}
             </Text>
           </View>
         )}
@@ -659,7 +662,7 @@ export default function EditorScreen({ navigation, route }: Props) {
           labelStyle={styles.saveBtnLabel}
           buttonColor={theme.colors.primary}
         >
-          Speichern
+          {t('editor.save')}
         </Button>
       </ScrollView>
 
@@ -670,12 +673,12 @@ export default function EditorScreen({ navigation, route }: Props) {
           onDismiss={() => setNewCategoryDialog(false)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>Neue Kategorie</Dialog.Title>
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('editor.newCategory')}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               value={newCategoryName}
               onChangeText={setNewCategoryName}
-              placeholder="Name..."
+              placeholder={t('editor.newCategoryPlaceholder')}
               mode="outlined"
               dense
               outlineStyle={{ borderRadius: 12, borderWidth: 1 }}
@@ -687,10 +690,10 @@ export default function EditorScreen({ navigation, route }: Props) {
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setNewCategoryDialog(false)} textColor={theme.colors.onSurfaceVariant}>
-              Abbrechen
+              {t('common.cancel')}
             </Button>
             <Button onPress={handleAddCategory} mode="contained" style={{ borderRadius: 12 }}>
-              Hinzufügen
+              {t('common.add')}
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -703,15 +706,15 @@ export default function EditorScreen({ navigation, route }: Props) {
           onDismiss={() => setShowResetDialog(false)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>Alle erledigt!</Dialog.Title>
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('editor.allDoneTitle')}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>
-              Checkliste zurücksetzen, um sie erneut zu verwenden?
+              {t('editor.resetChecklistBody')}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setShowResetDialog(false)} textColor={theme.colors.onSurfaceVariant}>
-              Behalten
+              {t('common.keep')}
             </Button>
             <Button
               onPress={() => {
@@ -721,13 +724,13 @@ export default function EditorScreen({ navigation, route }: Props) {
               mode="contained"
               style={{ borderRadius: 12 }}
             >
-              Zurücksetzen
+              {t('common.reset')}
             </Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
 
-      <Toast visible={snackbarVisible} message="Gespeichert" />
+      <Toast visible={snackbarVisible} message={t('editor.savedToast')} />
     </KeyboardAvoidingView>
   );
 }

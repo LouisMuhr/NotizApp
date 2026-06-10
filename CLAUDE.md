@@ -23,9 +23,9 @@ c:/NotizApp/
 ├── NotizApp/              # Main Expo app (primary working directory)
 │   ├── App.tsx            # Root component, provider tree
 │   ├── src/
-│   │   ├── components/    # FilterBar, GradientCard, NoteCard,
-│   │   │                  #   QuickCaptureFAB, VoiceCaptureSheet
-│   │   ├── context/       # NotesContext, ThoughtsContext, ThemeContext
+│   │   ├── components/    # FilterBar, GradientCard, NoteCard, QuickCaptureFAB, VoiceCaptureSheet
+│   │   ├── context/       # NotesContext, ThoughtsContext, ThemeContext, LanguageContext
+│   │   ├── i18n/          # index.ts (I18n setup), locales/de.ts + en.ts
 │   │   ├── models/        # Note.ts, Thought.ts (pure TypeScript types)
 │   │   ├── navigation/    # AppNavigator (Stack + BottomTabs)
 │   │   ├── screens/       # HomeScreen, EditorScreen, NoteDetailScreen,
@@ -34,7 +34,7 @@ c:/NotizApp/
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, remoteNotes, remoteThoughts, deviceId
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
-│   │   └── utils/         # notifications, haptics, …
+│   │   └── utils/         # notifications, haptics, timeGrouping, …
 │   ├── bridge/            # Vercel serverless bridge API + worker
 │   │   ├── api/           # Serverless functions (note.ts, thought.ts)
 │   │   ├── bookmarklet/   # Browser bookmarklet source
@@ -66,6 +66,7 @@ c:/NotizApp/
 | IDs | uuid v13 + react-native-get-random-values |
 | Bridge API | Vercel serverless (ESM TypeScript) |
 | Share-Target | `expo-share-extension` (iOS) + `react-native-receive-sharing-intent` (Android) |
+| i18n | i18n-js v4 + expo-localization (DE/EN, Geräte-Sprache + manueller Override) |
 | Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
 ---
@@ -153,18 +154,24 @@ Inter (UI/Body) via `expo-font` in App.tsx. Kategorien: Hue-Rotation via
 Neue Themedateien: `typography.ts`, `categoryAccents.ts`.
 
 ### App-Icon (Velm)
-„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: lokaler Design-Handoff `Velm Icon - Final.html` (gitignored).
-PNGs reproduzierbar aus SVG: `node scripts/generate-icons.mjs` → `assets/*.png`.
-Als Komponente: `src/components/VelmLogo.tsx` (App, RN-SVG), `webapp/components/VelmIcon.tsx` (Web),
-Webapp-Favicon: `webapp/app/icon.svg`.
+„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: lokaler Design-Handoff
+`Velm Icon - Final.html` (gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`.
+Komponente: `src/components/VelmLogo.tsx` (App), `webapp/components/VelmIcon.tsx` (Web), Favicon: `webapp/app/icon.svg`.
+
+### i18n (Deutsch/Englisch)
+`src/i18n/index.ts` — i18n-js `I18n` Instanz (`de`/`en`), `defaultLocale = 'de'`, `enableFallback = true`,
+exportiert `t()`, `detectDeviceLocale()`, `setI18nLocale()`, Typ `AppLocale`. `src/i18n/locales/de.ts`/`en.ts` —
+verschachtelte Dictionaries, ein Namespace pro Screen (`en.ts` ist `typeof de`-typisiert für Parität);
+Plurale via `_one`/`_other`, Interpolation via `{{var}}`. `src/context/LanguageContext.tsx` —
+`useLanguage()` → `{ locale, preference, setPreference, t }`, `preference: 'system'|'de'|'en'` in
+AsyncStorage (`@notizapp_language`); Umschalter unter Settings → Darstellung. **Konventionen**:
+Navigation-Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
+`locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
 ### Webapp (graph visualizer)
-`webapp/` ist ein eigenständiges Next.js-Projekt. Es liest Notizen, Threads und
-Ähnlichkeiten direkt aus Supabase und stellt sie als interaktiven Force-Graph dar.
-- `app/page.tsx` — Haupt-UI (Filter-Pills, Graph, Overlays)
-- `app/api/graph/route.ts` — API-Route, die Supabase-Daten aggregiert
-- `components/Graph.tsx` — Force-Graph (dynamisch geladen, kein SSR)
-- Eigene `node_modules` und `package.json` — unabhängig vom Expo-App-Toolchain
+`webapp/` ist ein eigenständiges Next.js-Projekt (eigene `node_modules`/`package.json`). Liest Notizen,
+Threads und Ähnlichkeiten direkt aus Supabase und stellt sie als interaktiven Force-Graph dar:
+`app/page.tsx` (Haupt-UI), `app/api/graph/route.ts` (Aggregation), `components/Graph.tsx` (dynamisch, kein SSR).
 
 ### Synthese (Thoughts → Threads)
 Läuft **on-demand**: Der User drückt in `ThreadsScreen` auf „Synthetisieren" →
@@ -173,14 +180,8 @@ pro Tier (free 1×/Woche, basic 1×/Tag, pro 10×/Tag) über die `profiles`-Tabe
 (`ai_last_run`, `ai_runs_today`, `ai_day_reset`), ruft dann die Anthropic-API direkt
 auf und schreibt Threads zurück. **Kein täglicher Cron-Job mehr.**
 
-`bridge/worker/brainstorm-worker.mjs` / `similarity-worker.mjs` — Node.js ESM CLI-Helfer
-(keine extra Deps), nur noch für manuelle/lokale Nutzung:
-```bash
-node bridge/worker/brainstorm-worker.mjs fetch          # feed-notes + active threads → stdout JSON
-node bridge/worker/brainstorm-worker.mjs write <json>   # write synthesis back
-node bridge/worker/brainstorm-worker.mjs add "Gedanke"  # push single thought
-```
-Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` aus `bridge/worker/.env`
+`bridge/worker/brainstorm-worker.mjs` / `similarity-worker.mjs` — Node.js ESM CLI-Helfer, nur für
+manuelle/lokale Nutzung (`fetch` / `write <json>` / `add "Gedanke"`). Credentials aus `bridge/worker/.env`
 → `NotizApp/.env` → `EXPO_PUBLIC_*`.
 
 ---

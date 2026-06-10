@@ -1,26 +1,29 @@
 import { Note } from '../models/Note';
+import { t as translate } from '../i18n';
 
 export interface NoteGroup {
   label: string;
   notes: Note[];
 }
 
-function getBucket(noteDate: Date, now: Date): string {
+type TFunc = typeof translate;
+
+const BUCKET_KEYS = ['timeline.bucketOlder', 'timeline.bucketLastWeek', 'timeline.bucketLast3Days', 'timeline.bucketToday'] as const;
+
+function getBucketKey(noteDate: Date, now: Date): typeof BUCKET_KEYS[number] {
   const diffDays = (now.getTime() - noteDate.getTime()) / (1000 * 60 * 60 * 24);
-  if (diffDays < 1) return 'Heute';
-  if (diffDays < 3) return 'Letzte 3 Tage';
-  if (diffDays < 14) return 'Letzte Woche';
-  return 'Vor >2 Wochen';
+  if (diffDays < 1) return 'timeline.bucketToday';
+  if (diffDays < 3) return 'timeline.bucketLast3Days';
+  if (diffDays < 14) return 'timeline.bucketLastWeek';
+  return 'timeline.bucketOlder';
 }
 
-const BUCKET_ORDER = ['Vor >2 Wochen', 'Letzte Woche', 'Letzte 3 Tage', 'Heute'];
-
-export function groupNotesByTime(notes: Note[], referenceDate: Date): NoteGroup[] {
+export function groupNotesByTime(notes: Note[], referenceDate: Date, t: TFunc = translate): NoteGroup[] {
   const groups: Record<string, Note[]> = {
-    'Heute': [],
-    'Letzte 3 Tage': [],
-    'Letzte Woche': [],
-    'Vor >2 Wochen': [],
+    'timeline.bucketToday': [],
+    'timeline.bucketLast3Days': [],
+    'timeline.bucketLastWeek': [],
+    'timeline.bucketOlder': [],
   };
 
   const sorted = [...notes].sort(
@@ -28,13 +31,13 @@ export function groupNotesByTime(notes: Note[], referenceDate: Date): NoteGroup[
   );
 
   for (const note of sorted) {
-    const bucket = getBucket(new Date(note.createdAt), referenceDate);
-    groups[bucket].push(note);
+    const bucketKey = getBucketKey(new Date(note.createdAt), referenceDate);
+    groups[bucketKey].push(note);
   }
 
-  return BUCKET_ORDER
-    .filter((label) => groups[label].length > 0)
-    .map((label) => ({ label, notes: groups[label] }));
+  return BUCKET_KEYS
+    .filter((key) => groups[key].length > 0)
+    .map((key) => ({ label: t(key), notes: groups[key] }));
 }
 
 export function calculateReadTime(content: string): number {
@@ -46,14 +49,14 @@ export function isNewNote(noteCreatedAt: string): boolean {
   return diffMs < 3 * 24 * 60 * 60 * 1000;
 }
 
-export function formatRelativeDate(iso: string): string {
+export function formatRelativeDate(iso: string, t: TFunc = translate): string {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60_000);
   const hours = Math.floor(diff / 3_600_000);
   const days = Math.floor(diff / 86_400_000);
-  if (minutes < 1) return 'gerade eben';
-  if (minutes < 60) return `vor ${minutes} Min.`;
-  if (hours < 24) return `vor ${hours} Std.`;
-  if (days === 1) return 'gestern';
-  return `vor ${days} Tagen`;
+  if (minutes < 1) return t('threads.relativeJustNow');
+  if (minutes < 60) return t('threads.relativeMinutesAgo', { count: minutes });
+  if (hours < 24) return t('threads.relativeHoursAgo', { count: hours });
+  if (days === 1) return t('threads.relativeYesterday');
+  return t('threads.relativeDaysAgo', { count: days });
 }

@@ -13,6 +13,7 @@ import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
+import { useLanguage } from '../context/LanguageContext';
 
 // ---------------------------------------------------------------------------
 // Archived Note Row
@@ -27,11 +28,12 @@ interface ArchiveRowProps {
 
 function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowProps) {
   const theme = useTheme();
+  const { t, locale } = useLanguage();
   const accent = getCategoryAccent(item.category);
   const swipeableRef = useRef<Swipeable>(null);
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
+    new Date(iso).toLocaleDateString(locale === 'en' ? 'en-US' : 'de-DE', { day: '2-digit', month: 'short' });
 
   const renderLeftActions = (
     _progress: Animated.AnimatedInterpolation<number>,
@@ -43,7 +45,7 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons name="restore" size={24} color={Tokens.amberDeep} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>Wiederherstellen</Text>
+        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>{t('archive.swipeRestore')}</Text>
       </View>
     );
   };
@@ -58,7 +60,7 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons name="trash-can-outline" size={24} color={theme.colors.error} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.error }]}>Löschen</Text>
+        <Text style={[styles.swipeLabel, { color: theme.colors.error }]}>{t('archive.swipeDelete')}</Text>
       </View>
     );
   };
@@ -88,7 +90,7 @@ function ArchiveRow({ item, onRestore, onRequestDelete, onPress }: ArchiveRowPro
         <View style={[styles.accentStrip, { backgroundColor: accent.soft }]} />
         <View style={styles.body}>
           <Text style={styles.title} numberOfLines={1}>
-            {item.title || 'Ohne Titel'}
+            {item.title || t('common.untitled')}
           </Text>
           {item.content ? (
             <Text style={styles.preview} numberOfLines={2}>
@@ -120,10 +122,11 @@ interface ArchivedThreadRowProps {
 
 function ArchivedThreadRow({ thread, onRestore, onRequestDelete }: ArchivedThreadRowProps) {
   const theme = useTheme();
+  const { t, locale } = useLanguage();
   const swipeableRef = useRef<Swipeable>(null);
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
+    new Date(iso).toLocaleDateString(locale === 'en' ? 'en-US' : 'de-DE', { day: '2-digit', month: 'short' });
 
   const renderLeftActions = (
     _progress: Animated.AnimatedInterpolation<number>,
@@ -135,7 +138,7 @@ function ArchivedThreadRow({ thread, onRestore, onRequestDelete }: ArchivedThrea
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons name="restore" size={24} color={Tokens.amberDeep} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>Wiederherstellen</Text>
+        <Text style={[styles.swipeLabel, { color: Tokens.amberDeep }]}>{t('archive.swipeRestore')}</Text>
       </View>
     );
   };
@@ -150,7 +153,7 @@ function ArchivedThreadRow({ thread, onRestore, onRequestDelete }: ArchivedThrea
         <Animated.View style={{ transform: [{ scale }] }}>
           <MaterialCommunityIcons name="trash-can-outline" size={24} color={theme.colors.error} />
         </Animated.View>
-        <Text style={[styles.swipeLabel, { color: theme.colors.error }]}>Löschen</Text>
+        <Text style={[styles.swipeLabel, { color: theme.colors.error }]}>{t('archive.swipeDelete')}</Text>
       </View>
     );
   };
@@ -190,7 +193,7 @@ function ArchivedThreadRow({ thread, onRestore, onRequestDelete }: ArchivedThrea
             <View style={styles.threadMeta}>
               <MaterialCommunityIcons name="creation" size={13} color={Tokens.amber} style={{ marginRight: 4 }} />
               <Text style={styles.categoryLabel2}>
-                {thread.noteCount} {thread.noteCount === 1 ? 'Notiz' : 'Notizen'}
+                {t('archive.noteCount', { count: thread.noteCount })}
               </Text>
             </View>
             <Text style={styles.dateText}>{formatDate(thread.updatedAt)}</Text>
@@ -215,6 +218,7 @@ type DeleteTarget =
 
 export default function ArchiveScreen() {
   const theme = useTheme();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { archivedNotes, restoreNote, deleteNotePermanently } = useNotes();
   const { threads, restoreThread, deleteThreadPermanently } = useThoughts();
@@ -235,8 +239,8 @@ export default function ArchiveScreen() {
   const totalCount = archivedNotes.length + archivedThreads.length;
 
   const deleteLabel = deleteTarget?.type === 'thread'
-    ? `Thread „${deleteTarget.item.title}" wird unwiderruflich gelöscht.`
-    : `„${(deleteTarget?.item as Note)?.title || 'Ohne Titel'}" wird unwiderruflich gelöscht.`;
+    ? t('archive.deleteThreadBody', { title: deleteTarget.item.title })
+    : t('archive.deleteNoteBody', { title: (deleteTarget?.item as Note)?.title || t('common.untitled') });
 
   const items: ArchiveItem[] = [
     ...archivedThreads.map((t, i) => ({ type: 'thread' as const, thread: t, index: i })),
@@ -250,9 +254,9 @@ export default function ArchiveScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>
-          {totalCount === 0 ? 'Leer' : `${totalCount} Elemente`}
+          {totalCount === 0 ? t('archive.empty') : t('archive.itemsCount', { count: totalCount })}
         </Text>
-        <Text style={styles.headerTitle}>Archiv</Text>
+        <Text style={styles.headerTitle}>{t('archive.title')}</Text>
       </View>
 
       {totalCount === 0 ? (
@@ -261,10 +265,10 @@ export default function ArchiveScreen() {
             <MaterialCommunityIcons name="archive-outline" size={48} color={Tokens.amberDeep} />
           </View>
           <Text variant="titleMedium" style={[styles.emptyTitle, { color: theme.colors.onSurface }]}>
-            Archiv ist leer
+            {t('archive.emptyTitle')}
           </Text>
           <Text variant="bodySmall" style={[styles.emptySubtitle, { color: theme.colors.onSurfaceVariant }]}>
-            Gelöschte Notizen und archivierte Threads landen hier
+            {t('archive.emptyHint')}
           </Text>
         </View>
       ) : (
@@ -279,12 +283,12 @@ export default function ArchiveScreen() {
               <>
                 {showThreadHeader && (
                   <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Threads</Text>
+                    <Text style={styles.sectionTitle}>{t('archive.sectionThreads')}</Text>
                   </View>
                 )}
                 {showNoteHeader && (
                   <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Notizen</Text>
+                    <Text style={styles.sectionTitle}>{t('archive.sectionNotes')}</Text>
                   </View>
                 )}
                 {item.type === 'thread' ? (
@@ -316,13 +320,13 @@ export default function ArchiveScreen() {
           onDismiss={() => setDeleteTarget(null)}
           style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
         >
-          <Dialog.Title style={{ color: theme.colors.onSurface }}>Endgültig löschen?</Dialog.Title>
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('archive.deleteDialogTitle')}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{deleteLabel}</Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDeleteTarget(null)} textColor={theme.colors.onSurfaceVariant}>
-              Abbrechen
+              {t('common.cancel')}
             </Button>
             <Button
               onPress={handleDelete}
@@ -331,7 +335,7 @@ export default function ArchiveScreen() {
               textColor={theme.colors.error}
               style={{ borderRadius: 12 }}
             >
-              Löschen
+              {t('common.delete')}
             </Button>
           </Dialog.Actions>
         </Dialog>
