@@ -171,7 +171,7 @@ export default function SettingsAboScreen() {
       {/* Restore */}
       <Pressable
         style={styles.restoreBtn}
-        onPress={() => subscriptionService.openUpgradeFlow('basic')}
+        onPress={() => subscriptionService.restorePurchases()}
       >
         <Text style={[styles.restoreText, { color: theme.colors.onSurfaceVariant }]}>
           {t('settingsAbo.restorePurchases')}

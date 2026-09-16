@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { getSupabase } from './supabaseClient';
+import { t } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +36,13 @@ export interface SubscriptionService {
 
   /** Opens the upgrade flow for the given tier. Placeholder for now. */
   openUpgradeFlow(targetTier: 'basic' | 'pro'): Promise<void>;
+
+  /**
+   * Restores previously purchased subscriptions.
+   * Required by the App Store for auto-renewable subscriptions.
+   * Placeholder until a payment provider is wired up.
+   */
+  restorePurchases(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +131,20 @@ export class SupabaseOnlySubscription implements SubscriptionService {
   async openUpgradeFlow(targetTier: 'basic' | 'pro'): Promise<void> {
     const label = targetTier === 'basic' ? 'Basic' : 'Pro';
     Alert.alert(
-      `Upgrade auf ${label}`,
-      'Bezahl-Pläne sind in Kürze verfügbar. Bleib dran!',
-      [{ text: 'OK' }],
+      t('subscription.upgradeTitle', { tier: label }),
+      t('subscription.upgradeBody'),
+      [{ text: t('common.ok') }],
+    );
+  }
+
+  async restorePurchases(): Promise<void> {
+    // Noch kein Payment-Provider angebunden — es gibt nichts wiederherzustellen.
+    // Sobald RevenueCat/StoreKit steht, hier die echte Restore-Logik einsetzen
+    // und danach refreshSubscription() im NotesContext ausloesen.
+    Alert.alert(
+      t('subscription.restoreTitle'),
+      t('subscription.restoreBody'),
+      [{ text: t('common.ok') }],
     );
   }
 }
