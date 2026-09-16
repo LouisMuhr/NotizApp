@@ -53,26 +53,100 @@ function checkRateLimit(profile: ProfileRow): string | null {
 // Profile update helper
 // ---------------------------------------------------------------------------
 
-async function updateProfile(
+/**
+ * Bucht den Lauf, BEVOR die teure Anthropic-Anfrage laeuft ("claim").
+ *
+ * Der PATCH filtert zusaetzlich auf den gelesenen ai_last_run-Wert. Damit gewinnt
+ * bei zwei parallelen Requests genau einer: der zweite matcht keine Zeile mehr,
+ * bekommt 0 Rows zurueck und wird abgewiesen. Ohne diesen Filter wuerden beide
+ * den Rate-Limit-Check passieren (Read-dann-Write-Race).
+ *
+ * Gibt true zurueck, wenn der Lauf fuer diesen Request reserviert wurde.
+ */
+async function claimRun(
   supabaseUrl: string,
   serviceKey: string,
   uid: string,
   profile: ProfileRow,
-): Promise<void> {
+): Promise<boolean> {
   const now = new Date().toISOString();
   const todayUtc = now.slice(0, 10);
   const isNewDay = profile.ai_day_reset !== todayUtc;
   const runsToday = isNewDay ? 1 : (profile.ai_runs_today ?? 0) + 1;
 
-  await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${uid}`, {
-    method: 'PATCH',
-    headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
-    body: JSON.stringify({
-      ai_last_run: now,
-      ai_runs_today: runsToday,
-      ai_day_reset: todayUtc,
-    }),
-  });
+  const lastRunFilter = profile.ai_last_run === null
+    ? 'ai_last_run=is.null'
+    : `ai_last_run=eq.${encodeURIComponent(profile.ai_last_run)}`;
+
+  const r = await fetch(
+    `${supabaseUrl}/rest/v1/profiles?id=eq.${uid}&${lastRunFilter}`,
+    {
+      method: 'PATCH',
+      headers: { ...sbHeaders(serviceKey), Prefer: 'return=representation' },
+      body: JSON.stringify({
+        ai_last_run: now,
+        ai_runs_today: runsToday,
+        ai_day_reset: todayUtc,
+      }),
+    },
+  );
+
+  if (!r.ok) return false;
+  const rows = await r.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+/**
+ * Gibt einen reservierten Lauf wieder frei — nur fuer Fehler, bei denen uns
+ * nichts berechnet wurde (z. B. Anthropic antwortet gar nicht erst).
+ */
+async function releaseRun(
+  supabaseUrl: string,
+  serviceKey: string,
+  uid: string,
+  profile: ProfileRow,
+): Promise<void> {
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${uid}`, {
+      method: 'PATCH',
+      headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        ai_last_run: profile.ai_last_run,
+        ai_runs_today: profile.ai_runs_today ?? 0,
+        ai_day_reset: profile.ai_day_reset,
+      }),
+    });
+  } catch {
+    // Best effort — ein nicht freigegebener Lauf ist unschoen, aber harmlos.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auth — Token gegen Supabase verifizieren (Signatur + Ablauf)
+// ---------------------------------------------------------------------------
+
+/**
+ * Prueft das Access-Token beim Supabase-Auth-Server und gibt die User-ID zurueck,
+ * oder null wenn das Token ungueltig/abgelaufen ist.
+ *
+ * Bewusst per /auth/v1/user statt lokaler Signaturpruefung: funktioniert mit
+ * HS256 wie mit den neueren asymmetrischen Signing-Keys, ohne JWT-Secret im Env.
+ */
+async function verifyToken(
+  supabaseUrl: string,
+  serviceKey: string,
+  token: string,
+): Promise<string | null> {
+  try {
+    const r = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    const user: any = await r.json();
+    return typeof user?.id === 'string' && user.id ? user.id : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,19 +279,15 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // user_id aus Supabase JWT
+    // user_id aus Supabase JWT — Token MUSS serverseitig verifiziert werden.
+    // Ein reiner base64-Decode wäre faelschbar: dieser Endpoint arbeitet mit dem
+    // Service-Role-Key, RLS greift hier also nicht.
     const authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) { res.status(401).json({ error: 'missing auth token' }); return; }
 
-    let userId: string;
-    try {
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
-      userId = payload.sub;
-      if (!userId) throw new Error('no sub');
-    } catch {
-      res.status(401).json({ error: 'invalid token' }); return;
-    }
+    const userId = await verifyToken(SUPABASE_URL, SUPABASE_SERVICE_KEY, token);
+    if (!userId) { res.status(401).json({ error: 'invalid token' }); return; }
 
     // -----------------------------------------------------------------------
     // Rate-limit check
@@ -256,6 +326,17 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    // Lauf sofort reservieren — schliesst das Read-dann-Write-Fenster, in dem
+    // zwei parallele Requests beide den Check oben passieren wuerden.
+    const claimed = await claimRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+    if (!claimed) {
+      res.status(429).json({
+        error: 'limit_reached',
+        next_allowed_at: checkRateLimit({ ...profile, ai_last_run: new Date().toISOString() }),
+      });
+      return;
+    }
+
     // -----------------------------------------------------------------------
     // Daten laden
     // -----------------------------------------------------------------------
@@ -267,8 +348,7 @@ export default async function handler(req: any, res: any) {
     ]);
 
     if (!feedNotes.length) {
-      // Auch ohne Feed-Notizen den Lauf als "verbraucht" markieren
-      await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+      // Lauf ist bereits reserviert und gilt als verbraucht.
       res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
       return;
     }
@@ -291,6 +371,9 @@ export default async function handler(req: any, res: any) {
     });
 
     if (!anthropicRes.ok) {
+      // Anthropic hat den Call abgelehnt — uns wurde nichts berechnet, also
+      // bekommt der User seinen Lauf zurueck.
+      await releaseRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
       res.status(500).json({ error: 'anthropic API: ' + anthropicRes.status + ' ' + await anthropicRes.text() });
       return;
     }
@@ -397,11 +480,8 @@ export default async function handler(req: any, res: any) {
       similarities_written = simRows.length;
     }
 
-    // -----------------------------------------------------------------------
-    // Update profile: ai_last_run, ai_runs_today, ai_day_reset
-    // -----------------------------------------------------------------------
-    await updateProfile(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
-
+    // ai_last_run / ai_runs_today / ai_day_reset wurden bereits vor dem
+    // Anthropic-Call per claimRun() gesetzt.
     res.status(200).json({ ok: true, threads_created, threads_updated, similarities_written });
   } catch (e: any) {
     try { res.status(500).json({ error: 'crash: ' + (e?.message || String(e)) }); }
