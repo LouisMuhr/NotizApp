@@ -358,6 +358,12 @@ const en: typeof de = {
     how4: 'Click "Save" — the note appears instantly in the app',
     tip: 'The bookmarklet works on any computer — Windows, Mac or Linux. You just need a modern browser.',
   },
+  subscription: {
+    upgradeTitle: 'Upgrade to {{tier}}',
+    upgradeBody: 'Paid plans are coming soon. Stay tuned!',
+    restoreTitle: 'Restore purchases',
+    restoreBody: 'There are no purchases to restore yet — paid plans are not available so far.',
+  },
   settingsAbo: {
     currentPlan: 'Your current plan',
     enthaltenLeistungen: 'Included features',

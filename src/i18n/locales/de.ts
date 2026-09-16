@@ -356,6 +356,12 @@ export default {
     how4: 'Auf "Speichern" klicken — Notiz erscheint sofort in der App',
     tip: 'Das Bookmarklet funktioniert auf jedem Computer — egal ob Windows, Mac oder Linux. Du brauchst nur einen modernen Browser.',
   },
+  subscription: {
+    upgradeTitle: 'Upgrade auf {{tier}}',
+    upgradeBody: 'Bezahl-Pläne sind in Kürze verfügbar. Bleib dran!',
+    restoreTitle: 'Käufe wiederherstellen',
+    restoreBody: 'Es gibt derzeit keine Käufe zum Wiederherstellen — Bezahl-Pläne sind noch nicht verfügbar.',
+  },
   settingsAbo: {
     currentPlan: 'Dein aktueller Plan',
     enthaltenLeistungen: 'Enthaltene Leistungen',
