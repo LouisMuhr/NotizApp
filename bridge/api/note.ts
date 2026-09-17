@@ -1,9 +1,20 @@
 import { randomUUID } from 'node:crypto';
+import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast, Tier } from './_lib/supabaseAdmin';
 
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+/**
+ * Bookmarklet-Endpunkt. Auth ueber den persoenlichen Bookmarklet-Schluessel
+ * (?token= oder Authorization: Bearer), der per SHA-256-Hash auf genau ein
+ * profiles-Row zeigt. Die Ziel-User-ID ergibt sich aus dem Schluessel —
+ * ein user_id im Body wird ignoriert (X1).
+ */
+async function resolveUserByToken(env: { SUPABASE_URL: string; SUPABASE_SERVICE_KEY: string }, token: string) {
+  const r = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/profiles?bookmarklet_token_hash=eq.${sha256(token)}&select=id,tier`,
+    { headers: sbHeaders(env.SUPABASE_SERVICE_KEY) },
+  );
+  if (!r.ok) return null;
+  const rows: Array<{ id: string; tier: Tier }> = await r.json();
+  return rows[0] ?? null;
 }
 
 export default async function handler(req: any, res: any) {
@@ -18,31 +29,28 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-    const BRIDGE_USER_ID = process.env.BRIDGE_USER_ID;
-    const BEARER = process.env.MCP_BEARER_TOKEN;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !BRIDGE_USER_ID || !BEARER) {
-      res.status(500).json({
-        error: 'missing env',
-        have: {
-          SUPABASE_URL: !!SUPABASE_URL,
-          SUPABASE_SERVICE_KEY: !!SUPABASE_SERVICE_KEY,
-          BRIDGE_USER_ID: !!BRIDGE_USER_ID,
-          MCP_BEARER_TOKEN: !!BEARER,
-        },
-      });
+    const env = readEnv();
+    if (!env) {
+      res.status(500).json({ error: 'missing env' });
       return;
     }
+    const SUPABASE_URL = env.SUPABASE_URL;
+    const SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
 
-    const headerAuth = req.headers['authorization'] || req.headers['Authorization'];
     const queryToken = req.query?.token;
-    const ok =
-      (headerAuth && headerAuth === `Bearer ${BEARER}`) ||
-      (typeof queryToken === 'string' && queryToken === BEARER);
-    if (!ok) {
+    const token = bearerToken(req) ?? (typeof queryToken === 'string' ? queryToken : null);
+    if (!token || token.length < 32) {
       res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const owner = await resolveUserByToken(env, token);
+    if (!owner) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const minTier = (process.env.BOOKMARKLET_MIN_TIER ?? 'basic') as Tier;
+    if (!tierAtLeast(owner.tier, minTier)) {
+      res.status(403).json({ error: 'tier_required', min_tier: minTier });
       return;
     }
 
@@ -65,10 +73,8 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // user_id from body (bookmarklet sends it explicitly); fall back to env BRIDGE_USER_ID
-    const userId = typeof body.user_id === 'string' && body.user_id.trim()
-      ? body.user_id.trim()
-      : BRIDGE_USER_ID;
+    // Ziel-User kommt ausschliesslich aus dem Schluessel.
+    const userId = owner.id;
 
     const checklist =
       Array.isArray(body.checklist) && body.checklist.length > 0
@@ -119,16 +125,17 @@ export default async function handler(req: any, res: any) {
     });
 
     if (!r.ok) {
-      const txt = await r.text();
-      res.status(500).json({ error: 'supabase ' + r.status + ': ' + txt });
+      console.error('[note] insert failed', r.status, await r.text().catch(() => ''));
+      res.status(500).json({ error: 'internal' });
       return;
     }
     res.status(200).json({ ok: true, id: row.id });
   } catch (e: any) {
+    console.error('[note] crash', e?.message || e);
     try {
-      res.status(500).json({ error: 'crash: ' + (e?.message || String(e)) });
+      res.status(500).json({ error: 'internal' });
     } catch {
-      res.status(500).end('crash');
+      res.status(500).end('internal');
     }
   }
 }

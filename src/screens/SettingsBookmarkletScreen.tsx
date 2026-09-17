@@ -11,11 +11,12 @@ import { useTheme, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { getSupabase } from '../sync/supabaseClient';
+import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 
-const BRIDGE_URL = 'https://bridge-three-coral.vercel.app';
+const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? 'https://bridge-three-coral.vercel.app';
 
 function Step({
   number,
@@ -81,14 +82,42 @@ function CopyBox({ label, value }: { label: string; value: string }) {
 export default function SettingsBookmarkletScreen() {
   const theme = useTheme();
   const { t } = useLanguage();
-  const [userId, setUserId] = useState('');
+  const { tier } = useNotes();
+  const [token, setToken] = useState('');
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(true);
   const [snack, setSnack] = useState('');
 
   useEffect(() => {
     getSupabase()?.auth.getUser().then(({ data }) => {
-      if (data?.user?.id) setUserId(data.user.id);
+      setIsAnonymous(!data?.user || Boolean(data.user.is_anonymous));
     });
   }, []);
+
+  // Persoenlichen Schluessel erzeugen: nur der Hash liegt auf dem Server, der
+  // Klartext ist genau jetzt einmal sichtbar. Ein erneuter Klick widerruft den alten.
+  const generateToken = async () => {
+    const supabase = getSupabase();
+    if (!supabase) { setSnack(t('settingsBookmarklet.tokenErrorSync')); return; }
+    setTokenLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setSnack(t('settingsBookmarklet.tokenErrorSync')); return; }
+      const res = await fetch(`${BRIDGE_URL}/api/bookmarklet-token`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 403 && json?.error === 'tier_required') { setSnack(t('settingsBookmarklet.tokenErrorTier')); return; }
+      if (res.status === 403 && json?.error === 'account_required') { setSnack(t('settingsBookmarklet.tokenErrorAccount')); return; }
+      if (!res.ok || typeof json?.token !== 'string') { setSnack(t('settingsBookmarklet.tokenErrorGeneric')); return; }
+      setToken(json.token);
+    } catch {
+      setSnack(t('settingsBookmarklet.tokenErrorGeneric'));
+    } finally {
+      setTokenLoading(false);
+    }
+  };
 
   const openSetupPage = () => {
     Linking.openURL(`${BRIDGE_URL}/bookmarklet`);
@@ -120,7 +149,31 @@ export default function SettingsBookmarkletScreen() {
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
             {t('settingsBookmarklet.step1Body')}
           </Text>
-          <CopyBox label={t('settingsBookmarklet.step1CopyLabel')} value={userId} />
+          {isAnonymous ? (
+            <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorAccount')}</Text>
+          ) : tier === 'free' ? (
+            <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorTier')}</Text>
+          ) : (
+            <>
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={generateToken}
+                disabled={tokenLoading}
+                style={[styles.linkBtn, { borderColor: Tokens.amberDeep, opacity: tokenLoading ? 0.5 : 1 }]}
+              >
+                <MaterialCommunityIcons name="key-variant" size={16} color={Tokens.amberDeep} />
+                <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
+                  {token ? t('settingsBookmarklet.tokenRegenerate') : t('settingsBookmarklet.tokenGenerate')}
+                </Text>
+              </TouchableOpacity>
+              {token ? (
+                <>
+                  <CopyBox label={t('settingsBookmarklet.step1CopyLabel')} value={token} />
+                  <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>{t('settingsBookmarklet.tokenOnceHint')}</Text>
+                </>
+              ) : null}
+            </>
+          )}
         </Step>
 
         <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />

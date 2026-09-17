@@ -10,7 +10,8 @@ jest.mock('../src/context/ThoughtsContext', () => ({
   useThoughts: () => ({ threads: [], loading: false, archiveThread: jest.fn(), pinThread: jest.fn(), unpinThread: jest.fn() }),
 }));
 jest.mock('../src/context/LanguageContext', () => {
-  const { t } = require('../src/i18n');
+  const { t, setI18nLocale } = require('../src/i18n');
+  setI18nLocale('de'); // der Mock meldet locale 'de' → i18n muss auch auf DE stehen
   return { useLanguage: () => ({ t, locale: 'de' }) };
 });
 jest.mock('../src/sync/supabaseClient', () => ({ getSupabase: () => null }));
@@ -33,8 +34,7 @@ test('E6 (UI): 30 Minuten vor dem Pro-Reset zeigt der Button keine "1 Tag"-Angab
 
   render(<ThreadsScreen navigation={{ navigate: jest.fn() }} />);
 
-  // i18n faellt im Test-Env je nach Geraete-Locale auf DE oder EN zurueck — beide abdecken.
-  const label = screen.getByText(/verfügbar|Available/).props.children as string;
+  const label = screen.getByText(/verfügbar/).props.children as string;
   expect(label).not.toMatch(/1 Tag|1 day/);
   expect(label).toMatch(/\d{1,2}:\d{2}|Min/); // Uhrzeit oder Minuten
 });

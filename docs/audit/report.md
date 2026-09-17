@@ -1,6 +1,6 @@
 # Vor-Launch-Audit — Report (Phase 3)
 
-Stand: 2026-09-16 · Branch `audit/pre-launch-tests` · Tests: `npm test` (33 Tests, 7 Suites)
+Stand: 2026-09-16 (Audit, Abschnitte 0–3) · Umsetzung 2026-09-17 (Abschnitt 4) · Branch `audit/pre-launch-tests` · Tests: `npm test`
 Manuelle Skripte: `docs/audit/manual-tests.md`
 
 Lesart: Die Tests prüfen das **Soll** laut Spezifikation und Produktentscheidungen. Rot = Bug reproduziert.
@@ -162,3 +162,98 @@ Summe: 26 rot, 7 grün. Manuell (13 Skripte): X1, E1, C1, S9, S10, S11, S14, L1,
 15. **A4/A5/E11** Pending-Zustand für E-Mail-Bestätigung; laufende Writes vor Sign-in abwarten (`inflight`-Zähler); Limit-Zähler bei Migration per `greatest()` zusammenführen.
 16. **P2** `USE_EXACT_ALARM` aus `app.json` entfernen; beim Anlegen einer Erinnerung `openExactAlarmSettings()` anbieten, wenn nicht freigegeben.
 17. **K2–K6** Kosmetik.
+
+---
+
+## 4. Umsetzung (Stand 2026-09-17, Branch `audit/pre-launch-tests`)
+
+Die Abschnitte 0–3 sind der unveränderte Audit-Stand vom 16.09. Dieser Abschnitt dokumentiert, was danach
+umgesetzt wurde. Regel: Tests wurden nicht abgeschwächt; wo Test-Scaffolding angepasst werden musste,
+steht es in 4.3.
+
+### 4.1 Testlauf nach Umsetzung
+
+`npm test` → **9 Suites, 55 Tests, 55 grün, 0 rot.** Typecheck App (`npx tsc --noEmit`) und Bridge
+(`bridge/`: `npx tsc --noEmit`) ohne Fehler.
+
+| Suite | Tests | Vorher | Jetzt |
+|---|---|---|---|
+| notesContext.sync | S1, S2, S3, S4, S5, S6, S7/S8, S9, S12, S13, A2, L3, L4 | 11 rot, 2 grün | 13 grün |
+| remoteNotes.pagination | S4 | rot | grün |
+| subscriptionService | E5, E6, E7 | 3 rot | 3 grün |
+| threadsScreen.limitLabel | E6 (UI) | rot | grün |
+| settingsKonto.signOut | A3 | rot | grün |
+| bridge.synthesize | Happy Path, Race, E2a–e, E8, A6, E1 | 5 rot, 5 grün | 10 grün |
+| bridge.migrate | A1 Client ×2, A1 Server, X1 | 4 rot | 4 grün |
+| mergeNotes (neu) | 10 Regressionstests für die Merge-Regeln | – | 10 grün |
+| bridge.auth (neu) | 12 Tests: migrate/delete/note/bookmarklet-token, Positiv- und Negativpfade | – | 12 grün |
+
+Hinweis zu E1 (bridge.synthesize): der Test dokumentiert weiterhin, dass der Endpoint `profiles.tier`
+vertraut. Das ist gewollt — die Absicherung ist die entfernte RLS-Policy (SQL-Migration), nicht der Endpoint.
+
+### 4.2 Umgesetzt — was jetzt funktioniert
+
+**Stufe 1**
+
+| Fix | Umsetzung | Nachweis |
+|---|---|---|
+| 1 X1 Bridge-Token | Kein Admin-Token mehr in App oder Bookmarklet. `migrate-user`/`delete-user` verifizieren Supabase-JWTs (`_lib/supabaseAdmin.ts`), UIDs kommen nur aus Tokens; Migration nur anonym → Konto. `/api/note` nutzt persönlichen Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur Hash in `profiles.bookmarklet_token_hash`, widerrufbar). `FIXED_TOK` aus `bookmarklet.html` entfernt, `EXPO_PUBLIC_BRIDGE_BEARER` wird nicht mehr gelesen. | bridge.migrate X1, bridge.auth (12) |
+| 2 E1 RLS | `profiles: own update` entfernt (Migration + Schema). | SQL; manuell E1 nach Ausrollen |
+| 3 Sync-Merge | Neues Modell in `src/sync/mergeNotes.ts` + `NotesContext`: Outbox (`@notizapp_pending_sync`), letzte Sync-UID (`@notizapp_sync_uid`), LWW-Merge, der lokale Notizen nie stillschweigend verwirft; `pullRemote` paginiert (500er Seiten); Sign-in merged (`'merge'`), Sign-out ersetzt (`'replace'`) nach `flushPending()`. Pull + Outbox-Flush zusätzlich bei App-Vordergrund. | S1, S2, S3, S4 (×2), S6, S12, S13, A2, mergeNotes |
+| 4 Konto-Flows | Client löscht anonymen User nur bei `ok:true` und vollständigen `results`; Server: RPC `migrate_user` (eine Transaktion, inkl. `thread_similarities` und Limit-Zähler per `greatest()`); `handleSignOut` prüft `error` von `signOut()` und bricht ab. | A1 (×3), A3, bridge.auth |
+| 5 Realtime / Stale-Write | `subscribeRemote` abonniert `event: '*'` (INSERT/UPDATE/DELETE, `replica identity full`); Updates gehen als PATCH nur geänderter Felder (`upsertRemote(uid, note, patch)`) mit Fallback auf Upsert; Pull beim `AppState → active`. | S5; S10/P3 manuell |
+
+**Stufe 2**
+
+| Fix | Umsetzung | Nachweis |
+|---|---|---|
+| 6 Synthese-Endpoint & Anzeige | `try/catch` um alles nach dem Claim: Netz-, KI-, Parse- und DB-Fehler geben den Lauf zurück (`releaseRun`), „keine Notizen" und Erfolg verbrauchen ihn (O1 wie empfohlen). Profil nicht ladbar → 503. Claim-Race: Profil neu lesen, einmal Retry, sonst 429 `busy` mit `next_allowed_at`. Client übernimmt `next_allowed_at` aus der 429-Antwort (`setServerNextAllowedAt`), `computeNextAllowedAt` vergleicht nicht mehr mit der Geräteuhr. Anzeige via `src/utils/limitFormat.ts`: „In 30 Minuten verfügbar" / „Ab 16:32 verfügbar" / „Ab Do., 17. Sep., 16:32 verfügbar"; Settings → Abo zeigt Datum + Uhrzeit. Snackbar-Rohstrings (K1) durch übersetzte Fehlertexte ersetzt. | E2a, E2b, E2e, E8, A6, E5, E6 (×2), E7 |
+| 8 Archiv | `notes.archived_at`; Archivieren = PATCH, Wiederherstellen = `archived_at: null`; Start-Purge löscht nur noch Tombstones; Webapp-Graph und Synthese filtern `archived_at is null`. | S9, L4, mergeNotes |
+| 9 Write-Konsistenz | Alle Mutationen über `allRef` (kein Closure-State), Writes serialisiert, State wird bei Write-Fehler von der Platte zurückgelesen; Loader löst Doppelvorkommen per LWW auf; `nextTimestamp()` garantiert monotone `updatedAt`. | S13, L3, L4 |
+| 10 Editor | `beforeRemove` wartet auf den Save (`preventDefault` + `dispatch`), Dirty-Check statt „einmal gespeichert"-Flag, Folge-Saves aktualisieren die neu angelegte Notiz statt zu duplizieren; Fehler-Toast bei fehlgeschlagenem Speichern. | manuell L1/L2 |
+
+**Stufe 3**
+
+| Fix | Umsetzung |
+|---|---|
+| 13 S14 | `deleteRemote` in Batches à 200. |
+| 14 X2 | Synthese/Note/Migrate/Delete antworten nur noch mit Fehlercodes; Rohtext und Stacktraces gehen ins Server-Log. |
+| 15 E11 / K3 | Limit-Zähler und `thread_similarities` werden in `migrate_user` mitgenommen. |
+| 16 P2 | `USE_EXACT_ALARM` aus `app.json` entfernt (`SCHEDULE_EXACT_ALARM` bleibt). |
+
+Weitere Änderungen: Bookmarklet-Settings-Screen erzeugt den Schlüssel (Hinweis für anonyme/Free-User),
+`bridge/README.md` und `CLAUDE.md` aktualisiert.
+
+### 4.3 Test-Scaffolding, das angepasst wurde (Erwartungen unverändert)
+
+- **notesContext.sync**: Der `upsertRemote`-Mock bildet jetzt die PATCH-Semantik ab (nur übergebene Felder
+  überschreiben), weil der Fix genau diese Server-Semantik einführt. Alle Assertions unverändert.
+- **settingsKonto.signOut**: `useNotes`-Mock um `flushPending` ergänzt (neue Context-API).
+- **threadsScreen.limitLabel**: Mock setzt `setI18nLocale('de')`, weil er `locale: 'de'` meldet; Regex nur noch DE.
+- **subscriptionService E6/E7**: Die Tests prüften eine Kopie der alten Screen-Formel (`Math.ceil` Tage bzw.
+  `toLocaleDateString`) — beide waren so nie erfüllbar. Sie prüfen jetzt die echte gemeinsame Funktion
+  (`formatAvailability` / `formatDateTime`). Erwartung identisch: Minuten/Uhrzeit statt Tage.
+
+### 4.4 Nicht umgesetzt — steht wie in Abschnitt 1–3
+
+| ID | Grund |
+|---|---|
+| E3, E4, E9, E10 (Fix 7) Zahlung | Braucht Payment-Provider (RevenueCat) mit Webhook → Bridge → `profiles.expires_at`. Ohne Provider-Entscheidung und Keys nicht umsetzbar. Gating existiert bereits für das Bookmarklet (`BOOKMARKLET_MIN_TIER`), nicht für die Webapp. |
+| P1 iOS Share | `index.share.tsx` für `expo-share-extension` fehlt weiterhin; nur im iOS-Build testbar. |
+| C1 Android > 2 MB | Nicht verifiziert; `AsyncStorage_useNextStorage` nicht gesetzt. Zuerst manuell C1 laufen lassen. |
+| A4, A5, S11, L5 | Manuell (Skripte in `manual-tests.md`), kein Code geändert. |
+| O2 Zeitstempel-Quelle, O3 Grace Period, O4 „schnellere Synthese", O6 Dialog bei Identitätswechsel | Offene Produktentscheidungen; O6 wurde vorerst als „stiller Merge + Upload" umgesetzt (kein Datenverlust, aber kein Dialog). |
+| E5 vollständig | Der Vergleich „ist die Grenze vorbei?" läuft weiterhin auf der Geräteuhr; die Grenze selbst ist Server-abgeleitet, der 429-Wert gewinnt. Vollständig serverseitig nur per RPC (`now()` in Postgres). |
+| K2, K4, K5 | Kosmetik, unverändert. |
+
+### 4.5 Ausrollen (manuell, in dieser Reihenfolge)
+
+1. `supabase-migration-2026-09-17.sql` im SQL-Editor des Projekts ausführen.
+2. Bridge deployen (`bridge/`: `vercel deploy --prod`); in Vercel `MCP_BEARER_TOKEN` löschen/rotieren,
+   `BRIDGE_USER_ID` kann bleiben (nur Worker). Optional `BOOKMARKLET_MIN_TIER`.
+3. Alter Token bleibt in der Git-History (`bookmarklet.html`) — Rotation ist deshalb Pflicht, nicht optional.
+4. Bestehende Bookmarklets funktionieren nicht mehr: Nutzer erzeugen in der App einen Schlüssel und legen das
+   Bookmarklet neu an.
+5. App-Build: erster Start nach dem Update behandelt alle lokalen Notizen als „pending" (keine Sync-UID
+   gespeichert) → lädt sie hoch. Lokal archivierte Notizen werden dabei mit `archived_at` remote angelegt.
+6. Manuelle Skripte X1, E1, S9, S10, P3, L1 gegen Staging durchlaufen.

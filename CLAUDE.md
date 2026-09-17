@@ -32,19 +32,14 @@ c:/NotizApp/
 │   │   │                  #   ArchiveScreen, SettingsScreen,
 │   │   │                  #   ThreadsScreen, ThreadDetailScreen
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
-│   │   ├── sync/          # supabaseClient, remoteNotes, remoteThoughts, deviceId
+│   │   ├── sync/          # supabaseClient, remoteNotes, mergeNotes, remoteThoughts, userId, deleteAnonUser
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, …
 │   ├── bridge/            # Vercel serverless bridge API + worker
-│   │   ├── api/           # Serverless functions (note.ts, thought.ts)
+│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, migrate-user, delete-user, thought; _lib/ = shared
 │   │   ├── bookmarklet/   # Browser bookmarklet source
 │   │   └── worker/        # brainstorm-worker.mjs, similarity-worker.mjs (CLI-Helfer)
-│   └── webapp/            # Next.js 16 graph visualizer (standalone)
-│       ├── app/           # page.tsx (force-graph UI), api/graph/route.ts
-│       ├── components/    # Graph.tsx, NoteOverlay.tsx, SimilarityOverlay.tsx,
-│       │                  #   ThreadPanel.tsx
-│       ├── lib/           # supabase.ts
-│       └── types/         # GraphData, Thread, Note, Similarity
+│   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
 
@@ -78,7 +73,7 @@ From `NotizApp/NotizApp/`:
 npx expo start [--android | --ios | --web]
 eas build --platform android|ios
 npx tsc --noEmit        # static check
-npm test                # Jest (jest-expo); __tests__/ = Audit-Tests, rot = bekannter Bug
+npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
 
 Bridge (`bridge/`):
@@ -98,7 +93,8 @@ npm run build
 ## Environment Variables
 
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
-`EXPO_PUBLIC_DEVICE_ID`, `EXPO_PUBLIC_BRIDGE_URL`, `EXPO_PUBLIC_BRIDGE_BEARER`.
+`EXPO_PUBLIC_BRIDGE_URL`. (`EXPO_PUBLIC_BRIDGE_BEARER` wird nicht mehr gelesen — kein Admin-Token im App-Bundle.)
+Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 Sync is optional — if env vars are absent, `isSyncConfigured()` returns false and
@@ -109,34 +105,35 @@ all sync code is silently skipped.
 ## Architecture Notes
 
 ### Provider tree (App.tsx)
-```
-GestureHandlerRootView
- └─ SafeAreaProvider
-     └─ ThemeProvider
-         └─ PaperProvider (AppTheme)
-             └─ NavigationContainer
-                 └─ NotesProvider
-                     └─ ThoughtsProvider
-                         ├─ ShareHandler
-                         └─ AppNavigator
-```
+GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer →
+NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
 
 ### Navigation
 - **Bottom tabs**: Threads, Notizen (HomeScreen), Archiv, Einstellungen
 - **Stack screens**: NoteDetail, Editor, ThreadDetail
 
-### Data flow
-- State in `NotesContext` / `ThoughtsContext`. Persistence via AsyncStorage.
-  Keys: `@notizapp_notes`, `@notizapp_categories`, `@notizapp_archive`, `@notizapp_tombstones`.
-- Sync: `pullRemote()` on mount → `subscribeRemote()` (realtime). Writes via
-  `upsertRemote()` / `deleteRemote()`. Tombstone set prevents re-sync of deleted notes.
+### Data flow (Notizen)
+- `NotesContext` hält aktive **und** archivierte Notizen als einen Bestand (`allRef`); `archivedAt`
+  entscheidet die Liste. AsyncStorage-Keys: `@notizapp_notes`, `@notizapp_archive`, `@notizapp_categories`,
+  `@notizapp_tombstones`, `@notizapp_pending_sync` (Outbox), `@notizapp_sync_uid` (zuletzt gesyncte UID).
+- Jede Mutation: pending markieren → `commit()` (State sofort, Writes serialisiert; bei Write-Fehler Reload
+  von Platte) → `pushRemote()`. Updates gehen als **PATCH nur geänderter Felder** (`upsertRemote(uid, note, patch)`).
+- Start/Vordergrund/Resync: `pullRemote()` (paginiert) → `mergeWithRemote()` in `src/sync/mergeNotes.ts`
+  (LWW auf `updatedAt`; lokale Notizen werden **nie** stillschweigend verworfen: pending oder UID-Wechsel →
+  hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
+  `subscribeRemote()` (INSERT/UPDATE/DELETE). Archivieren = `archived_at` setzen, nie DELETE; endgültig
+  löschen = Tombstone + `deleteRemote()` (Batches à 200).
+- `resyncForUser(uid, 'merge' | 'replace')`: Anmelden merged lokale Notizen ins Konto, Abmelden ersetzt
+  (vorher `flushPending()`; `signOut()`-Fehler bricht ab).
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.
 Jede Zeile gehört einem `auth.users`-User via `user_id` (Ausnahme `thought_threads`:
 gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) — Queries
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
-Schema source: `supabase-schema.sql`.
+Schema source: `supabase-schema.sql` (frisch) bzw. `supabase-migration-2026-09-17.sql` (Delta für bestehende
+Projekte: `notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`,
+`profiles.bookmarklet_token_hash`, RPC `migrate_user`).
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces,
@@ -161,20 +158,24 @@ Navigation-Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
 ### Webapp (graph visualizer)
-`webapp/` ist ein eigenständiges Next.js-Projekt (eigene `node_modules`/`package.json`). Liest Notizen,
-Threads und Ähnlichkeiten direkt aus Supabase und stellt sie als interaktiven Force-Graph dar:
-`app/page.tsx` (Haupt-UI), `app/api/graph/route.ts` (Aggregation), `components/Graph.tsx` (dynamisch, kein SSR).
+`webapp/` ist ein eigenständiges Next.js-Projekt (eigene `node_modules`). Liest Notizen (ohne archivierte), Threads,
+Ähnlichkeiten aus Supabase → Force-Graph: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
 
-### Synthese (Thoughts → Threads)
-Läuft **on-demand**: Der User drückt in `ThreadsScreen` auf „Synthetisieren" →
-`POST /api/synthesize` (`bridge/api/synthesize.ts`). Der Endpoint prüft das Rate-Limit
-pro Tier (free 1×/Woche, basic 1×/Tag, pro 10×/Tag) über die `profiles`-Tabelle
-(`ai_last_run`, `ai_runs_today`, `ai_day_reset`), ruft dann die Anthropic-API direkt
-auf und schreibt Threads zurück. **Kein täglicher Cron-Job mehr.**
+### Bridge-Auth & Synthese
+Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
+→ `verifyToken()` gegen `/auth/v1/user`); es gibt keinen statischen Admin-Token mehr. `/api/note` nutzt
+stattdessen den persönlichen Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert,
+ab Tier `basic`). `/api/migrate-user` (Body `fromToken` = anonymes Token) → RPC `migrate_user` in einer
+Transaktion; Client löscht den anonymen User nur nach vollständiger Bestätigung. `/api/delete-user` löscht
+nur den Aufrufer. Fehlerantworten sind generische Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
 
-`bridge/worker/brainstorm-worker.mjs` / `similarity-worker.mjs` — Node.js ESM CLI-Helfer, nur für
-manuelle/lokale Nutzung (`fetch` / `write <json>` / `add "Gedanke"`). Credentials aus `bridge/worker/.env`
-→ `NotizApp/.env` → `EXPO_PUBLIC_*`.
+Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
+rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
+(Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
+zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`),
+Grenze wird deterministisch aus Server-Feldern berechnet (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+
+`bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
 
 ---
 
@@ -186,8 +187,9 @@ manuelle/lokale Nutzung (`fetch` / `write <json>` / `add "Gedanke"`). Credential
 - **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
 - **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch.
 - **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
-- **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Audit-Tests (Sept. 2026)
-  beschreiben das **Soll**; rote Tests = offene Bugs. Manuelle Skripte: `docs/audit/manual-tests.md`.
+- **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Tests beschreiben das
+  **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
+  `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
              Arbeite nie am main branch, außer ich bitte darum

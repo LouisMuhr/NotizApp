@@ -8,6 +8,7 @@ import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 import type { AppLocale } from '../i18n';
+import { formatDateTime } from '../utils/limitFormat';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -76,10 +77,6 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
   };
 }
 
-function formatLocalizedDate(date: Date, locale: AppLocale): string {
-  const intlLocale = locale === 'en' ? 'en-US' : 'de-DE';
-  return date.toLocaleDateString(intlLocale, { weekday: 'long', day: 'numeric', month: 'long' });
-}
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -94,7 +91,7 @@ export default function SettingsAboScreen() {
 
   const nextRunText: string = (() => {
     if (!nextAllowedAt || nextAllowedAt <= new Date()) return t('settingsAbo.nextRunAvailable');
-    return formatLocalizedDate(nextAllowedAt, locale);
+    return formatDateTime(nextAllowedAt, locale);
   })();
 
   return (

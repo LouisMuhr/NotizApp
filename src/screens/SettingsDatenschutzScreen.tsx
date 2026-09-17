@@ -97,7 +97,7 @@ export default function SettingsDatenschutzScreen() {
 
       // 2. Auth-User (auth.users) inkl. E-Mail löschen — Cascade räumt den Rest.
       if (uid) {
-        await deleteAccountCompletely(uid);
+        await deleteAccountCompletely();
       }
 
       // 3. Session beenden und frischen anonymen User holen, damit die App

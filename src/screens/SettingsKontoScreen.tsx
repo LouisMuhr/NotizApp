@@ -205,7 +205,7 @@ const btnStyles = StyleSheet.create({
 export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
-  const { resyncForUser, refreshSubscription } = useNotes();
+  const { resyncForUser, refreshSubscription, flushPending } = useNotes();
   const { resyncForUser: resyncThreadsForUser } = useThoughts();
   const { t } = useLanguage();
 
@@ -272,14 +272,27 @@ export default function SettingsKontoScreen() {
     setLoading(true);
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      await supabase.auth.signOut();
+      // Unbestaetigte lokale Aenderungen gehoeren noch in dieses Konto — erst hochladen.
+      try {
+        await flushPending();
+      } catch {
+        showToast(t('settingsKonto.toastSignOutPending'), 'error');
+        return;
+      }
+      // A3: signOut() wirft nicht, sondern liefert { error } (z. B. offline). Dann
+      // lebt die Session weiter und es darf NICHTS umgestellt werden.
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        showToast(t('settingsKonto.toastSignOutFailed') + error.message, 'error');
+        return;
+      }
       clearUserIdCache();
       if (currentUser) await AsyncStorage.setItem(SIGNED_OUT_KEY, currentUser.id);
       // Neuen (anonymen) User holen und beide Contexts darauf umstellen, damit
       // die Notizen/Threads des abgemeldeten Kontos nicht mehr angezeigt werden.
       const newUid = await getUserId();
       if (newUid) {
-        await resyncForUser(newUid);
+        await resyncForUser(newUid, 'replace');
         await resyncThreadsForUser(newUid);
       }
       // Tier-Anzeige (Free/Basic/Pro) auf den neuen anonymen User aktualisieren.
@@ -306,8 +319,11 @@ export default function SettingsKontoScreen() {
     }
     setLoading(true);
     try {
-      const { data: { user: anonUser } } = await supabase.auth.getUser();
-      const anonUid = anonUser?.is_anonymous ? anonUser.id : null;
+      // Anonyme Sitzung VOR dem Login sichern: ihr Access-Token weist die
+      // Bridge spaeter als Eigentuemer der zu migrierenden Daten aus (X1).
+      const { data: { session: anonSession } } = await supabase.auth.getSession();
+      const anonToken = anonSession?.user?.is_anonymous ? anonSession.access_token : null;
+      const anonUid = anonSession?.user?.is_anonymous ? anonSession.user.id : null;
       const { data, error } = await supabase.auth.signInWithPassword({
         email: inputEmail.trim(),
         password: inputPassword,
@@ -321,10 +337,14 @@ export default function SettingsKontoScreen() {
         showToast(t('settingsKonto.toastConfirmEmail'), 'error');
         return;
       }
-      if (anonUid && anonUid !== newUser.id) {
-        await migrateAndDeleteAnonUser(anonUid, newUser.id);
+      if (anonToken && anonUid && anonUid !== newUser.id && data.session) {
+        const migrated = await migrateAndDeleteAnonUser(anonToken, data.session.access_token);
+        // Bei Fehlschlag bleibt der anonyme User samt Remote-Daten bestehen;
+        // die lokalen Notizen werden unten trotzdem in das Konto gemerged (A2).
+        if (!migrated) showToast(t('settingsKonto.toastMigrationIncomplete'), 'error');
       }
-      await resyncForUser(newUser.id);
+      // 'merge': lokale (auch noch nicht hochgeladene) Notizen ins Konto uebernehmen (A2)
+      await resyncForUser(newUser.id, 'merge');
       await resyncThreadsForUser(newUser.id);
       // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
       await refreshSubscription();

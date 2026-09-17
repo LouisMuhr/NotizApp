@@ -24,13 +24,17 @@ create table if not exists public.notes (
   reminder_weekday int,
   reminder_day_of_month int,
   source text default 'app',
-  feeds_threads boolean not null default false
+  feeds_threads boolean not null default false,
+  archived_at timestamptz                     -- gesetzt = archiviert (wird synchronisiert)
 );
 
 create index if not exists notes_user_id_idx on public.notes (user_id);
 create index if not exists notes_updated_at_idx on public.notes (updated_at desc);
+create index if not exists notes_user_archived_idx on public.notes (user_id, archived_at);
 
 alter publication supabase_realtime add table public.notes;
+-- DELETE-Events mit user_id-Filter brauchen die ganze alte Zeile
+alter table public.notes replica identity full;
 
 alter table public.notes enable row level security;
 
@@ -154,8 +158,12 @@ create table if not exists public.profiles (
   ai_last_run   timestamptz,
   ai_runs_today int not null default 0,
   ai_day_reset  date,
-  created_at    timestamptz default now()
+  created_at    timestamptz default now(),
+  bookmarklet_token_hash text                   -- SHA-256 des persoenlichen Bookmarklet-Schluessels
 );
+
+create unique index if not exists profiles_bookmarklet_token_hash_idx
+  on public.profiles (bookmarklet_token_hash) where bookmarklet_token_hash is not null;
 
 alter table public.profiles enable row level security;
 
@@ -163,9 +171,8 @@ create policy "profiles: own read"
   on public.profiles for select
   using (auth.uid() = id);
 
-create policy "profiles: own update"
-  on public.profiles for update
-  using (auth.uid() = id);
+-- KEINE Update-Policy fuer Clients: tier und Limit-Zaehler schreibt nur die
+-- Bridge mit dem Service-Role-Key (E1).
 
 -- Service-role (Bridge API) darf schreiben:
 create policy "profiles: service insert"
@@ -196,3 +203,55 @@ create trigger on_auth_user_created
 -- INSERT INTO public.profiles (id)
 -- SELECT id FROM auth.users
 -- ON CONFLICT DO NOTHING;
+
+
+-- ============================================================================
+-- Migration anonym → Konto als eine Transaktion (Bridge /api/migrate-user)
+-- ============================================================================
+
+create or replace function public.migrate_user(from_uid uuid, to_uid uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n_notes int; n_thoughts int; n_threads int; n_sims int;
+begin
+  if from_uid = to_uid then
+    raise exception 'from_uid and to_uid must differ';
+  end if;
+
+  update public.notes set user_id = to_uid where user_id = from_uid;
+  get diagnostics n_notes = row_count;
+
+  update public.thoughts set user_id = to_uid where user_id = from_uid;
+  get diagnostics n_thoughts = row_count;
+
+  update public.threads set user_id = to_uid where user_id = from_uid;
+  get diagnostics n_threads = row_count;
+
+  update public.thread_similarities set user_id = to_uid where user_id = from_uid;
+  get diagnostics n_sims = row_count;
+
+  -- Limit-Zaehler zusammenfuehren, damit ein Sign-in das Kontingent nicht zuruecksetzt (E11)
+  insert into public.profiles (id) values (to_uid) on conflict do nothing;
+  update public.profiles p
+     set ai_last_run   = greatest(p.ai_last_run, f.ai_last_run),
+         ai_day_reset  = greatest(p.ai_day_reset, f.ai_day_reset),
+         ai_runs_today = case
+                           when p.ai_day_reset = f.ai_day_reset then p.ai_runs_today + f.ai_runs_today
+                           when coalesce(p.ai_day_reset, date '1970-01-01') > coalesce(f.ai_day_reset, date '1970-01-01') then p.ai_runs_today
+                           else f.ai_runs_today
+                         end
+    from public.profiles f
+   where p.id = to_uid and f.id = from_uid;
+
+  return jsonb_build_object(
+    'notes', n_notes, 'thoughts', n_thoughts, 'threads', n_threads, 'similarities', n_sims
+  );
+end;
+$$;
+
+revoke all on function public.migrate_user(uuid, uuid) from public, anon, authenticated;
+

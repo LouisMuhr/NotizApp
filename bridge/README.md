@@ -18,10 +18,11 @@ Vercel serverless endpoint that lets you save text from any webpage (claude.ai, 
 2. **Env**: `.env.local` (für `vercel dev`) bzw. Vercel-Dashboard ENV:
    - `SUPABASE_URL` — Project URL
    - `SUPABASE_SERVICE_KEY` — **Secret** Key (nicht Publishable!)
-   - `DEVICE_ID` — UUID aus den NotizApp-Settings
-   - `MCP_BEARER_TOKEN` — selbst gewählter langer Random-String
+   - `ANTHROPIC_API_KEY` — für /api/synthesize
+   - `BOOKMARKLET_MIN_TIER` — optional, Default `basic` (Freigabe des Bookmarklets)
+   - (`MCP_BEARER_TOKEN`, `BRIDGE_USER_ID`, `DEVICE_ID` werden von den API-Endpunkten nicht mehr gelesen; nur noch der Worker unter `worker/` nutzt `BRIDGE_USER_ID`)
 3. **Deploy**: `npx vercel --prod`
-4. **Bookmarklet bauen**: Datei `bookmarklet/bookmarklet.html` im Browser öffnen, URL + Token eintragen, Link in Lesezeichen-Leiste ziehen.
+4. **Bookmarklet bauen**: In der App (Einstellungen → Bookmarklet, ab Basic) einen persönlichen Schlüssel erzeugen, `/bookmarklet` im Browser öffnen, Schlüssel eintragen, Link in Lesezeichen-Leiste ziehen.
 
 ## Nutzung
 
@@ -29,7 +30,13 @@ In claude.ai eine Antwort markieren (oder Strg+A für die ganze Seite) → Bookm
 
 ## API
 
-`POST /api/note?token=<MCP_BEARER_TOKEN>`
+`POST /api/note?token=<persönlicher Bookmarklet-Schlüssel>` — der Ziel-User ergibt sich aus dem Schlüssel (SHA-256-Hash in `profiles.bookmarklet_token_hash`); ein `user_id` im Body wird ignoriert.
+
+Weitere Endpunkte (alle mit `Authorization: Bearer <Supabase-Access-Token des Users>`):
+- `POST /api/synthesize` — KI-Synthese, Rate-Limit nach Tier
+- `POST /api/bookmarklet-token` / `DELETE` — persönlichen Schlüssel erzeugen / widerrufen
+- `POST /api/migrate-user` mit Body `{ "fromToken": "<Access-Token des anonymen Users>" }` — Daten anonym → Konto (eine Transaktion)
+- `POST /api/delete-user` — löscht ausschließlich den Aufrufer selbst
 
 ```json
 {

@@ -92,6 +92,7 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [pickerDate, setPickerDate] = useState(new Date());
   const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [saveErrorVisible, setSaveErrorVisible] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({
@@ -100,11 +101,15 @@ export default function EditorScreen({ navigation, route }: Props) {
   }, [existingNote, navigation, t]);
 
   const saveNoteRef = useRef<(() => Promise<void>) | undefined>(undefined);
-  const hasSavedRef = useRef(false);
+  /** ID der in dieser Sitzung neu angelegten Notiz — weitere Saves aktualisieren sie statt zu duplizieren. */
+  const createdIdRef = useRef<string | null>(null);
+  /** Serialisierter Stand des letzten erfolgreichen Saves (Dirty-Check statt "einmal gespeichert"-Flag). */
+  const lastSavedRef = useRef<string | null>(null);
+  const savingRef = useRef<Promise<void> | null>(null);
+  const leaveAllowedRef = useRef(false);
 
   const saveNote = useCallback(async () => {
-    if (hasSavedRef.current) return;
-    hasSavedRef.current = true;
+    if (savingRef.current) { await savingRef.current.catch(() => {}); }
 
     const reminderIso = reminderAt?.toISOString() ?? null;
     const notePayload = {
@@ -120,13 +125,32 @@ export default function EditorScreen({ navigation, route }: Props) {
       reminderDayOfMonth: reminderIso && recurrence === 'monthly' ? dayOfMonth : null,
     };
 
-    if (!existingNote && !notePayload.title && !notePayload.content && checklist.length === 0) return;
-
-    if (existingNote) {
-      await updateNote(existingNote.id, notePayload);
-    } else {
-      await addNote(notePayload);
+    const serialized = JSON.stringify(notePayload);
+    if (lastSavedRef.current === null && existingNote) {
+      // Ausgangsstand der bestehenden Notiz gilt als gespeichert
+      lastSavedRef.current = JSON.stringify({
+        title: existingNote.title.trim(), content: existingNote.content, category: existingNote.category,
+        isPinned: existingNote.isPinned, checklist: existingNote.checklist, feedsThreads: existingNote.feedsThreads,
+        reminderAt: existingNote.reminderAt, reminderRecurrence: existingNote.reminderAt ? existingNote.reminderRecurrence : 'once',
+        reminderWeekday: existingNote.reminderAt && existingNote.reminderRecurrence === 'weekly' ? existingNote.reminderWeekday : null,
+        reminderDayOfMonth: existingNote.reminderAt && existingNote.reminderRecurrence === 'monthly' ? existingNote.reminderDayOfMonth : null,
+      });
     }
+    if (serialized === lastSavedRef.current) return; // nichts geaendert
+    const targetId = existingNote?.id ?? createdIdRef.current;
+    if (!targetId && !notePayload.title && !notePayload.content && checklist.length === 0) return;
+
+    const run = (async () => {
+      if (targetId) {
+        await updateNote(targetId, notePayload);
+      } else {
+        const created = await addNote(notePayload);
+        createdIdRef.current = created.id;
+      }
+      lastSavedRef.current = serialized;
+    })();
+    savingRef.current = run;
+    try { await run; } finally { savingRef.current = null; }
   }, [existingNote, title, content, category, isPinned, checklist, feedsThreads, reminderAt, recurrence, weekday, dayOfMonth, updateNote, addNote]);
 
   useEffect(() => {
@@ -134,15 +158,33 @@ export default function EditorScreen({ navigation, route }: Props) {
   }, [saveNote]);
 
   const handleSave = useCallback(async () => {
-    await saveNote();
+    try {
+      await saveNote();
+    } catch (e) {
+      // L3: Speichern fehlgeschlagen (z. B. Speicher voll) — nicht so tun, als waere es gespeichert
+      console.warn('[editor] save failed', e);
+      setSaveErrorVisible(true);
+      setTimeout(() => setSaveErrorVisible(false), 2500);
+      return;
+    }
     haptics.medium();
     setSnackbarVisible(true);
     setTimeout(() => navigation.goBack(), 800);
   }, [saveNote, navigation]);
 
+  // L1: Zurueck-Geste/-Button wartet auf den Save, statt ihn nur anzustossen.
+  // L2: Eingaben nach "Speichern" (im 800-ms-Fenster) werden hier ebenfalls gesichert.
   useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (_e: any) => {
-      saveNoteRef.current?.();
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      const save = saveNoteRef.current;
+      if (!save || leaveAllowedRef.current) return; // zweiter Durchlauf nach dem Save: durchlassen
+      e.preventDefault();
+      save()
+        .catch((err) => console.warn('[editor] save on leave failed', err))
+        .finally(() => {
+          leaveAllowedRef.current = true;
+          navigation.dispatch(e.data.action);
+        });
     });
     return unsubscribe;
   }, [navigation]);
@@ -731,6 +773,7 @@ export default function EditorScreen({ navigation, route }: Props) {
       </Portal>
 
       <Toast visible={snackbarVisible} message={t('editor.savedToast')} />
+      <Toast visible={saveErrorVisible} message={t('editor.saveFailedToast')} icon="alert-circle-outline" />
     </KeyboardAvoidingView>
   );
 }

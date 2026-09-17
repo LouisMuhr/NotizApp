@@ -5,10 +5,15 @@
  */
 jest.mock('../src/sync/supabaseClient', () => ({ getSupabase: jest.fn() }));
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
-jest.mock('../src/i18n', () => ({ t: (k: string) => k }));
+// t liefert "key:wert1,wert2", damit Formatierungen pruefbar sind, ohne Uebersetzungen zu laden
+jest.mock('../src/i18n', () => ({
+  t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${Object.values(o).join(',')}` : k),
+}));
 
 const { getSupabase } = require('../src/sync/supabaseClient') as { getSupabase: jest.Mock };
 const { subscriptionService } = require('../src/sync/subscriptionService') as typeof import('../src/sync/subscriptionService');
+const { formatAvailability, formatDateTime } = require('../src/utils/limitFormat') as typeof import('../src/utils/limitFormat');
+const { t } = require('../src/i18n') as { t: (k: string, o?: Record<string, unknown>) => string };
 
 function withProfile(profile: Record<string, unknown>) {
   getSupabase.mockReturnValue({
@@ -43,12 +48,11 @@ test('E6: Pro-Limit um 23:30 UTC — naechster Lauf ist in 30 Minuten, nicht "in
   const { nextAllowedAt } = await subscriptionService.getStatus();
   expect(nextAllowedAt?.toISOString()).toBe('2026-09-17T00:00:00.000Z'); // Reset Mitternacht UTC (ok)
 
-  // So rechnet ThreadsScreen.daysUntil() das Label "In {{count}} Tag(en) verfuegbar":
-  const daysLabel = Math.ceil((nextAllowedAt!.getTime() - Date.now()) / 86_400_000);
-  const minutesReal = Math.round((nextAllowedAt!.getTime() - Date.now()) / 60_000);
-  expect(minutesReal).toBe(30);
-  // Erwartung (Entscheidung 13): Anzeige in Uhrzeit/Minuten, nicht in aufgerundeten Tagen
-  expect(daysLabel).not.toBe(1);
+  // Umsetzung: ThreadsScreen nutzt formatAvailability() statt der frueheren Tage-Rechnung.
+  // Erwartung (Entscheidung 13): Anzeige in Minuten/Uhrzeit, nicht in aufgerundeten Tagen.
+  const label = formatAvailability(nextAllowedAt!, new Date(), 'de', t);
+  expect(label).toBe('limit.inMinutes:30');
+  expect(label).not.toMatch(/Tag/);
 });
 
 test('E7: Free-Limit endet zu einer Uhrzeit (14:32), Datum allein reicht als Anzeige nicht', async () => {
@@ -58,7 +62,7 @@ test('E7: Free-Limit endet zu einer Uhrzeit (14:32), Datum allein reicht als Anz
   const { nextAllowedAt } = await subscriptionService.getStatus();
   expect(nextAllowedAt?.toISOString()).toBe('2026-09-17T14:32:00.000Z');
 
-  // SettingsAboScreen formatiert mit toLocaleDateString(weekday, day, month) → keine Uhrzeit.
-  const shown = nextAllowedAt!.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  // Umsetzung: SettingsAboScreen und Snackbar nutzen formatDateTime() (Datum + Uhrzeit).
+  const shown = formatDateTime(nextAllowedAt!, 'de');
   expect(shown).toMatch(/\d{1,2}:\d{2}/); // Erwartung: Uhrzeit sichtbar (Entscheidung 13)
 });

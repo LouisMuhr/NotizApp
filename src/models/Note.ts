@@ -21,6 +21,12 @@ export interface Note {
   reminderDayOfMonth: number | null;
   notificationId: string | null;
   feedsThreads: boolean; // default false — ob die Note in den AI-Worker fließt
+  /**
+   * Zeitpunkt der Archivierung (ISO) oder null/undefined = aktiv. Wird mit
+   * synchronisiert (Spalte archived_at), damit Archivieren auf einem Geraet
+   * nicht als Loeschung auf den anderen ankommt.
+   */
+  archivedAt?: string | null;
 }
 
 export type SortField = 'updatedAt' | 'createdAt' | 'title' | 'category';

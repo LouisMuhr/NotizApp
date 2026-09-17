@@ -56,9 +56,16 @@ let online = true;
 
 function wireRemote() {
   remoteNotes.pullRemote.mockImplementation(async () => (online ? Array.from(remote.values()) : null));
-  remoteNotes.upsertRemote.mockImplementation(async (_uid: string, note: Note) => {
+  // Mit `patch` schreibt der Sync-Layer nur die geaenderten Spalten (wie PostgREST PATCH);
+  // ohne `patch` die ganze Zeile. Der Mock bildet genau diese Server-Semantik ab.
+  remoteNotes.upsertRemote.mockImplementation(async (_uid: string, note: Note, patch?: Partial<Note>) => {
     if (!online) throw new Error('network request failed');
-    remote.set(note.id, { ...note, notificationId: null });
+    const existing = remote.get(note.id);
+    if (patch && existing) {
+      remote.set(note.id, { ...existing, ...patch, updatedAt: note.updatedAt });
+    } else {
+      remote.set(note.id, { ...note, notificationId: null });
+    }
   });
   remoteNotes.deleteRemote.mockImplementation(async (_uid: string, ids: string[]) => {
     if (!online) throw new Error('network request failed');

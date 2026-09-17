@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     supabase
       .from('notes')
       .select('id, title, content, category, created_at, updated_at')
-      .eq('user_id', userId),
+      .eq('user_id', userId)
+      .is('archived_at', null), // archivierte Notizen bleiben remote erhalten, gehoeren aber nicht in den Graph
     supabase
       .from('thread_similarities')
       .select('id, thread_id_1, thread_id_2, label')

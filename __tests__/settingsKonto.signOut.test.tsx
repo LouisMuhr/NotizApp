@@ -12,7 +12,9 @@ const mockResyncThreads = jest.fn(async () => {});
 const mockSignOut = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
-jest.mock('../src/context/NotesContext', () => ({ useNotes: () => ({ resyncForUser: mockResyncNotes, refreshSubscription: jest.fn(async () => {}) }) }));
+jest.mock('../src/context/NotesContext', () => ({
+  useNotes: () => ({ resyncForUser: mockResyncNotes, refreshSubscription: jest.fn(async () => {}), flushPending: jest.fn(async () => {}) }),
+}));
 jest.mock('../src/context/ThoughtsContext', () => ({ useThoughts: () => ({ resyncForUser: mockResyncThreads }) }));
 jest.mock('../src/context/LanguageContext', () => {
   const { t } = require('../src/i18n');

@@ -49,35 +49,31 @@ export interface SubscriptionService {
 // Helper: calculate nextAllowedAt from a profile row
 // ---------------------------------------------------------------------------
 
-function computeNextAllowedAt(profile: ProfileRow): Date | null {
-  const now = new Date();
+/**
+ * Berechnet die Sperr-Grenze ausschliesslich aus den Server-Feldern des Profils
+ * (Entscheidung 14). Es wird NICHT gegen die Geraeteuhr verglichen: eine falsch
+ * gestellte Uhr aendert das Ergebnis nicht. Ob die Grenze schon vorbei ist,
+ * entscheidet die UI — endgueltig entscheidet immer der Server (429).
+ *
+ * Liegt die Grenze in der Vergangenheit, darf sie als "verfuegbar" gelten.
+ */
+export function computeNextAllowedAt(profile: Pick<ProfileRow, 'tier' | 'ai_last_run' | 'ai_runs_today' | 'ai_day_reset'>): Date | null {
   const { tier, ai_last_run, ai_runs_today, ai_day_reset } = profile;
 
-  if (!ai_last_run) return null; // never run → always allowed
-
-  const lastRun = new Date(ai_last_run);
-
-  if (tier === 'free') {
-    const nextAllowed = new Date(lastRun.getTime() + 7 * 24 * 60 * 60 * 1000);
-    return nextAllowed > now ? nextAllowed : null;
-  }
-
-  if (tier === 'basic') {
-    const nextAllowed = new Date(lastRun.getTime() + 24 * 60 * 60 * 1000);
-    return nextAllowed > now ? nextAllowed : null;
-  }
-
   if (tier === 'pro') {
-    const todayUtc = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-    if (ai_day_reset === todayUtc && ai_runs_today >= 10) {
-      // Blocked until midnight UTC
-      const midnight = new Date(todayUtc);
+    if (ai_day_reset && ai_runs_today >= 10) {
+      const midnight = new Date(ai_day_reset); // 'YYYY-MM-DD' → 00:00 UTC
       midnight.setUTCDate(midnight.getUTCDate() + 1);
       return midnight;
     }
     return null;
   }
 
+  if (!ai_last_run) return null; // never run → always allowed
+  const lastRun = new Date(ai_last_run);
+
+  if (tier === 'free') return new Date(lastRun.getTime() + 7 * 24 * 60 * 60 * 1000);
+  if (tier === 'basic') return new Date(lastRun.getTime() + 24 * 60 * 60 * 1000);
   return null;
 }
 

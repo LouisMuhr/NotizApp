@@ -294,31 +294,30 @@ export default async function handler(req: any, res: any) {
     // -----------------------------------------------------------------------
     const uid = encodeURIComponent(userId);
 
-    // Load or create profile row (upsert as safety-net if trigger didn't run)
-    const profileRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=*`,
-      { headers: sbHeaders(SUPABASE_SERVICE_KEY) },
-    );
-    let profileRows: ProfileRow[] = profileRes.ok ? await profileRes.json() : [];
+    const loadProfile = async (): Promise<ProfileRow[] | null> => {
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=*`,
+        { headers: sbHeaders(SUPABASE_SERVICE_KEY) },
+      );
+      return r.ok ? r.json() : null;
+    };
+
+    // E8: Ist die DB kurz nicht erreichbar, darf daraus keine 7-Tage-Sperre werden.
+    let profileRows = await loadProfile();
+    if (profileRows === null) { res.status(503).json({ error: 'profile_unavailable' }); return; }
 
     if (profileRows.length === 0) {
-      // Trigger hasn't run yet for this user — create row now
+      // Trigger hat noch nicht gegriffen — Row jetzt anlegen und erneut lesen
       await fetch(`${SUPABASE_URL}/rest/v1/profiles`, {
         method: 'POST',
         headers: { ...sbHeaders(SUPABASE_SERVICE_KEY), Prefer: 'resolution=ignore-duplicates,return=minimal' },
         body: JSON.stringify({ id: userId }),
       });
-      // Re-fetch
-      const refetch = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}&select=*`,
-        { headers: sbHeaders(SUPABASE_SERVICE_KEY) },
-      );
-      profileRows = refetch.ok ? await refetch.json() : [];
+      profileRows = await loadProfile();
+      if (profileRows === null || profileRows.length === 0) { res.status(503).json({ error: 'profile_unavailable' }); return; }
     }
 
-    const profile: ProfileRow = profileRows[0] ?? {
-      id: userId, tier: 'free', ai_last_run: null, ai_runs_today: 0, ai_day_reset: null,
-    };
+    let profile: ProfileRow = profileRows[0];
 
     const nextAllowedAt = checkRateLimit(profile);
     if (nextAllowedAt) {
@@ -328,163 +327,182 @@ export default async function handler(req: any, res: any) {
 
     // Lauf sofort reservieren — schliesst das Read-dann-Write-Fenster, in dem
     // zwei parallele Requests beide den Check oben passieren wuerden.
-    const claimed = await claimRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+    let claimed = await claimRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
     if (!claimed) {
-      res.status(429).json({
-        error: 'limit_reached',
-        next_allowed_at: checkRateLimit({ ...profile, ai_last_run: new Date().toISOString() }),
-      });
-      return;
+      // A6: Claim-Race verloren → Profil frisch lesen und genau einmal erneut versuchen.
+      const fresh = await loadProfile();
+      if (fresh && fresh.length > 0) {
+        profile = fresh[0];
+        const limited = checkRateLimit(profile);
+        if (limited) { res.status(429).json({ error: 'limit_reached', next_allowed_at: limited }); return; }
+        claimed = await claimRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+      }
+      if (!claimed) {
+        // Zweimal verloren: kein echtes Limit, sondern Ueberlappung — kurz warten lassen.
+        res.status(429).json({
+          error: 'busy',
+          next_allowed_at: new Date(Date.now() + 10_000).toISOString(),
+        });
+        return;
+      }
     }
 
-    // -----------------------------------------------------------------------
-    // Daten laden
-    // -----------------------------------------------------------------------
-    const [feedNotes, activeThreads] = await Promise.all([
-      sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY,
-        `notes?user_id=eq.${uid}&feeds_threads=eq.true&order=created_at.asc&select=id,title,content,created_at,updated_at`),
-      sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY,
-        `threads?user_id=eq.${uid}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,note_ids,updated_at`),
-    ]);
-
-    if (!feedNotes.length) {
-      // Lauf ist bereits reserviert und gilt als verbraucht.
-      res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
-      return;
-    }
-
-    // Anthropic API
-    const input = JSON.stringify({ feed_notes: feedNotes, active_threads: activeThreads });
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: input }],
-      }),
-    });
-
-    if (!anthropicRes.ok) {
-      // Anthropic hat den Call abgelehnt — uns wurde nichts berechnet, also
-      // bekommt der User seinen Lauf zurueck.
-      await releaseRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
-      res.status(500).json({ error: 'anthropic API: ' + anthropicRes.status + ' ' + await anthropicRes.text() });
-      return;
-    }
-
-    const anthropicData: any = await anthropicRes.json();
-    const rawText: string = anthropicData.content?.[0]?.text ?? '';
-
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
-      return;
-    }
-
-    let synthesis: { new_threads?: any[]; thread_updates?: any[]; similarities?: any[] };
+    // Ab hier ist der Lauf gebucht. Entscheidung 2 / O1: Fehler auf UNSERER
+    // Seite (Netz, KI-Antwort unbrauchbar, DB) geben den Lauf zurueck; "keine
+    // Notizen" und ein erfolgreich geschriebenes Ergebnis verbrauchen ihn.
+    let consumed = false;
     try {
-      synthesis = JSON.parse(jsonMatch[0]);
+      const [feedNotes, activeThreads] = await Promise.all([
+        sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY,
+          `notes?user_id=eq.${uid}&feeds_threads=eq.true&archived_at=is.null&order=created_at.asc&select=id,title,content,created_at,updated_at`),
+        sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY,
+          `threads?user_id=eq.${uid}&status=eq.active&order=updated_at.desc&select=id,title,summary,thought_count,note_ids,updated_at`),
+      ]);
+
+      if (!feedNotes.length) {
+        consumed = true;
+        res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
+        return;
+      }
+
+      // Anthropic API
+      const input = JSON.stringify({ feed_notes: feedNotes, active_threads: activeThreads });
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5',
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: input }],
+        }),
+      });
+
+      if (!anthropicRes.ok) {
+        console.error('[synthesize] anthropic', anthropicRes.status, await anthropicRes.text().catch(() => ''));
+        throw new SynthesisError('ai_unavailable');
+      }
+
+      const anthropicData: any = await anthropicRes.json();
+      const rawText: string = anthropicData.content?.[0]?.text ?? '';
+
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error('[synthesize] no JSON in AI response', rawText.slice(0, 300));
+        throw new SynthesisError('ai_response_invalid');
+      }
+
+      let synthesis: { new_threads?: any[]; thread_updates?: any[]; similarities?: any[] };
+      try {
+        synthesis = JSON.parse(jsonMatch[0]);
+      } catch (e: any) {
+        console.error('[synthesize] JSON parse error', e?.message, rawText.slice(0, 300));
+        throw new SynthesisError('ai_response_invalid');
+      }
+
+      // Ergebnisse schreiben
+      const now = new Date().toISOString();
+      let threads_created = 0;
+      let threads_updated = 0;
+
+      // Idempotenz: bestehende Titel
+      const existing: any[] = await sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY, `threads?user_id=eq.${uid}&select=title`);
+      const existingTitles = new Set(existing.map((t: any) => t.title));
+
+      // Neue Threads
+      const toInsert = (synthesis.new_threads ?? [])
+        .filter((t: any) => !existingTitles.has(t.title))
+        .map((t: any) => ({
+          id: t.id ?? randomUUID(),
+          user_id: userId,
+          title: t.title,
+          summary: t.summary ?? '',
+          status: 'active',
+          thought_count: (t.note_ids ?? []).length,
+          note_ids: t.note_ids ?? [],
+          last_synthesized_at: now,
+          created_at: now,
+          updated_at: now,
+        }));
+
+      if (toInsert.length > 0) {
+        await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'threads', toInsert, 'resolution=merge-duplicates,return=minimal');
+        threads_created = toInsert.length;
+      }
+
+      // Thread-Updates
+      for (const u of synthesis.thread_updates ?? []) {
+        const noteIds = u.note_ids ?? [];
+        const patch: any = {
+          user_id: userId,
+          summary: u.summary,
+          status: u.status ?? 'active',
+          last_synthesized_at: now,
+          updated_at: now,
+        };
+        if (noteIds.length > 0) { patch.note_ids = noteIds; patch.thought_count = noteIds.length; }
+        await sbPatch(SUPABASE_URL, SUPABASE_SERVICE_KEY,
+          `threads?user_id=eq.${uid}&id=eq.${encodeURIComponent(u.id)}`, patch);
+        threads_updated++;
+      }
+
+      // -----------------------------------------------------------------------
+      // Thread-Verbindungen (similarities) — komplett neu aufbauen
+      // -----------------------------------------------------------------------
+      let similarities_written = 0;
+      const allThreads: any[] = await sbGet(
+        SUPABASE_URL, SUPABASE_SERVICE_KEY,
+        `threads?user_id=eq.${uid}&status=eq.active&select=id`,
+      );
+      const validIds = new Set<string>(allThreads.map((t: any) => t.id));
+
+      const seenPairs = new Set<string>();
+      const simRows = (synthesis.similarities ?? [])
+        .filter((s: any) => {
+          const a = s.thread_id_1;
+          const b = s.thread_id_2;
+          if (!a || !b || a === b) return false;
+          if (!validIds.has(a) || !validIds.has(b)) return false;
+          const key = [a, b].sort().join('|');
+          if (seenPairs.has(key)) return false;
+          seenPairs.add(key);
+          return true;
+        })
+        .map((s: any) => ({
+          user_id: userId,
+          thread_id_1: s.thread_id_1,
+          thread_id_2: s.thread_id_2,
+          label: s.label ?? '',
+        }));
+
+      await sbDelete(SUPABASE_URL, SUPABASE_SERVICE_KEY,
+        `thread_similarities?user_id=eq.${uid}`);
+      if (simRows.length > 0) {
+        await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'thread_similarities', simRows);
+        similarities_written = simRows.length;
+      }
+
+      consumed = true;
+      res.status(200).json({ ok: true, threads_created, threads_updated, similarities_written });
     } catch (e: any) {
-      res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: rawText.slice(0, 300) });
-      return;
+      if (!consumed) await releaseRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+      const code = e instanceof SynthesisError ? e.code : 'synthesis_failed';
+      if (!(e instanceof SynthesisError)) console.error('[synthesize] failed', e?.message || e);
+      res.status(500).json({ error: code });
     }
-
-    // Ergebnisse schreiben
-    const now = new Date().toISOString();
-    let threads_created = 0;
-    let threads_updated = 0;
-
-    // Idempotenz: bestehende Titel
-    const existing: any[] = await sbGet(SUPABASE_URL, SUPABASE_SERVICE_KEY, `threads?user_id=eq.${uid}&select=title`);
-    const existingTitles = new Set(existing.map((t: any) => t.title));
-
-    // Neue Threads
-    const toInsert = (synthesis.new_threads ?? [])
-      .filter((t: any) => !existingTitles.has(t.title))
-      .map((t: any) => ({
-        id: t.id ?? randomUUID(),
-        user_id: userId,
-        title: t.title,
-        summary: t.summary ?? '',
-        status: 'active',
-        thought_count: (t.note_ids ?? []).length,
-        note_ids: t.note_ids ?? [],
-        last_synthesized_at: now,
-        created_at: now,
-        updated_at: now,
-      }));
-
-    if (toInsert.length > 0) {
-      await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'threads', toInsert, 'resolution=merge-duplicates,return=minimal');
-      threads_created = toInsert.length;
-    }
-
-    // Thread-Updates
-    for (const u of synthesis.thread_updates ?? []) {
-      const noteIds = u.note_ids ?? [];
-      const patch: any = {
-        user_id: userId,
-        summary: u.summary,
-        status: u.status ?? 'active',
-        last_synthesized_at: now,
-        updated_at: now,
-      };
-      if (noteIds.length > 0) { patch.note_ids = noteIds; patch.thought_count = noteIds.length; }
-      await sbPatch(SUPABASE_URL, SUPABASE_SERVICE_KEY,
-        `threads?user_id=eq.${uid}&id=eq.${encodeURIComponent(u.id)}`, patch);
-      threads_updated++;
-    }
-
-    // -----------------------------------------------------------------------
-    // Thread-Verbindungen (similarities) — komplett neu aufbauen
-    // -----------------------------------------------------------------------
-    let similarities_written = 0;
-    // Gültige Thread-IDs des Users: bestehende aktive + frisch eingefügte.
-    // Verhindert FK-Verletzungen, falls die KI eine unbekannte ID referenziert.
-    const allThreads: any[] = await sbGet(
-      SUPABASE_URL, SUPABASE_SERVICE_KEY,
-      `threads?user_id=eq.${uid}&status=eq.active&select=id`,
-    );
-    const validIds = new Set<string>(allThreads.map((t: any) => t.id));
-
-    const seenPairs = new Set<string>();
-    const simRows = (synthesis.similarities ?? [])
-      .filter((s: any) => {
-        const a = s.thread_id_1;
-        const b = s.thread_id_2;
-        if (!a || !b || a === b) return false;
-        if (!validIds.has(a) || !validIds.has(b)) return false;
-        const key = [a, b].sort().join('|'); // ungerichtet, dedupliziert
-        if (seenPairs.has(key)) return false;
-        seenPairs.add(key);
-        return true;
-      })
-      .map((s: any) => ({
-        user_id: userId,
-        thread_id_1: s.thread_id_1,
-        thread_id_2: s.thread_id_2,
-        label: s.label ?? '',
-      }));
-
-    // Alte Verbindungen des Users löschen, dann neue schreiben (frischer Stand)
-    await sbDelete(SUPABASE_URL, SUPABASE_SERVICE_KEY,
-      `thread_similarities?user_id=eq.${uid}`);
-    if (simRows.length > 0) {
-      await sbPost(SUPABASE_URL, SUPABASE_SERVICE_KEY, 'thread_similarities', simRows);
-      similarities_written = simRows.length;
-    }
-
-    // ai_last_run / ai_runs_today / ai_day_reset wurden bereits vor dem
-    // Anthropic-Call per claimRun() gesetzt.
-    res.status(200).json({ ok: true, threads_created, threads_updated, similarities_written });
   } catch (e: any) {
-    try { res.status(500).json({ error: 'crash: ' + (e?.message || String(e)) }); }
-    catch { res.status(500).end('crash'); }
+    // X2: keine internen Details an den Client
+    console.error('[synthesize] crash', e?.message || e);
+    try { res.status(500).json({ error: 'internal' }); }
+    catch { res.status(500).end('internal'); }
   }
+}
+
+/** Fehler, deren Code an den Client darf (ohne Rohdaten). */
+class SynthesisError extends Error {
+  constructor(public code: 'ai_unavailable' | 'ai_response_invalid') { super(code); }
 }

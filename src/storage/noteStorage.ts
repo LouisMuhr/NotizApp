@@ -41,3 +41,29 @@ export async function loadTombstones(): Promise<string[]> {
 export async function saveTombstones(ids: string[]): Promise<void> {
   await AsyncStorage.setItem(TOMBSTONES_KEY, JSON.stringify(ids));
 }
+
+// ---------------------------------------------------------------------------
+// Sync-Metadaten
+// ---------------------------------------------------------------------------
+
+const PENDING_KEY = '@notizapp_pending_sync';
+const SYNC_UID_KEY = '@notizapp_sync_uid';
+
+/** IDs von Notizen mit lokalen Aenderungen, die noch nicht remote bestaetigt sind. */
+export async function loadPendingSync(): Promise<string[]> {
+  const json = await AsyncStorage.getItem(PENDING_KEY);
+  return json ? JSON.parse(json) : [];
+}
+
+export async function savePendingSync(ids: string[]): Promise<void> {
+  await AsyncStorage.setItem(PENDING_KEY, JSON.stringify(ids));
+}
+
+/** User-ID, mit der der lokale Bestand zuletzt erfolgreich abgeglichen wurde. */
+export async function loadSyncUid(): Promise<string | null> {
+  return AsyncStorage.getItem(SYNC_UID_KEY);
+}
+
+export async function saveSyncUid(uid: string): Promise<void> {
+  await AsyncStorage.setItem(SYNC_UID_KEY, uid);
+}

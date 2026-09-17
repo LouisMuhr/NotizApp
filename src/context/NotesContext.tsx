@@ -1,15 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive, loadTombstones, saveTombstones } from '../storage/noteStorage';
+import {
+  loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
+  loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid,
+} from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
 import { getUserId, clearUserIdCache } from '../sync/userId';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
+import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
+
+export type ResyncMode = 'merge' | 'replace';
 
 interface NotesContextType {
   notes: Note[];
@@ -20,6 +27,8 @@ interface NotesContextType {
   tier: Tier;
   nextAllowedAt: Date | null;
   refreshSubscription: () => Promise<void>;
+  /** Server-Wert (z. B. aus einer 429-Antwort) uebernehmen — Entscheidung 14. */
+  setServerNextAllowedAt: (iso: string | null) => void;
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>) => Promise<Note>;
   updateNote: (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -29,7 +38,14 @@ interface NotesContextType {
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
   rescheduleAllReminders: () => Promise<void>;
-  resyncForUser: (userId: string) => Promise<void>;
+  /**
+   * Sync auf einen (neuen) User umstellen.
+   * - 'merge' (Anmelden, Default): lokale Notizen werden in das Konto uebernommen.
+   * - 'replace' (Abmelden): lokaler Bestand wird durch den Remote-Bestand ersetzt.
+   */
+  resyncForUser: (userId: string, mode?: ResyncMode) => Promise<void>;
+  /** Unbestaetigte lokale Aenderungen hochladen. Wirft, wenn etwas offen bleibt. */
+  flushPending: () => Promise<void>;
   deleteAllData: () => Promise<void>;
 }
 
@@ -42,9 +58,21 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState<Tier>('free');
   const [nextAllowedAt, setNextAllowedAt] = useState<Date | null>(null);
-  const deviceIdRef = useRef<string | null>(null);
+
+  /** Gesamter lokaler Bestand (aktiv + archiviert). Quelle der Wahrheit fuer alle Mutationen. */
+  const allRef = useRef<Note[]>([]);
+  /** IDs mit lokalen Aenderungen, die remote noch nicht bestaetigt sind (Outbox). */
+  const pendingRef = useRef<Set<string>>(new Set());
   const tombstonesRef = useRef<Set<string>>(new Set());
-  const startSyncRef = useRef<((userId: string, remoteOnly?: boolean) => Promise<void>) | null>(null);
+  const deviceIdRef = useRef<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const mountedRef = useRef(true);
+  const syncChainRef = useRef<Promise<void>>(Promise.resolve());
+  const writeChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  // ---------------------------------------------------------------------------
+  // Subscription
+  // ---------------------------------------------------------------------------
 
   const refreshSubscription = useCallback(async () => {
     try {
@@ -56,9 +84,107 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setServerNextAllowedAt = useCallback((iso: string | null) => {
+    setNextAllowedAt(iso ? new Date(iso) : null);
+  }, []);
+
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
+
+  // ---------------------------------------------------------------------------
+  // Persistenz: State und Platte bleiben synchron (L3), Writes sind serialisiert (S13)
+  // ---------------------------------------------------------------------------
+
+  const publish = useCallback((all: Note[]) => {
+    allRef.current = all;
+    const { active, archived } = splitArchive(all);
+    setNotes(active);
+    setArchivedNotes(archived);
+  }, []);
+
+  const persist = useCallback((snapshot: Note[], pending: string[]) => {
+    const run = writeChainRef.current.then(async () => {
+      await savePendingSync(pending);
+      const { active, archived } = splitArchive(snapshot);
+      await saveNotes(active);
+      await saveArchive(archived);
+    });
+    writeChainRef.current = run.catch(() => {});
+    return run;
+  }, []);
+
+  /**
+   * Neuen Bestand uebernehmen: sofort anzeigen, dann schreiben. Scheitert das
+   * Schreiben, wird der Zustand von der Platte zurueckgelesen, damit die UI
+   * nichts zeigt, was nach einem Neustart weg waere.
+   */
+  const commit = useCallback(async (next: Note[]) => {
+    publish(next);
+    try {
+      await persist(next, Array.from(pendingRef.current));
+    } catch (e) {
+      try {
+        const [n, a] = await Promise.all([loadNotes(), loadArchive()]);
+        publish(mergeLocalStores(n, a, tombstonesRef.current));
+      } catch (reloadErr) {
+        console.warn('[storage] reload after failed write failed', reloadErr);
+      }
+      throw e;
+    }
+  }, [publish, persist]);
+
+  // ---------------------------------------------------------------------------
+  // Remote-Push mit Outbox
+  // ---------------------------------------------------------------------------
+
+  const markPending = useCallback((id: string) => {
+    pendingRef.current.add(id);
+  }, []);
+
+  /** Einen Eintrag hochladen; bei Erfolg aus der Outbox entfernen. */
+  const pushOne = useCallback(async (note: Note, patch?: Partial<Note>): Promise<boolean> => {
+    const uid = deviceIdRef.current;
+    if (!uid) return false;
+    try {
+      await upsertRemote(uid, note, patch);
+      pendingRef.current.delete(note.id);
+      await savePendingSync(Array.from(pendingRef.current));
+      return true;
+    } catch (e) {
+      console.warn('[sync] push failed, kept in outbox', note.id, e);
+      return false;
+    }
+  }, []);
+
+  const pushRemote = useCallback((note: Note, patch?: Partial<Note>) => {
+    pushOne(note, patch).catch(() => {});
+  }, [pushOne]);
+
+  const flushPending = useCallback(async () => {
+    if (pendingRef.current.size === 0) return;
+    if (!deviceIdRef.current) throw new Error('offline: kein Sync-User');
+    const ids = Array.from(pendingRef.current);
+    let failed = 0;
+    for (const id of ids) {
+      const note = allRef.current.find((n) => n.id === id);
+      if (!note) {
+        // lokal endgueltig geloescht → Tombstone kuemmert sich darum
+        pendingRef.current.delete(id);
+        continue;
+      }
+      if (!(await pushOne(note))) failed++;
+    }
+    await savePendingSync(Array.from(pendingRef.current));
+    if (failed > 0) throw new Error(`${failed} Notiz(en) konnten nicht hochgeladen werden`);
+  }, [pushOne]);
+
   const addTombstones = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
-    for (const id of ids) tombstonesRef.current.add(id);
+    for (const id of ids) {
+      tombstonesRef.current.add(id);
+      pendingRef.current.delete(id);
+    }
     await saveTombstones(Array.from(tombstonesRef.current));
     if (deviceIdRef.current) {
       try {
@@ -69,39 +195,100 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Load subscription status once on mount (after auth is available)
-  useEffect(() => {
-    refreshSubscription();
-  }, [refreshSubscription]);
+  // ---------------------------------------------------------------------------
+  // Sync: Pull + Merge + Outbox + Realtime
+  // ---------------------------------------------------------------------------
+
+  const subscribeFor = useCallback((uid: string) => {
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    unsubscribeRef.current = subscribeRemote(uid, {
+      onUpsert: (incoming) => {
+        const next = applyIncoming(allRef.current, incoming, tombstonesRef.current);
+        if (next) commit(next).catch(() => {});
+      },
+      onDelete: (id) => {
+        if (pendingRef.current.has(id)) return; // lokale Aenderung offen → wird nachgeschickt
+        if (!allRef.current.some((n) => n.id === id)) return;
+        commit(allRef.current.filter((n) => n.id !== id)).catch(() => {});
+      },
+    });
+  }, [commit]);
+
+  const doSync = useCallback(async (uid: string, mode: ResyncMode) => {
+    {
+      deviceIdRef.current = uid;
+
+      if (tombstonesRef.current.size > 0) {
+        try { await deleteRemote(uid, Array.from(tombstonesRef.current)); }
+        catch (e) { console.warn('[sync] purge failed', e); }
+      }
+
+      const remote = await pullRemote(uid);
+      if (!mountedRef.current) return;
+
+      if (remote !== null) {
+        const lastUid = await loadSyncUid();
+        const identityChanged = lastUid !== uid;
+        let merged: Note[];
+        let toUpload: Note[] = [];
+        if (mode === 'replace') {
+          merged = remote.filter((r) => !tombstonesRef.current.has(r.id));
+          pendingRef.current = new Set();
+        } else {
+          const result = mergeWithRemote({
+            local: allRef.current,
+            remote,
+            pending: pendingRef.current,
+            identityChanged,
+            tombstones: tombstonesRef.current,
+          });
+          merged = result.merged;
+          toUpload = result.toUpload;
+        }
+        for (const n of toUpload) pendingRef.current.add(n.id);
+        await commit(merged);
+        await saveSyncUid(uid);
+        try { await flushPending(); } catch (e) { console.warn('[sync] outbox not empty', e); }
+      } else {
+        // Pull unvollstaendig/fehlgeschlagen: lokal bleibt, Outbox trotzdem versuchen
+        try { await flushPending(); } catch {}
+      }
+
+      if (!mountedRef.current) return;
+      subscribeFor(uid);
+    }
+  }, [commit, flushPending, subscribeFor]);
+
+  /** Sync-Laeufe serialisieren: ein Resync waehrend des Start-Syncs wartet, statt zu entfallen. */
+  const startSync = useCallback((uid: string, mode: ResyncMode) => {
+    const run = syncChainRef.current.then(() => doSync(uid, mode));
+    syncChainRef.current = run.catch(() => {});
+    return run;
+  }, [doSync]);
+
+  // ---------------------------------------------------------------------------
+  // Start
+  // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-    let cancelled = false;
+    mountedRef.current = true;
 
     (async () => {
-      // Load haptics preference early so utility helpers see the right value.
       haptics.loadHapticsPref().catch(() => {});
-      const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones] = await Promise.all([
-        loadNotes(),
-        loadCategories(),
-        loadArchive(),
-        loadTombstones(),
+      const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones, loadedPending] = await Promise.all([
+        loadNotes(), loadCategories(), loadArchive(), loadTombstones(), loadPendingSync(),
       ]);
-      if (cancelled) return;
+      if (!mountedRef.current) return;
       tombstonesRef.current = new Set(loadedTombstones);
-      const archiveIds = new Set(loadedArchive.map((n) => n.id));
-      // Dedupe by id and exclude anything that lives in the archive
-      const seenLocal = new Set<string>();
-      let cleanedLocal = loadedNotes.filter((n) => {
-        if (archiveIds.has(n.id)) return false;
-        if (seenLocal.has(n.id)) return false;
-        seenLocal.add(n.id);
-        return true;
-      });
-      setNotes(cleanedLocal);
-      setArchivedNotes(loadedArchive);
-      if (cleanedLocal.length !== loadedNotes.length) {
-        await saveNotes(cleanedLocal);
+      pendingRef.current = new Set(loadedPending);
+
+      let all = mergeLocalStores(loadedNotes, loadedArchive, tombstonesRef.current);
+      publish(all);
+      if (all.length !== loadedNotes.length + loadedArchive.length) {
+        await persist(all, Array.from(pendingRef.current)).catch(() => {});
       }
       if (loadedCategories.length > 0) {
         setCategories(loadedCategories);
@@ -111,16 +298,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
 
       // ALARM RECOVERY: nach jedem Kaltstart alle Alarme neu anmelden.
-      // cancelAllScheduledNotificationsAsync() zuerst, damit keine Zombie-
-      // Benachrichtigungen aus früheren Starts akkumulieren.
       {
         await cancelAllReminders();
-        const withReminders = cleanedLocal.filter((n) => n.reminderAt !== null);
+        const withReminders = all.filter((n) => !n.archivedAt && n.reminderAt !== null);
         if (withReminders.length > 0) {
-          const updated = [...cleanedLocal];
+          const updated = [...all];
           let changed = false;
           for (const note of withReminders) {
-            // Einmalige Erinnerungen die bereits abgelaufen sind nicht neu planen
             if (note.reminderRecurrence === 'once' && new Date(note.reminderAt!) <= new Date()) {
               if (note.notificationId !== null) {
                 const idx = updated.findIndex((n) => n.id === note.id);
@@ -142,98 +326,48 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
               if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: newId }; changed = true; }
             }
           }
-          if (changed) {
-            cleanedLocal = updated;
-            setNotes(updated);
-            await saveNotes(updated);
+          if (changed && mountedRef.current) {
+            all = updated;
+            await commit(updated).catch(() => {});
           }
         }
       }
 
-      // Sync layer (additive, only if configured)
       if (!isSyncConfigured()) return;
-
-      const startSync = async (userId: string, localNotes: Note[], remoteOnly = false) => {
-        deviceIdRef.current = userId;
-        const purgeIds = [
-          ...Array.from(archiveIds),
-          ...Array.from(tombstonesRef.current),
-        ];
-        if (purgeIds.length > 0) {
-          try { await deleteRemote(userId, purgeIds); } catch (e) { console.warn('[sync] purge failed', e); }
-        }
-        const remote = await pullRemote(userId);
-        if (cancelled) return;
-        if (remote !== null) {
-          const byId = new Map<string, Note>();
-          for (const r of remote) {
-            if (archiveIds.has(r.id)) continue;
-            if (tombstonesRef.current.has(r.id)) continue;
-            byId.set(r.id, r);
-          }
-          if (!remoteOnly) {
-            for (const local of localNotes) {
-              if (archiveIds.has(local.id)) continue;
-              if (tombstonesRef.current.has(local.id)) continue;
-              const existing = byId.get(local.id);
-              if (existing) {
-                if (new Date(local.updatedAt) > new Date(existing.updatedAt)) {
-                  byId.set(local.id, local);
-                } else {
-                  byId.set(local.id, { ...existing, notificationId: local.notificationId });
-                }
-              }
-            }
-          }
-          const merged = Array.from(byId.values()).sort(
-            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-          );
-          setNotes(merged);
-          await saveNotes(merged);
-        }
-        if (unsubscribe) unsubscribe();
-        unsubscribe = subscribeRemote(userId, (incoming) => {
-          if (archiveIds.has(incoming.id)) return;
-          if (tombstonesRef.current.has(incoming.id)) return;
-          setNotes((prev) => {
-            if (prev.some((n) => n.id === incoming.id)) return prev;
-            const next = [incoming, ...prev];
-            saveNotes(next).catch(() => {});
-            return next;
-          });
-        });
-      };
-
-      startSyncRef.current = (userId: string, remoteOnly = false) =>
-        startSync(userId, cleanedLocal, remoteOnly);
-
       try {
         const deviceId = await getUserId();
-        if (!deviceId) return;
-        await startSync(deviceId, cleanedLocal);
+        if (!deviceId || !mountedRef.current) return;
+        await startSync(deviceId, 'merge');
       } catch (e) {
         console.warn('[sync] init failed', e);
       }
-
     })();
 
+    // P3: beim Zurueckkehren in den Vordergrund Aenderungen anderer Geraete holen
+    // und offene Uploads nachschicken (Realtime-Socket kann im Hintergrund sterben).
+    let last: AppStateStatus = AppState.currentState;
+    const sub = AppState.addEventListener('change', (next) => {
+      const wasBackground = last === 'background' || last === 'inactive';
+      last = next;
+      if (wasBackground && next === 'active' && deviceIdRef.current) {
+        startSync(deviceIdRef.current, 'merge').catch((e) => console.warn('[sync] foreground sync failed', e));
+      }
+    });
+
     return () => {
-      cancelled = true;
-      if (unsubscribe) unsubscribe();
+      mountedRef.current = false;
+      sub.remove();
+      if (unsubscribeRef.current) {
+        try { unsubscribeRef.current(); } catch {}
+        unsubscribeRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const persistNotes = useCallback(async (updated: Note[]) => {
-    setNotes(updated);
-    await saveNotes(updated);
-  }, []);
-
-  const pushRemote = useCallback((note: Note) => {
-    if (!deviceIdRef.current) return;
-    upsertRemote(deviceIdRef.current, note).catch((e) =>
-      console.warn('[sync] upsertRemote failed', e),
-    );
-  }, []);
+  // ---------------------------------------------------------------------------
+  // Erinnerungen
+  // ---------------------------------------------------------------------------
 
   const scheduleNoteReminder = useCallback(async (note: {
     id: string; title: string; content: string;
@@ -241,10 +375,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     reminderWeekday: number | null; reminderDayOfMonth: number | null;
   }): Promise<string | null> => {
     if (!note.reminderAt) return null;
-
     const triggerDate = new Date(note.reminderAt);
     if (note.reminderRecurrence === 'once' && triggerDate <= new Date()) return null;
-
     return await scheduleReminder({
       noteId: note.id,
       title: note.title,
@@ -258,9 +390,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const rescheduleAllReminders = useCallback(async () => {
     await cancelAllReminders();
-    const withReminders = notes.filter((n) => n.reminderAt !== null);
+    const all = allRef.current;
+    const withReminders = all.filter((n) => !n.archivedAt && n.reminderAt !== null);
     if (withReminders.length === 0) return;
-    const updated = [...notes];
+    const updated = [...all];
     let changed = false;
     for (const note of withReminders) {
       if (note.reminderRecurrence === 'once' && new Date(note.reminderAt!) <= new Date()) {
@@ -284,15 +417,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         if (idx !== -1) { updated[idx] = { ...updated[idx], notificationId: newId }; changed = true; }
       }
     }
-    if (!changed) return;
-    setNotes(updated);
-    await saveNotes(updated);
-    if (deviceIdRef.current) {
-      for (const u of updated) {
-        if (notes.find((n) => n.id === u.id)?.notificationId !== u.notificationId) pushRemote(u);
-      }
-    }
-  }, [notes, pushRemote]);
+    // notificationId ist geraetelokal → kein Remote-Push, kein updatedAt-Bump
+    if (changed) await commit(updated);
+  }, [commit]);
+
+  // ---------------------------------------------------------------------------
+  // Mutationen (alle ueber allRef, damit parallele Aufrufe sich nicht ueberschreiben)
+  // ---------------------------------------------------------------------------
 
   const addNote = useCallback(async (noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt' | 'notificationId'>): Promise<Note> => {
     const now = new Date().toISOString();
@@ -308,26 +439,20 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       reminderDayOfMonth: noteData.reminderDayOfMonth,
     });
 
-    const newNote: Note = {
-      ...noteData,
-      id,
-      createdAt: now,
-      updatedAt: now,
-      notificationId,
-    };
+    const newNote: Note = { ...noteData, id, createdAt: now, updatedAt: now, notificationId, archivedAt: null };
 
-    const updated = [newNote, ...notes];
-    await persistNotes(updated);
+    markPending(id);
+    await commit([newNote, ...allRef.current]);
     pushRemote(newNote);
     haptics.success();
     return newNote;
-  }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
+  }, [commit, markPending, pushRemote, scheduleNoteReminder]);
 
   const updateNote = useCallback(async (id: string, updates: Partial<Omit<Note, 'id' | 'createdAt'>>) => {
-    const oldNote = notes.find((n) => n.id === id);
+    const oldNote = allRef.current.find((n) => n.id === id);
     if (!oldNote) return;
 
-    const updatedNote = { ...oldNote, ...updates, updatedAt: new Date().toISOString() };
+    const updatedNote: Note = { ...oldNote, ...updates, updatedAt: nextTimestamp(oldNote.updatedAt) };
 
     const reminderChanged =
       updates.reminderAt !== undefined ||
@@ -336,9 +461,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       updates.reminderDayOfMonth !== undefined;
 
     if (reminderChanged) {
-      if (oldNote.notificationId) {
-        await cancelReminder(oldNote.notificationId);
-      }
+      if (oldNote.notificationId) await cancelReminder(oldNote.notificationId);
       updatedNote.notificationId = await scheduleNoteReminder({
         id,
         title: updatedNote.title,
@@ -350,49 +473,49 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    const updated = notes.map((n) => (n.id === id ? updatedNote : n));
-    await persistNotes(updated);
-    pushRemote(updatedNote);
+    markPending(id);
+    await commit(allRef.current.map((n) => (n.id === id ? updatedNote : n)));
+    pushRemote(updatedNote, updates);
     haptics.light();
-  }, [notes, persistNotes, scheduleNoteReminder, pushRemote]);
+  }, [commit, markPending, pushRemote, scheduleNoteReminder]);
 
-  const persistArchive = useCallback(async (updated: Note[]) => {
-    setArchivedNotes(updated);
-    await saveArchive(updated);
-  }, []);
-
+  /** Archivieren: bleibt remote erhalten, nur archived_at wird gesetzt (S9). */
   const deleteNote = useCallback(async (id: string) => {
-    const note = notes.find((n) => n.id === id);
-    if (!note) return;
-    if (note.notificationId) {
-      await cancelReminder(note.notificationId);
-    }
-    const archived = { ...note, notificationId: null, isPinned: false };
-    await persistArchive([archived, ...archivedNotes]);
-    await persistNotes(notes.filter((n) => n.id !== id));
-    // Remove from remote so it doesn't get pulled back as an active note
-    if (deviceIdRef.current) {
-      try {
-        await deleteRemote(deviceIdRef.current, [id]);
-      } catch (e) {
-        console.warn('[sync] deleteRemote (archive) failed', e);
-      }
-    }
-  }, [notes, archivedNotes, persistNotes, persistArchive]);
+    const note = allRef.current.find((n) => n.id === id);
+    if (!note || note.archivedAt) return;
+    if (note.notificationId) await cancelReminder(note.notificationId);
+    const stamp = nextTimestamp(note.updatedAt);
+    const archived: Note = { ...note, notificationId: null, isPinned: false, archivedAt: stamp, updatedAt: stamp };
+    markPending(id);
+    await commit(allRef.current.map((n) => (n.id === id ? archived : n)));
+    pushRemote(archived, { archivedAt: stamp, isPinned: false });
+  }, [commit, markPending, pushRemote]);
 
   const restoreNote = useCallback(async (id: string) => {
-    const note = archivedNotes.find((n) => n.id === id);
-    if (!note) return;
-    const restored = { ...note, updatedAt: new Date().toISOString() };
-    await persistNotes([restored, ...notes]);
-    await persistArchive(archivedNotes.filter((n) => n.id !== id));
-    pushRemote(restored);
-  }, [notes, archivedNotes, persistNotes, persistArchive, pushRemote]);
+    const note = allRef.current.find((n) => n.id === id);
+    if (!note || !note.archivedAt) return;
+    const restored: Note = { ...note, archivedAt: null, updatedAt: nextTimestamp(note.updatedAt) };
+    markPending(id);
+    await commit(allRef.current.map((n) => (n.id === id ? restored : n)));
+    pushRemote(restored, { archivedAt: null });
+  }, [commit, markPending, pushRemote]);
 
   const deleteNotePermanently = useCallback(async (id: string) => {
-    await persistArchive(archivedNotes.filter((n) => n.id !== id));
+    const note = allRef.current.find((n) => n.id === id);
+    if (note?.notificationId) await cancelReminder(note.notificationId).catch(() => {});
+    await commit(allRef.current.filter((n) => n.id !== id));
     await addTombstones([id]);
-  }, [archivedNotes, persistArchive, addTombstones]);
+  }, [commit, addTombstones]);
+
+  const togglePin = useCallback(async (id: string) => {
+    const note = allRef.current.find((n) => n.id === id);
+    if (!note) return;
+    const toggled: Note = { ...note, isPinned: !note.isPinned, updatedAt: nextTimestamp(note.updatedAt) };
+    markPending(id);
+    await commit(allRef.current.map((n) => (n.id === id ? toggled : n)));
+    pushRemote(toggled, { isPinned: toggled.isPinned });
+    haptics.light();
+  }, [commit, markPending, pushRemote]);
 
   const addCategory = useCallback(async (name: string) => {
     if (!categories.includes(name)) {
@@ -401,16 +524,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       await saveCategories(updated);
     }
   }, [categories]);
-
-  const togglePin = useCallback(async (id: string) => {
-    const note = notes.find((n) => n.id === id);
-    if (!note) return;
-    const toggled = { ...note, isPinned: !note.isPinned, updatedAt: new Date().toISOString() };
-    const updated = notes.map((n) => (n.id === id ? toggled : n));
-    await persistNotes(updated);
-    pushRemote(toggled);
-    haptics.light();
-  }, [notes, persistNotes, pushRemote]);
 
   const deleteCategory = useCallback(async (name: string) => {
     const updated = categories.filter((c) => c !== name);
@@ -425,11 +538,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       '@notizapp_categories',
       '@notizapp_archive',
       '@notizapp_tombstones',
+      '@notizapp_pending_sync',
+      '@notizapp_sync_uid',
     ]);
-    setNotes([]);
-    setArchivedNotes([]);
+    publish([]);
     setCategories(DEFAULT_CATEGORIES);
     tombstonesRef.current = new Set();
+    pendingRef.current = new Set();
 
     if (deviceIdRef.current) {
       const supabase = getSupabase();
@@ -442,14 +557,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         ]).catch((e) => console.warn('[gdpr] remote delete failed', e));
       }
     }
-  }, []);
+  }, [publish]);
 
-  const resyncForUser = useCallback(async (userId: string) => {
+  const resyncForUser = useCallback(async (userId: string, mode: ResyncMode = 'merge') => {
     clearUserIdCache();
-    if (startSyncRef.current) {
-      await startSyncRef.current(userId, true);
-    }
-  }, []);
+    if (!isSyncConfigured()) return;
+    await startSync(userId, mode);
+  }, [startSync]);
 
   return (
     <NotesContext.Provider
@@ -461,6 +575,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         tier,
         nextAllowedAt,
         refreshSubscription,
+        setServerNextAllowedAt,
         addNote,
         updateNote,
         deleteNote,
@@ -471,6 +586,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         rescheduleAllReminders,
         resyncForUser,
+        flushPending,
         deleteAllData,
       }}
     >

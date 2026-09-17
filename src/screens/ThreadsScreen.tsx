@@ -21,6 +21,7 @@ import * as haptics from '../utils/haptics';
 import { getSupabase } from '../sync/supabaseClient';
 import ProBanner from '../components/ProBanner';
 import { useLanguage } from '../context/LanguageContext';
+import { formatAvailability, formatDateTime } from '../utils/limitFormat';
 
 interface Props {
   navigation: any;
@@ -198,7 +199,9 @@ function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpi
 
 const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? '';
 
-async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<{ message: string; next_allowed_at?: string }> {
+type SynthesisResult = { message: string; next_allowed_at?: string; error?: string };
+
+async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<SynthesisResult> {
   const supabase = getSupabase();
   if (!supabase) throw new Error(t('threads.syncNotConfigured'));
   const { data: { session } } = await supabase.auth.getSession();
@@ -209,13 +212,18 @@ async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<{ m
     headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
   });
 
-  const json = await res.json();
+  const json = await res.json().catch(() => ({}));
 
   if (res.status === 429) {
-    return { message: 'limit_reached', next_allowed_at: json?.next_allowed_at };
+    return { message: 'limit_reached', error: json?.error, next_allowed_at: json?.next_allowed_at };
   }
 
-  if (!res.ok) throw new Error(json?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    // Server liefert nur noch Fehlercodes (X2) → uebersetzen, kein Rohtext
+    const code = typeof json?.error === 'string' ? json.error : 'internal';
+    const known = ['ai_unavailable', 'ai_response_invalid', 'synthesis_failed', 'profile_unavailable', 'internal'];
+    throw new Error(t(known.includes(code) ? `threads.serverError.${code}` : 'threads.serverError.internal'));
+  }
   if (json.message === 'no_feed_notes') return { message: t('threads.noNewNotes') };
   const created = json.threads_created ?? 0;
   const updated = json.threads_updated ?? 0;
@@ -225,22 +233,12 @@ async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<{ m
   return { message: parts.length > 0 ? parts.join(', ') : t('threads.nothingNew') };
 }
 
-/** Formats a Date into a localized short date: "Mo. 26. Mai" / "Mon, May 26" */
-function formatLocalizedDate(date: Date, locale: string): string {
-  return date.toLocaleDateString(locale === 'en' ? 'en-US' : 'de-DE', { weekday: 'short', day: 'numeric', month: 'long' });
-}
-
-/** Calculates days until a future date (ceil) */
-function daysUntil(date: Date): number {
-  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
-}
-
 export default function ThreadsScreen({ navigation }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { t, locale } = useLanguage();
   const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
-  const { nextAllowedAt, refreshSubscription } = useNotes();
+  const { nextAllowedAt, refreshSubscription, setServerNextAllowedAt } = useNotes();
   const [synthesizing, setSynthesizing] = useState(false);
   const [snackMessage, setSnackMessage] = useState('');
   const [snackVisible, setSnackVisible] = useState(false);
@@ -250,10 +248,7 @@ export default function ThreadsScreen({ navigation }: Props) {
 
   function getSynthesizeLabel(): string {
     if (synthesizing) return t('threads.synthesizeRunning');
-    if (isLimited) {
-      const days = daysUntil(nextAllowedAt!);
-      return t('threads.synthesizeAvailableIn', { count: days });
-    }
+    if (isLimited) return formatAvailability(nextAllowedAt!, new Date(), locale, t);
     return t('threads.synthesize');
   }
 
@@ -263,11 +258,19 @@ export default function ThreadsScreen({ navigation }: Props) {
     setSynthesizing(true);
     try {
       const result = await runSynthesis(t);
-      if (result.message === 'limit_reached' && result.next_allowed_at) {
-        // Server says we're limited — refresh subscription state
-        await refreshSubscription();
-        const nextDate = new Date(result.next_allowed_at);
-        setSnackMessage(`${t('threads.limitReached')}${formatLocalizedDate(nextDate, locale)}`);
+      if (result.message === 'limit_reached') {
+        if (result.error === 'busy') {
+          // Zwei Anfragen haben sich ueberlappt — kein echtes Limit
+          setSnackMessage(t('threads.busy'));
+        } else if (result.next_allowed_at) {
+          // Entscheidung 14: der Server-Wert ist massgeblich
+          setServerNextAllowedAt(result.next_allowed_at);
+          const nextDate = new Date(result.next_allowed_at);
+          setSnackMessage(`${t('threads.limitReached')}${formatDateTime(nextDate, locale)}`);
+        } else {
+          await refreshSubscription();
+          setSnackMessage(t('threads.limitReachedGeneric'));
+        }
       } else {
         // On success, also refresh (ai_last_run was updated server-side)
         await refreshSubscription();

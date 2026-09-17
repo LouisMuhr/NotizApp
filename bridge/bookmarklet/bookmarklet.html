@@ -21,9 +21,9 @@
 <p>Markiere Text auf einer beliebigen Webseite, klick das Bookmark, und der Text landet direkt als Notiz in deiner App — mit Kategorie, Pin-Option und optionaler Erinnerung.</p>
 
 <div class="step">
-  <strong>Schritt 1:</strong> Trage deine persönliche Nutzer-ID ein. Du findest sie in der App unter <strong>Einstellungen → Bookmarklet</strong>.
-  <p><label>Deine Nutzer-ID:<br>
-  <input id="uid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></label></p>
+  <strong>Schritt 1:</strong> Trage deinen persönlichen Bookmarklet-Schlüssel ein. Du erzeugst ihn in der App unter <strong>Einstellungen → Bookmarklet</strong>. Der Schlüssel ist geheim – er erlaubt, Notizen in dein Konto zu speichern.
+  <p><label>Dein Bookmarklet-Schlüssel:<br>
+  <input id="tok" placeholder="64 Zeichen, aus der App kopiert" autocomplete="off"></label></p>
   <button onclick="build()">Bookmarklet generieren</button>
 </div>
 
@@ -38,17 +38,15 @@
 
 <script>
 var FIXED_URL = 'https://bridge-three-coral.vercel.app';
-var FIXED_TOK = 'f40dd5b98632326e9c04b984f91464ef39284b8f6b8e3d41840bcf9adad2ab76';
 
 function build() {
-  var uid = document.getElementById('uid').value.trim();
-  if (!uid) { alert('Bitte zuerst deine Nutzer-ID eintragen.'); return; }
-  if (uid.length < 30) { alert('Die Nutzer-ID sieht nicht korrekt aus. Bitte kopiere sie direkt aus der App.'); return; }
+  var tok = document.getElementById('tok').value.trim();
+  if (!tok) { alert('Bitte zuerst deinen Bookmarklet-Schlüssel eintragen.'); return; }
+  if (!/^[0-9a-f]{64}$/i.test(tok)) { alert('Der Schlüssel sieht nicht korrekt aus. Bitte kopiere ihn direkt aus der App.'); return; }
 
   // The panel script is inlined as a self-contained IIFE.
   var panelScript = `(function(){
-var API='${FIXED_URL}/api/note?token=${encodeURIComponent(FIXED_TOK)}';
-var UID='`+uid+`';
+var API='${FIXED_URL}/api/note?token=`+encodeURIComponent(tok)+`';
 var CATS=['Allgemein','Arbeit','Privat','Ideen','Einkauf'];
 var sel=window.getSelection().toString().trim();
 if(!sel){alert('Bitte zuerst Text markieren.');return;}
@@ -205,7 +203,6 @@ shadow.getElementById('sav').onclick=function(){
     category:activeCat,
     pinned:false,
     feeds_threads:shadow.getElementById('pin').checked,
-    user_id:UID,
   };
   if(remDt){
     payload.reminder_at=new Date(remDt).toISOString();
@@ -223,7 +220,11 @@ shadow.getElementById('sav').onclick=function(){
       } else {
         btn.disabled=false;
         btn.textContent='Speichern';
-        alert('Fehler: '+(x.j&&x.j.error?x.j.error:JSON.stringify(x.j)));
+        var code=x.j&&x.j.error;
+        var msg=code==='unauthorized'?'Schlüssel ungültig oder widerrufen. Bitte in der App einen neuen erzeugen und das Bookmarklet neu anlegen.'
+          :code==='tier_required'?'Das Bookmarklet ist ab dem Basic-Plan verfügbar.'
+          :'Speichern fehlgeschlagen ('+(code||x.status)+').';
+        alert(msg);
       }
     })
     .catch(function(e){
