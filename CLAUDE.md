@@ -77,7 +77,8 @@ From `NotizApp/NotizApp/`:
 ```bash
 npx expo start [--android | --ios | --web]
 eas build --platform android|ios
-npx tsc --noEmit        # only static check (no lint/test runner configured)
+npx tsc --noEmit        # static check
+npm test                # Jest (jest-expo); __tests__/ = Audit-Tests, rot = bekannter Bug
 ```
 
 Bridge (`bridge/`):
@@ -96,18 +97,9 @@ npm run build
 
 ## Environment Variables
 
-`NotizApp/.env` (copy from `.env.example`):
-```
-EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-EXPO_PUBLIC_DEVICE_ID=<unique-device-label>
-```
-
-`webapp/.env.local`:
-```
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-```
+`NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
+`EXPO_PUBLIC_DEVICE_ID`, `EXPO_PUBLIC_BRIDGE_URL`, `EXPO_PUBLIC_BRIDGE_BEARER`.
+`webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 
 Sync is optional — if env vars are absent, `isSyncConfigured()` returns false and
 all sync code is silently skipped.
@@ -194,7 +186,8 @@ manuelle/lokale Nutzung (`fetch` / `write <json>` / `add "Gedanke"`). Credential
 - **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
 - **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch.
 - **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
-- **No test files** — rely on manual device testing and TypeScript.
+- **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Audit-Tests (Sept. 2026)
+  beschreiben das **Soll**; rote Tests = offene Bugs. Manuelle Skripte: `docs/audit/manual-tests.md`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
              Arbeite nie am main branch, außer ich bitte darum
