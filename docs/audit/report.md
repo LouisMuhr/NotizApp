@@ -257,3 +257,13 @@ Weitere Änderungen: Bookmarklet-Settings-Screen erzeugt den Schlüssel (Hinweis
 5. App-Build: erster Start nach dem Update behandelt alle lokalen Notizen als „pending" (keine Sync-UID
    gespeichert) → lädt sie hoch. Lokal archivierte Notizen werden dabei mit `archived_at` remote angelegt.
 6. Manuelle Skripte X1, E1, S9, S10, P3, L1 gegen Staging durchlaufen.
+
+### 4.6 Bestätigte Entscheidungen (2026-09-17)
+
+| Nr | Frage | Entscheidung |
+|---|---|---|
+| 1 | Bookmarklet-Gate ab Basic ohne Bezahlmodell | Bleibt aktiv (`BOOKMARKLET_MIN_TIER=basic`); Payment-Provider folgt in Kürze. |
+| 2 | Identitätswechsel ohne Dialog (O6) | Stiller Merge + Upload reicht vorerst. |
+| 3 | Sign-in nimmt alle lokalen Notizen ins Konto | Bewusst so (Konsequenz aus Entscheidung 10). |
+| 4 | Claim-Race zweimal verloren → 429 `busy` mit „in 10 Sekunden" | Akzeptiert. |
+| 5 | Payment-Provider (Fix 7: E3/E4/E9/E10) | Wird in den nächsten Tagen eingebaut; bis dahin offen. |
