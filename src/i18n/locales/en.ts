@@ -171,6 +171,7 @@ const en: typeof de = {
     },
     atTime: 'Available at {{time}}',
     atDate: 'Available from {{date}}',
+    atDateLead: 'Available from',
   },
   threadDetail: {
     notFound: 'Thread not found',
@@ -240,6 +241,7 @@ const en: typeof de = {
     bookmarkletSub: 'Save web pages as notes',
     webApp: 'Web app',
     webAppSub: 'Notes in the browser as a graph',
+    lockedFromPlan: 'Available from {{plan}}',
     privacy: 'Privacy & GDPR',
     privacySub: 'Export, data deletion',
     resetOnboarding: 'Reset onboarding',
@@ -407,7 +409,7 @@ const en: typeof de = {
         label: 'Basic',
         price: '€1.99',
         priceDetail: 'per month',
-        features: ['Everything in Free', 'AI synthesis 1× daily', 'Device sync', 'Faster synthesis'],
+        features: ['Everything in Free', 'AI synthesis 1× daily', 'Device sync', 'Bookmarklet — save web pages as notes', 'Faster synthesis'],
       },
       pro: {
         label: 'Pro',

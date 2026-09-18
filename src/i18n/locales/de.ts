@@ -169,6 +169,7 @@ export default {
     },
     atTime: 'Ab {{time}} verfügbar',
     atDate: 'Ab {{date}} verfügbar',
+    atDateLead: 'Verfügbar ab',
   },
   threadDetail: {
     notFound: 'Thread nicht gefunden',
@@ -238,6 +239,7 @@ export default {
     bookmarkletSub: 'Webseiten als Notiz speichern',
     webApp: 'Web App',
     webAppSub: 'Notizen im Browser als Graph',
+    lockedFromPlan: 'Erst ab {{plan}} verfügbar',
     privacy: 'Datenschutz & DSGVO',
     privacySub: 'Export, Datenlöschung',
     resetOnboarding: 'Onboarding zurücksetzen',
@@ -405,7 +407,7 @@ export default {
         label: 'Basic',
         price: '1,99 €',
         priceDetail: 'pro Monat',
-        features: ['Alles aus Free', 'KI-Synthese 1× täglich', 'Geräte-Synchronisation', 'Schnellere Synthese'],
+        features: ['Alles aus Free', 'KI-Synthese 1× täglich', 'Geräte-Synchronisation', 'Bookmarklet — Webseiten als Notiz speichern', 'Schnellere Synthese'],
       },
       pro: {
         label: 'Pro',
