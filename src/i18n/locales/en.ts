@@ -343,6 +343,8 @@ const en: typeof de = {
     pendingTitle: 'Confirmation pending',
     pendingBody: 'We sent an email to %{email}. Confirm the link inside — only then are your notes secured and synced.',
     checkConfirmationButton: 'Check confirmation',
+    checkConfirmationHint: 'Confirmed the link? Enter your password once to finish.',
+    toastEnterPasswordToCheck: 'Please enter your password to finish confirming.',
     resendConfirmation: 'Resend email',
     cancelRegistrationButton: 'Cancel registration',
     toastStillPending: 'No confirmation yet. Please check your inbox.',

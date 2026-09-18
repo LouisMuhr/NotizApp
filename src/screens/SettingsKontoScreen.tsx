@@ -262,9 +262,16 @@ export default function SettingsKontoScreen() {
   }, [initialUploadPending]);
 
   /**
-   * Erneut pruefen, ob die Bestaetigung inzwischen erfolgt ist. Supabase
-   * liefert den aktualisierten `email_confirmed_at`-Wert erst nach einem
-   * Refresh der Session.
+   * Erneut pruefen, ob die Bestaetigung inzwischen erfolgt ist.
+   *
+   * Zwei Faelle, weil Supabase nach `signUp()` je nach Projekteinstellung eine
+   * Session ausgibt oder nicht:
+   *
+   * - MIT Session: `refreshSession()` holt den aktualisierten
+   *   `email_confirmed_at`-Wert, danach entscheidet `resolveAccountState()`.
+   * - OHNE Session: der Status laesst sich ueberhaupt nicht abfragen (es gibt
+   *   keinen anonymen Endpunkt dafuer). Der einzige Weg an eine Session ist
+   *   eine Anmeldung — deshalb wird hier nach dem Passwort gefragt.
    */
   const handleCheckConfirmation = async () => {
     const supabase = getSupabase();
@@ -274,12 +281,46 @@ export default function SettingsKontoScreen() {
     }
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        // Ohne Session brauchen wir das Passwort, um an eine zu kommen.
+        if (!inputPassword) {
+          showToast(t('settingsKonto.toastEnterPasswordToCheck'), 'error');
+          return;
+        }
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password: inputPassword,
+        });
+        if (error) {
+          // Supabase meldet eine unbestaetigte E-Mail als eigenen Fehlercode;
+          // das ist kein Passwortfehler, sondern schlicht "noch nicht bestaetigt".
+          const code = (error as any)?.code;
+          if (code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) {
+            showToast(t('settingsKonto.toastStillPending'), 'info');
+          } else {
+            showToast(t('settingsKonto.toastSignInFailed') + error.message, 'error');
+          }
+          return;
+        }
+        const user = data.user;
+        if (!user?.email_confirmed_at) {
+          showToast(t('settingsKonto.toastStillPending'), 'info');
+          return;
+        }
+        clearUserIdCache();
+        await finishSecuring(user.id, user.email ?? email);
+        return;
+      }
+
       await supabase.auth.refreshSession().catch(() => {});
       const snapshot = await resolveAccountState();
       if (snapshot.state !== 'secured' || !snapshot.userId) {
         showToast(t('settingsKonto.toastStillPending'), 'info');
         return;
       }
+      clearUserIdCache();
       await finishSecuring(snapshot.userId, snapshot.email ?? '');
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
@@ -709,10 +750,22 @@ export default function SettingsKontoScreen() {
             </View>
 
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              {/* Ohne Session (Supabase gibt nach signUp() keine aus) kommen wir
+                  nur per Anmeldung an den Bestaetigungsstatus. */}
+              <Text style={styles.hintText}>{t('settingsKonto.checkConfirmationHint')}</Text>
+              <Field
+                label={t('settingsKonto.passwordLabel')}
+                value={inputPassword}
+                onChangeText={setInputPassword}
+                placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
+                secure
+                onSubmit={handleCheckConfirmation}
+              />
               <PrimaryButton
                 label={t('settingsKonto.checkConfirmationButton')}
                 onPress={handleCheckConfirmation}
                 loading={loading}
+                disabled={!inputPassword}
               />
               <TouchableOpacity onPress={handleResendConfirmation} activeOpacity={0.7}>
                 <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
@@ -931,6 +984,14 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     color: Tokens.ink,
+  },
+
+  // ── Erklaerender Hinweistext ──
+  hintText: {
+    fontFamily: Fonts.sans,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Tokens.inkDim,
   },
 
   // ── Sekundaerer Textlink ──

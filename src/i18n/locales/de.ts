@@ -341,6 +341,8 @@ export default {
     pendingTitle: 'Bestätigung ausstehend',
     pendingBody: 'Wir haben eine E-Mail an %{email} geschickt. Bestätige den Link darin — erst danach werden deine Notizen gesichert und synchronisiert.',
     checkConfirmationButton: 'Bestätigung prüfen',
+    checkConfirmationHint: 'Du hast den Link bestätigt? Gib zum Abschließen einmal dein Passwort ein.',
+    toastEnterPasswordToCheck: 'Bitte Passwort eingeben, um die Bestätigung abzuschließen.',
     resendConfirmation: 'E-Mail erneut senden',
     cancelRegistrationButton: 'Registrierung abbrechen',
     toastStillPending: 'Noch keine Bestätigung eingegangen. Prüfe dein Postfach.',

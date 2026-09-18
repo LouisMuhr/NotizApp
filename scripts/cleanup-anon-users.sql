@@ -72,19 +72,19 @@ where u.is_anonymous
 -- dort keinen FK — die Zeilen bleiben dann als Waisen liegen und muessen
 -- separat geloescht werden. Vorher pruefen:
 --
---   select tc.table_name
---     from information_schema.table_constraints tc
---     join information_schema.key_column_usage kcu
---       on tc.constraint_name = kcu.constraint_name
---    where tc.constraint_type = 'FOREIGN KEY'
---      and kcu.column_name = 'user_id' and tc.table_schema = 'public';
---
--- delete from auth.users u
--- where u.is_anonymous
---   and u.last_sign_in_at < now() - interval '60 days';
+select tc.table_name
+     from information_schema.table_constraints tc
+     join information_schema.key_column_usage kcu
+       on tc.constraint_name = kcu.constraint_name
+    where tc.constraint_type = 'FOREIGN KEY'
+      and kcu.column_name = 'user_id' and tc.table_schema = 'public';
+
+ delete from auth.users u
+ where u.is_anonymous
+   and u.last_sign_in_at < now() - interval '60 days';
 
 -- ── Schritt 3: Migrationsfunktion entfernen ─────────────────────────────────
 -- `migrate_user` wurde nur fuer den Uebergang anonym → Konto gebraucht. Nachdem
 -- Schritt 2 gelaufen ist, gibt es nichts mehr zu migrieren.
 --
--- drop function if exists public.migrate_user(uuid, uuid);
+drop function if exists public.migrate_user(uuid, uuid);
