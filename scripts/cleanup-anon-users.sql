@@ -14,6 +14,17 @@
 -- (die lokalen Notizen bleiben). Deshalb Schritt 2 erst nach einer Karenzzeit,
 -- in der der Grossteil der Installationen aktualisiert wurde.
 
+-- HINWEIS ZU DEN TYPEN: `user_id` ist nicht in allen Tabellen `uuid` — in
+-- mindestens einer Installation ist `thread_similarities.user_id` vom Typ
+-- `text` (Abweichung von supabase-schema.sql). Alle Vergleiche unten casten
+-- daher beide Seiten auf `text`; das funktioniert fuer beide Typen.
+-- Welche Spalten betroffen sind, zeigt:
+--
+--   select table_name, column_name, data_type
+--     from information_schema.columns
+--    where table_schema = 'public' and column_name = 'user_id'
+--    order by table_name;
+
 -- ── Schritt 0: Bestandsaufnahme ─────────────────────────────────────────────
 -- Erst schauen, dann loeschen. Zeigt, wie viele anonyme User es gibt und wie
 -- viele davon ueberhaupt Daten haben.
@@ -24,19 +35,29 @@ select
   count(*) filter (where u.last_sign_in_at < now() - interval '60 days') as inaktiv_60d
 from auth.users u
 left join lateral (
-  select count(*) as cnt from public.notes where user_id = u.id
+  select count(*) as cnt from public.notes where user_id::text = u.id::text
 ) n on true
 where u.is_anonymous;
 
--- ── Schritt 1: leere anonyme User (Sorte B) ─────────────────────────────────
+-- ── Schritt 1a: Probelauf ───────────────────────────────────────────────────
+-- Zaehlt, was Schritt 1b loeschen wuerde. Identische Bedingung, nur select.
+select count(*) as wuerde_geloescht
+from auth.users u
+where u.is_anonymous
+  and not exists (select 1 from public.notes               where user_id::text = u.id::text)
+  and not exists (select 1 from public.thoughts            where user_id::text = u.id::text)
+  and not exists (select 1 from public.threads             where user_id::text = u.id::text)
+  and not exists (select 1 from public.thread_similarities where user_id::text = u.id::text);
+
+-- ── Schritt 1b: leere anonyme User (Sorte B) ────────────────────────────────
 -- Karteileichen aus App-Starts ohne jede Nutzung. Risikolos, sofort ausfuehrbar:
 -- es haengen keine Daten daran.
 delete from auth.users u
 where u.is_anonymous
-  and not exists (select 1 from public.notes             where user_id = u.id)
-  and not exists (select 1 from public.thoughts          where user_id = u.id)
-  and not exists (select 1 from public.threads           where user_id = u.id)
-  and not exists (select 1 from public.thread_similarities where user_id = u.id);
+  and not exists (select 1 from public.notes               where user_id::text = u.id::text)
+  and not exists (select 1 from public.thoughts            where user_id::text = u.id::text)
+  and not exists (select 1 from public.threads             where user_id::text = u.id::text)
+  and not exists (select 1 from public.thread_similarities where user_id::text = u.id::text);
 
 -- ── Schritt 2: anonyme User mit Daten (Sorte A) ─────────────────────────────
 -- ERST NACH KARENZZEIT ausfuehren (Empfehlung: 60-90 Tage nach dem Rollout der
@@ -45,6 +66,18 @@ where u.is_anonymous
 --
 -- `on delete cascade` raeumt notes, thoughts, threads, thread_similarities und
 -- profiles mit ab. Vor dem Ausfuehren das Intervall bewusst pruefen.
+--
+-- ACHTUNG: Der Cascade greift nur, wo `user_id` ein echter Foreign Key auf
+-- auth.users(id) ist. Ist eine Spalte `text` (siehe Typ-Hinweis oben), gibt es
+-- dort keinen FK — die Zeilen bleiben dann als Waisen liegen und muessen
+-- separat geloescht werden. Vorher pruefen:
+--
+--   select tc.table_name
+--     from information_schema.table_constraints tc
+--     join information_schema.key_column_usage kcu
+--       on tc.constraint_name = kcu.constraint_name
+--    where tc.constraint_type = 'FOREIGN KEY'
+--      and kcu.column_name = 'user_id' and tc.table_schema = 'public';
 --
 -- delete from auth.users u
 -- where u.is_anonymous
