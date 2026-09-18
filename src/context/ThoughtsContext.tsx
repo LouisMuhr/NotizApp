@@ -127,10 +127,12 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
   }, [subscribeForUser]);
 
   /**
-   * Sync abschalten und die Threads des Kontos aus der Anzeige nehmen.
-   * Beim Abmelden geht die App damit zurueck nach `local`; es wird kein neuer
-   * User erzeugt. Threads sind reine Konto-Daten (Synthese laeuft serverseitig),
-   * lokal bleibt daher nichts stehen.
+   * Sync abschalten, lokalen Thread-Bestand behalten.
+   *
+   * Threads werden wie Notizen behandelt: Beim Trennen vom Konto bleiben sie
+   * auf dem Geraet. Die App sagt zu, dass der lokale Bestand erhalten bleibt —
+   * das muss auch fuer Threads gelten, sonst verschwindet stillschweigend
+   * etwas, das der Nutzer vor Augen hatte.
    */
   const detachSync = useCallback(async () => {
     if (unsubscribeRef.current) {
@@ -138,8 +140,6 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
       unsubscribeRef.current = null;
     }
     deviceIdRef.current = null;
-    setThreads([]);
-    await saveThreads([]);
   }, []);
 
   // Nach der Anmeldung: Threads des Kontos frisch laden (nur Remote) und

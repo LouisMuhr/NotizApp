@@ -323,7 +323,7 @@ const en: typeof de = {
     signInButton: 'Sign in',
     updatePasswordButton: 'Update password',
     signOutButton: 'Stop syncing',
-    signOutHint: 'Your notes stay on this device.',
+    signOutHint: 'Your notes and threads stay on this device.',
     toastSyncNotConfigured: 'Sync is not configured.',
     toastEnterEmailPassword: 'Please enter email and password.',
     toastSignInFailed: 'Sign in failed: ',

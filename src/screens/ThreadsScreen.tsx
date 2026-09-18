@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -18,7 +18,8 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
-import { getSupabase } from '../sync/supabaseClient';
+import { getSupabase, isSyncConfigured } from '../sync/supabaseClient';
+import { resolveAccountState } from '../sync/accountState';
 import ProBanner from '../components/ProBanner';
 import UnsecuredBanner from '../components/UnsecuredBanner';
 import { useLanguage } from '../context/LanguageContext';
@@ -243,6 +244,24 @@ export default function ThreadsScreen({ navigation }: Props) {
   const [synthesizing, setSynthesizing] = useState(false);
   const [snackMessage, setSnackMessage] = useState('');
   const [snackVisible, setSnackVisible] = useState(false);
+  /**
+   * Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
+   *
+   * Startwert ist `true`, wenn Sync gar nicht konfiguriert ist: dann gibt es
+   * keine Konto-Zustaende und der Button verhaelt sich wie vor der Umstellung.
+   */
+  const [hasAccount, setHasAccount] = useState(!isSyncConfigured());
+
+  useEffect(() => {
+    if (!isSyncConfigured()) return;
+    let cancelled = false;
+    resolveAccountState()
+      .then((snapshot) => {
+        if (!cancelled) setHasAccount(snapshot.state === 'secured');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Is the user currently rate-limited?
   const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
@@ -321,6 +340,10 @@ export default function ThreadsScreen({ navigation }: Props) {
             </Text>
             <Text style={styles.headerTitle}>{t('threads.title')}</Text>
           </View>
+          {/* Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
+              Ohne Konto waere der Button nur ein Weg in eine Fehlermeldung —
+              stattdessen weist der UnsecuredBanner darunter den Weg. */}
+          {hasAccount && (
           <Pressable
             onPress={handleSynthesize}
             disabled={synthesizing || isLimited}
@@ -351,6 +374,7 @@ export default function ThreadsScreen({ navigation }: Props) {
               ) : null}
             </View>
           </Pressable>
+          )}
         </View>
       </View>
 

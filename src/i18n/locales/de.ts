@@ -321,7 +321,7 @@ export default {
     signInButton: 'Anmelden',
     updatePasswordButton: 'Passwort aktualisieren',
     signOutButton: 'Sync beenden',
-    signOutHint: 'Deine Notizen bleiben auf diesem Gerät.',
+    signOutHint: 'Deine Notizen und Threads bleiben auf diesem Gerät.',
     toastSyncNotConfigured: 'Sync ist nicht konfiguriert.',
     toastEnterEmailPassword: 'Bitte E-Mail und Passwort eingeben.',
     toastSignInFailed: 'Anmeldung fehlgeschlagen: ',

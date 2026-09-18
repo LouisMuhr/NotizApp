@@ -14,7 +14,7 @@ jest.mock('../src/context/LanguageContext', () => {
   setI18nLocale('de'); // der Mock meldet locale 'de' → i18n muss auch auf DE stehen
   return { useLanguage: () => ({ t, locale: 'de' }) };
 });
-jest.mock('../src/sync/supabaseClient', () => ({ getSupabase: () => null }));
+jest.mock('../src/sync/supabaseClient', () => ({ getSupabase: () => null, isSyncConfigured: () => false }));
 jest.mock('../src/utils/haptics', () => ({ light: jest.fn(), medium: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('react-native-gesture-handler', () => ({ Swipeable: ({ children }: any) => children }));
