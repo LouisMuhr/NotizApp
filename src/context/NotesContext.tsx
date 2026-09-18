@@ -83,6 +83,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const deviceIdRef = useRef<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
+  /** Vorwaertsreferenz: rescheduleAllReminders wird weiter unten definiert. */
+  const rescheduleAllRemindersRef = useRef<() => Promise<void>>(async () => {});
   const syncChainRef = useRef<Promise<void>>(Promise.resolve());
   const writeChainRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -457,6 +459,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     if (changed) await commit(updated);
   }, [commit]);
 
+  // Vorwaertsreferenz fuer Aufrufer, die vor dieser Definition stehen.
+  rescheduleAllRemindersRef.current = rescheduleAllReminders;
+
   // ---------------------------------------------------------------------------
   // Mutationen (alle ueber allRef, damit parallele Aufrufe sich nicht ueberschreiben)
   // ---------------------------------------------------------------------------
@@ -618,6 +623,25 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     if (!isSyncConfigured()) return;
     await markInitialUploadPending();
     setInitialUploadPending(true);
+
+    // `notes.id` ist GLOBAL eindeutig (Primary Key ueber alle User). Wurde eine
+    // Notiz schon einmal in ein anderes Konto hochgeladen, gehoert die Zeile
+    // dort — RLS laesst sie fuer das neue Konto weder lesen noch ueberschreiben,
+    // und der Upsert scheitert. Solche Notizen bekommen deshalb eine neue ID,
+    // bevor sie in das neue Konto wandern.
+    const previousUid = await loadSyncUid();
+    if (previousUid && previousUid !== userId) {
+      // Geplante Erinnerungen tragen die alte noteId in ihren Daten und muessen
+      // danach neu angemeldet werden.
+      const reIded = allRef.current.map((n) => ({ ...n, id: uuidv4(), notificationId: null }));
+      pendingRef.current = new Set();
+      tombstonesRef.current = new Set();
+      await saveTombstones([]).catch(() => {});
+      await commit(reIded);
+      await rescheduleAllRemindersRef.current().catch((e) =>
+        console.warn('[sync] reschedule after re-id failed', e));
+    }
+
     // Alles Lokale in die Outbox, damit auch bereits bestaetigte Notizen aus
     // der Zeit vor der Registrierung im Konto landen.
     for (const n of allRef.current) pendingRef.current.add(n.id);

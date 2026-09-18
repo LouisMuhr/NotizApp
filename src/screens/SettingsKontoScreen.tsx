@@ -348,8 +348,9 @@ export default function SettingsKontoScreen() {
       await refreshSubscription();
       showToast(t('settingsKonto.toastAccountSecured'), 'success');
     } catch (e: any) {
+      console.warn('[account] initial upload failed', e);
       setUploadRetryUid(uid);
-      showToast(t('settingsKonto.toastUploadFailed'), 'error');
+      showToast(t('settingsKonto.toastUploadFailed') + ' ' + (e?.message ?? ''), 'error');
     }
   };
 

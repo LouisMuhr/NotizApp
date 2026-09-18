@@ -392,3 +392,45 @@ test('A5: nach detachSync landen Notizen des alten Kontos nicht im naechsten', a
   // Die Notiz aus Konto A darf dort nicht auftauchen.
   expect(Array.from(remote.values()).map((n) => n.title)).not.toContain('Konto A');
 });
+
+// ---------------------------------------------------------------------------
+// A6 — Zweites Konto: notes.id ist global eindeutig
+//
+// Wurde eine Notiz schon in Konto A hochgeladen, gehoert die Zeile dort. RLS
+// laesst Konto B sie weder lesen noch ueberschreiben — der Upsert scheitert.
+// Beim Erstupload in ein anderes Konto muessen die Notizen daher neue IDs
+// bekommen.
+// ---------------------------------------------------------------------------
+test('A6: Erstupload in ein zweites Konto vergibt neue IDs statt am PK zu scheitern', async () => {
+  const hook = await mountSynced(); // Start-Sync gegen 'user-1'
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'x' }), title: 'Meine Notiz' }); });
+  const idInKontoA = hook.result.current.notes[0].id;
+  expect(remote.has(idInKontoA)).toBe(true);
+
+  // Die Zeile gehoert jetzt Konto A: ein Upsert derselben id durch ein anderes
+  // Konto wird von RLS abgelehnt.
+  remoteNotes.upsertRemote.mockImplementation(async (uid: string, note: Note) => {
+    if (!online) throw new Error('network request failed');
+    const existing = remote.get(note.id);
+    if (existing && (existing as any).__owner && (existing as any).__owner !== uid) {
+      throw new Error('upsertRemote: new row violates row-level security policy');
+    }
+    remote.set(note.id, { ...note, notificationId: null, __owner: uid } as any);
+  });
+  remote.set(idInKontoA, { ...remote.get(idInKontoA)!, __owner: 'user-1' } as any);
+  // RLS auch beim Lesen: Konto B sieht die Zeilen von Konto A nicht.
+  remoteNotes.pullRemote.mockImplementation(async (uid: string) =>
+    online ? Array.from(remote.values()).filter((n: any) => !n.__owner || n.__owner === uid) : null);
+
+  // Abmelden, dann mit einem ANDEREN Konto registrieren.
+  await act(async () => { await hook.result.current.detachSync(); });
+  // Stand vor dem Wechsel wiederherstellen (detachSync raeumt ihn ab).
+  await act(async () => { await AsyncStorage.setItem('@notizapp_sync_uid', 'user-1'); });
+  await act(async () => { await hook.result.current.uploadLocalNotes('konto-b'); });
+
+  // Notiz ist in Konto B angekommen — unter einer NEUEN id.
+  const idInKontoB = hook.result.current.notes[0].id;
+  expect(idInKontoB).not.toBe(idInKontoA);
+  expect(hook.result.current.notes[0].title).toBe('Meine Notiz');
+  expect(hook.result.current.initialUploadPending).toBe(false);
+});
