@@ -859,9 +859,13 @@ export default function SettingsKontoScreen() {
               />
             </View>
 
-            {/* Abmelden */}
+            {/* Sync beenden */}
             <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.sessionLabel')}</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              {/* Erwartung vorher setzen: im Lokal-first-Modell bleibt der
+                  Notiz-Bestand auf dem Geraet. Wer alles loswerden will, nutzt
+                  Einstellungen → Datenschutz → Alle Daten loeschen. */}
+              <Text style={styles.hintText}>{t('settingsKonto.signOutHint')}</Text>
               <PrimaryButton
                 label={t('settingsKonto.signOutButton')}
                 onPress={handleSignOut}
