@@ -36,7 +36,7 @@ c:/NotizApp/
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, …
 │   ├── bridge/            # Vercel serverless bridge API + worker
-│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, migrate-user, delete-user, thought; _lib/ = shared
+│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, migrate-user, delete-user; _lib/ = shared
 │   │   ├── bookmarklet/   # Browser bookmarklet source
 │   │   └── worker/        # brainstorm-worker.mjs, similarity-worker.mjs (CLI-Helfer)
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
