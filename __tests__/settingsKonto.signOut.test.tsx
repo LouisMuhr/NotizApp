@@ -1,34 +1,48 @@
 /**
  * A3: Abmelden offline. supabase.auth.signOut() liefert bei Netzfehler ein
- * { error } zurueck (wirft nicht). Erwartung: die App darf dann weder den
- * lokalen Bestand ersetzen noch "abgemeldet" anzeigen, solange die Session lebt.
+ * { error } zurueck (wirft nicht). Erwartung: die App darf dann weder den Sync
+ * abschalten noch nach `local` wechseln, solange die Session lebt.
  */
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const mockResyncNotes = jest.fn(async () => {});
-const mockResyncThreads = jest.fn(async () => {});
+const mockDetachNotes = jest.fn();
+const mockDetachThreads = jest.fn(async () => {});
 const mockSignOut = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
 jest.mock('../src/context/NotesContext', () => ({
-  useNotes: () => ({ resyncForUser: mockResyncNotes, refreshSubscription: jest.fn(async () => {}), flushPending: jest.fn(async () => {}) }),
+  useNotes: () => ({
+    resyncForUser: jest.fn(async () => {}),
+    refreshSubscription: jest.fn(async () => {}),
+    flushPending: jest.fn(async () => {}),
+    uploadLocalNotes: jest.fn(async () => {}),
+    initialUploadPending: false,
+    detachSync: mockDetachNotes,
+  }),
 }));
-jest.mock('../src/context/ThoughtsContext', () => ({ useThoughts: () => ({ resyncForUser: mockResyncThreads }) }));
+jest.mock('../src/context/ThoughtsContext', () => ({
+  useThoughts: () => ({ resyncForUser: jest.fn(async () => {}), detachSync: mockDetachThreads }),
+}));
 jest.mock('../src/context/LanguageContext', () => {
   const { t } = require('../src/i18n');
   return { useLanguage: () => ({ t, locale: 'de' }) };
 });
-jest.mock('../src/sync/deleteAnonUser', () => ({ migrateAndDeleteAnonUser: jest.fn() }));
-jest.mock('../src/sync/userId', () => ({
-  getUserId: jest.fn(async () => 'account-user'), // Session lebt noch → gleiche UID
-  clearUserIdCache: jest.fn(),
-}));
+jest.mock('../src/sync/userId', () => ({ clearUserIdCache: jest.fn() }));
 jest.mock('../src/sync/supabaseClient', () => ({
   getSupabase: () => ({
     auth: {
-      getUser: async () => ({ data: { user: { id: 'account-user', is_anonymous: false, email: 'louis@example.com' } } }),
+      // Bestaetigtes Konto → Zustand `secured`, der Abmelden-Button ist sichtbar.
+      getUser: async () => ({
+        data: {
+          user: {
+            id: 'account-user',
+            email: 'louis@example.com',
+            email_confirmed_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
       signOut: mockSignOut,
     },
   }),
@@ -42,7 +56,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
 });
 
-test('A3: signOut() scheitert (offline) → kein Resync auf leeren Bestand, kein "abgemeldet"-Zustand', async () => {
+test('A3: signOut() scheitert (offline) → Sync bleibt aktiv, kein Wechsel nach `local`', async () => {
   mockSignOut.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', message: 'Network request failed', status: 0 } });
 
   render(<SettingsKontoScreen />);
@@ -52,7 +66,21 @@ test('A3: signOut() scheitert (offline) → kein Resync auf leeren Bestand, kein
   await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
   await new Promise((r) => setTimeout(r, 50));
 
-  expect(mockResyncNotes).not.toHaveBeenCalled();
-  expect(await AsyncStorage.getItem('@notizapp_signed_out_uid')).toBeNull();
-  expect(screen.queryByText(t('settingsKonto.signedOutBanner'))).toBeNull();
+  expect(mockDetachNotes).not.toHaveBeenCalled();
+  expect(mockDetachThreads).not.toHaveBeenCalled();
+  // Der `local`-Zustand zeigt den Tab-Umschalter mit "Konto sichern".
+  expect(screen.queryByText(t('settingsKonto.tabSecure'))).toBeNull();
+});
+
+test('signOut() erfolgreich → zurueck nach `local`, kein neuer anonymer User', async () => {
+  mockSignOut.mockResolvedValue({ error: null });
+
+  render(<SettingsKontoScreen />);
+  const btn = await screen.findByText(t('settingsKonto.signOutButton'));
+  fireEvent.press(btn);
+
+  await waitFor(() => expect(mockDetachNotes).toHaveBeenCalled());
+  expect(mockDetachThreads).toHaveBeenCalled();
+  // Zustand `local`: Registrierungs-/Anmelde-Tabs sind wieder da.
+  await waitFor(() => expect(screen.queryByText(t('settingsKonto.tabSecure'))).not.toBeNull());
 });

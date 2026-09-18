@@ -2,9 +2,8 @@
  * @jest-environment node
  *
  * Umsetzung X1: Bridge-Endpunkte weisen den Aufrufer ueber Supabase-Tokens aus.
- * Positiv- und Negativpfade fuer migrate-user, delete-user, note und bookmarklet-token.
+ * Positiv- und Negativpfade fuer delete-user, note und bookmarklet-token.
  */
-import migrateHandler from '../bridge/api/migrate-user';
 import deleteHandler from '../bridge/api/delete-user';
 import noteHandler from '../bridge/api/note';
 import tokenHandler from '../bridge/api/bookmarklet-token';
@@ -21,7 +20,6 @@ const USERS: Record<string, { id: string; is_anonymous: boolean }> = {
   'other-acct-tok': { id: 'other-uid', is_anonymous: false },
 };
 let profiles: Record<string, { id: string; tier: string; bookmarklet_token_hash?: string | null }> = {};
-let rpcOk = true;
 
 function jsonRes(status: number, body: any) {
   return { ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -32,7 +30,6 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_KEY = 'service';
   delete process.env.BOOKMARKLET_MIN_TIER;
   calls = [];
-  rpcOk = true;
   profiles = {
     'acct-uid': { id: 'acct-uid', tier: 'basic', bookmarklet_token_hash: createHash('sha256').update('a'.repeat(64)).digest('hex') },
     'other-uid': { id: 'other-uid', tier: 'free', bookmarklet_token_hash: null },
@@ -46,7 +43,6 @@ beforeEach(() => {
       return USERS[tok] ? jsonRes(200, USERS[tok]) : jsonRes(401, { error: 'invalid' });
     }
     if (url.startsWith(`${SB}/auth/v1/admin/users/`)) return jsonRes(200, {});
-    if (url.startsWith(`${SB}/rest/v1/rpc/migrate_user`)) return rpcOk ? jsonRes(200, { notes: 2 }) : jsonRes(500, { message: 'boom' });
     if (url.startsWith(`${SB}/rest/v1/profiles`)) {
       if (method === 'GET') {
         const u = new URL(url);
@@ -74,40 +70,6 @@ function mockRes() {
 }
 const req = (auth: string | null, body?: any, extra: any = {}) => ({
   method: 'POST', headers: auth ? { authorization: `Bearer ${auth}` } : {}, body, ...extra,
-});
-
-describe('/api/migrate-user', () => {
-  test('Konto-Token + anonymes fromToken → RPC mit den verifizierten UIDs, results komplett', async () => {
-    const res = mockRes();
-    await migrateHandler(req('acct-tok', { fromToken: 'anon-tok' }), res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(Object.values(res.body.results).every((v) => v === 1)).toBe(true);
-    const rpc = calls.find((c) => c.url.includes('/rpc/migrate_user'))!;
-    expect(rpc.body).toEqual({ from_uid: 'anon-uid', to_uid: 'acct-uid' });
-  });
-
-  test('UIDs im Body werden ignoriert — ohne gueltiges fromToken passiert nichts', async () => {
-    const res = mockRes();
-    await migrateHandler(req('acct-tok', { fromUid: 'opfer', toUid: 'acct-uid' }), res);
-    expect(res.statusCode).toBe(400);
-    expect(calls.some((c) => c.url.includes('/rpc/'))).toBe(false);
-  });
-
-  test('fromToken gehoert einem Konto (nicht anonym) → 403, kein Umhaengen fremder Daten', async () => {
-    const res = mockRes();
-    await migrateHandler(req('acct-tok', { fromToken: 'other-acct-tok' }), res);
-    expect(res.statusCode).toBe(403);
-    expect(calls.some((c) => c.url.includes('/rpc/'))).toBe(false);
-  });
-
-  test('RPC scheitert → 500 und ok:false (Client loescht dann nicht)', async () => {
-    rpcOk = false;
-    const res = mockRes();
-    await migrateHandler(req('acct-tok', { fromToken: 'anon-tok' }), res);
-    expect(res.statusCode).toBe(500);
-    expect(res.body.ok).toBe(false);
-  });
 });
 
 describe('/api/delete-user', () => {

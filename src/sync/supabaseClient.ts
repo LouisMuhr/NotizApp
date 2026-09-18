@@ -34,15 +34,20 @@ export function isSyncConfigured(): boolean {
   return Boolean(url && anonKey);
 }
 
-export async function ensureAuth(): Promise<string | null> {
+/**
+ * UID des angemeldeten Users — oder null, wenn keiner existiert.
+ *
+ * Es wird NIE ein User angelegt: der Default-Zustand der App ist `local`
+ * (Notizen liegen ausschliesslich auf dem Geraet). Ein Supabase-User entsteht
+ * ausschliesslich durch eine bewusste Registrierung im Konto-Screen.
+ *
+ * Liefert auch fuer einen noch unbestaetigten User eine UID. Ob damit
+ * synchronisiert werden darf, entscheidet allein `resolveAccountState()` —
+ * wer syncen will, fragt `getSyncUserId()` aus `accountState.ts`.
+ */
+export async function getExistingUserId(): Promise<string | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
-  if (user) return user.id;
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) {
-    console.warn('[auth] signInAnonymously failed', error.message);
-    return null;
-  }
-  return data.user?.id ?? null;
+  return user?.id ?? null;
 }

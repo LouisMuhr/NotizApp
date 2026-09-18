@@ -11,6 +11,7 @@ import { useTheme, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { getSupabase } from '../sync/supabaseClient';
+import { deriveStateFromUser } from '../sync/accountState';
 import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
@@ -85,12 +86,13 @@ export default function SettingsBookmarkletScreen() {
   const { tier } = useNotes();
   const [token, setToken] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
-  const [isAnonymous, setIsAnonymous] = useState(true);
+  /** Bookmarklet setzt ein bestaetigtes Konto voraus. */
+  const [hasAccount, setHasAccount] = useState(false);
   const [snack, setSnack] = useState('');
 
   useEffect(() => {
     getSupabase()?.auth.getUser().then(({ data }) => {
-      setIsAnonymous(!data?.user || Boolean(data.user.is_anonymous));
+      setHasAccount(deriveStateFromUser(data?.user ?? null) === 'secured');
     });
   }, []);
 
@@ -149,7 +151,7 @@ export default function SettingsBookmarkletScreen() {
           <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
             {t('settingsBookmarklet.step1Body')}
           </Text>
-          {isAnonymous ? (
+          {!hasAccount ? (
             <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorAccount')}</Text>
           ) : tier === 'free' ? (
             <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorTier')}</Text>

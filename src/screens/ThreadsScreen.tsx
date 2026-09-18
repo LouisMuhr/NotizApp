@@ -20,6 +20,7 @@ import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
 import { getSupabase } from '../sync/supabaseClient';
 import ProBanner from '../components/ProBanner';
+import UnsecuredBanner from '../components/UnsecuredBanner';
 import { useLanguage } from '../context/LanguageContext';
 import { formatAvailabilityParts, formatDateTime } from '../utils/limitFormat';
 
@@ -353,6 +354,7 @@ export default function ThreadsScreen({ navigation }: Props) {
         </View>
       </View>
 
+      <UnsecuredBanner onPress={() => navigation.navigate('SettingsKonto')} />
       <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
 
       {activeThreads.length === 0 ? (

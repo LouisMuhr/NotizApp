@@ -8,6 +8,7 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useNotes } from '../context/NotesContext';
 import { getSupabase } from '../sync/supabaseClient';
+import { deriveStateFromUser } from '../sync/accountState';
 import { ONBOARDING_KEY } from './onboarding/shared';
 import { useLanguage } from '../context/LanguageContext';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -104,11 +105,13 @@ export default function SettingsScreen() {
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) return;
+    // "Angemeldet" heisst: bestaetigtes Konto. Eine laufende, noch
+    // unbestaetigte Registrierung zaehlt nicht dazu.
     supabase.auth.getUser().then(({ data: { user } }) => {
-      setIsSignedIn(!!user && !user.is_anonymous);
+      setIsSignedIn(deriveStateFromUser(user) === 'secured');
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setIsSignedIn(!!session?.user && !session.user.is_anonymous);
+      setIsSignedIn(deriveStateFromUser(session?.user ?? null) === 'secured');
     });
     return () => subscription.unsubscribe();
   }, []);

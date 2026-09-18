@@ -11,21 +11,19 @@ import {
 } from 'react-native';
 import { useTheme, Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { getSupabase } from '../sync/supabaseClient';
-import { clearUserIdCache, getUserId } from '../sync/userId';
-import { migrateAndDeleteAnonUser } from '../sync/deleteAnonUser';
+import { clearUserIdCache } from '../sync/userId';
+import {
+  AccountState, resolveAccountState, savePendingEmail, clearPendingEmail,
+} from '../sync/accountState';
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Tokens } from '../theme/theme';
 import { Fonts, Type } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 
-const SIGNED_OUT_KEY = '@notizapp_signed_out_uid';
-
-type AccountState = 'loading' | 'anonymous' | 'signed-in' | 'signed-out';
-type AnonTab = 'signup' | 'signin';
+type LocalTab = 'signup' | 'signin';
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ message, type }: { message: string; type: 'error' | 'success' | 'info' }) {
@@ -205,13 +203,21 @@ const btnStyles = StyleSheet.create({
 export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
-  const { resyncForUser, refreshSubscription, flushPending } = useNotes();
-  const { resyncForUser: resyncThreadsForUser } = useThoughts();
+  const {
+    resyncForUser, refreshSubscription, flushPending,
+    uploadLocalNotes, initialUploadPending, detachSync,
+  } = useNotes();
+  const {
+    resyncForUser: resyncThreadsForUser,
+    detachSync: detachThreadsSync,
+  } = useThoughts();
   const { t } = useLanguage();
 
   const [accountState, setAccountState] = useState<AccountState>('loading');
-  const [anonTab, setAnonTab] = useState<AnonTab>('signup');
+  const [localTab, setLocalTab] = useState<LocalTab>('signup');
   const [email, setEmail] = useState('');
+  /** UID einer bestaetigten Registrierung, deren Erstupload noch offen ist. */
+  const [uploadRetryUid, setUploadRetryUid] = useState<string | null>(null);
 
   // Felder
   const [inputEmail, setInputEmail] = useState('');
@@ -236,31 +242,92 @@ export default function SettingsKontoScreen() {
     setInputPasswordConfirm('');
   };
 
-  const switchTab = (tab: AnonTab) => {
-    setAnonTab(tab);
+  const switchTab = (tab: LocalTab) => {
+    setLocalTab(tab);
     clearFields();
   };
 
-  // ── Auth-State laden ──
+  // ── Konto-Zustand laden ──
+  // Strikt aus `email_confirmed_at` abgeleitet (siehe accountState.ts), nie aus
+  // einem lokal gesetzten Status-Flag.
   useEffect(() => {
     (async () => {
-      const supabase = getSupabase();
-      if (!supabase) return;
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || user.is_anonymous) {
-        const signedOutUid = await AsyncStorage.getItem(SIGNED_OUT_KEY);
-        if (signedOutUid && user && signedOutUid === user.id) {
-          setAccountState('signed-out');
-        } else {
-          if (signedOutUid) await AsyncStorage.removeItem(SIGNED_OUT_KEY);
-          setAccountState('anonymous');
-        }
-      } else {
-        setAccountState('signed-in');
-        setEmail(user.email ?? '');
+      const snapshot = await resolveAccountState();
+      setAccountState(snapshot.state);
+      setEmail(snapshot.email ?? '');
+      if (snapshot.state === 'secured' && snapshot.userId && initialUploadPending) {
+        setUploadRetryUid(snapshot.userId);
       }
     })();
-  }, []);
+  }, [initialUploadPending]);
+
+  /**
+   * Erneut pruefen, ob die Bestaetigung inzwischen erfolgt ist. Supabase
+   * liefert den aktualisierten `email_confirmed_at`-Wert erst nach einem
+   * Refresh der Session.
+   */
+  const handleCheckConfirmation = async () => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      await supabase.auth.refreshSession().catch(() => {});
+      const snapshot = await resolveAccountState();
+      if (snapshot.state !== 'secured' || !snapshot.userId) {
+        showToast(t('settingsKonto.toastStillPending'), 'info');
+        return;
+      }
+      await finishSecuring(snapshot.userId, snapshot.email ?? '');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Uebergang nach `secured`: einmaliger Upload der lokalen Notizen, dann Sync.
+   *
+   * Schlaegt der Upload fehl, bleibt der Zustand `secured` (die Bestaetigung
+   * liegt ja vor — die UI darf nichts anderes behaupten) und es erscheint ein
+   * dauerhaft sichtbarer Retry statt eines verschwindenden Toasts.
+   */
+  const finishSecuring = async (uid: string, userEmail: string) => {
+    await clearPendingEmail();
+    setEmail(userEmail);
+    setAccountState('secured');
+    clearFields();
+    try {
+      await uploadLocalNotes(uid);
+      setUploadRetryUid(null);
+      await resyncThreadsForUser(uid);
+      await refreshSubscription();
+      showToast(t('settingsKonto.toastAccountSecured'), 'success');
+    } catch (e: any) {
+      setUploadRetryUid(uid);
+      showToast(t('settingsKonto.toastUploadFailed'), 'error');
+    }
+  };
+
+  /** Sichtbarer Retry fuer einen fehlgeschlagenen Erstupload. */
+  const handleRetryUpload = async () => {
+    if (!uploadRetryUid) return;
+    setLoading(true);
+    try {
+      await uploadLocalNotes(uploadRetryUid);
+      setUploadRetryUid(null);
+      await resyncThreadsForUser(uploadRetryUid);
+      await refreshSubscription();
+      showToast(t('settingsKonto.toastUploadDone'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastUploadFailed'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ── Actions ──
   const handleSignOut = async () => {
@@ -271,7 +338,6 @@ export default function SettingsKontoScreen() {
     }
     setLoading(true);
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
       // Unbestaetigte lokale Aenderungen gehoeren noch in dieses Konto — erst hochladen.
       try {
         await flushPending();
@@ -287,18 +353,15 @@ export default function SettingsKontoScreen() {
         return;
       }
       clearUserIdCache();
-      if (currentUser) await AsyncStorage.setItem(SIGNED_OUT_KEY, currentUser.id);
-      // Neuen (anonymen) User holen und beide Contexts darauf umstellen, damit
-      // die Notizen/Threads des abgemeldeten Kontos nicht mehr angezeigt werden.
-      const newUid = await getUserId();
-      if (newUid) {
-        await resyncForUser(newUid, 'replace');
-        await resyncThreadsForUser(newUid);
-      }
-      // Tier-Anzeige (Free/Basic/Pro) auf den neuen anonymen User aktualisieren.
+      await clearPendingEmail();
+      // Zurueck nach `local`: Sync abschalten, lokalen Notiz-Bestand behalten.
+      // Es wird KEIN neuer (anonymer) User erzeugt.
+      detachSync();
+      await detachThreadsSync();
       await refreshSubscription();
       setEmail('');
-      setAccountState('signed-out');
+      setUploadRetryUid(null);
+      setAccountState('local');
       navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
       showToast(t('settingsKonto.toastSignOutFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
@@ -319,11 +382,6 @@ export default function SettingsKontoScreen() {
     }
     setLoading(true);
     try {
-      // Anonyme Sitzung VOR dem Login sichern: ihr Access-Token weist die
-      // Bridge spaeter als Eigentuemer der zu migrierenden Daten aus (X1).
-      const { data: { session: anonSession } } = await supabase.auth.getSession();
-      const anonToken = anonSession?.user?.is_anonymous ? anonSession.access_token : null;
-      const anonUid = anonSession?.user?.is_anonymous ? anonSession.user.id : null;
       const { data, error } = await supabase.auth.signInWithPassword({
         email: inputEmail.trim(),
         password: inputPassword,
@@ -337,21 +395,28 @@ export default function SettingsKontoScreen() {
         showToast(t('settingsKonto.toastConfirmEmail'), 'error');
         return;
       }
-      if (anonToken && anonUid && anonUid !== newUser.id && data.session) {
-        const migrated = await migrateAndDeleteAnonUser(anonToken, data.session.access_token);
-        // Bei Fehlschlag bleibt der anonyme User samt Remote-Daten bestehen;
-        // die lokalen Notizen werden unten trotzdem in das Konto gemerged (A2).
-        if (!migrated) showToast(t('settingsKonto.toastMigrationIncomplete'), 'error');
+      // Anmeldung ohne bestaetigte E-Mail: kein Sync, Zustand bleibt sichtbar
+      // `pending-confirmation` statt faelschlich "Angemeldet".
+      if (!newUser.email_confirmed_at) {
+        await savePendingEmail(newUser.email ?? inputEmail.trim());
+        setEmail(newUser.email ?? inputEmail.trim());
+        clearFields();
+        setAccountState('pending-confirmation');
+        showToast(t('settingsKonto.toastConfirmEmail'), 'info');
+        return;
       }
-      // 'merge': lokale (auch noch nicht hochgeladene) Notizen ins Konto uebernehmen (A2)
-      await resyncForUser(newUser.id, 'merge');
+      clearUserIdCache();
+      await clearPendingEmail();
+      // 'replace': eine Anmeldung ist typischerweise ein Zweitgeraet — der
+      // Kontostand gilt. Lokale Notizen wandern nur beim einmaligen Erstupload
+      // nach der Registrierung ins Konto.
+      await resyncForUser(newUser.id, 'replace');
       await resyncThreadsForUser(newUser.id);
       // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
       await refreshSubscription();
-      await AsyncStorage.removeItem(SIGNED_OUT_KEY);
       setEmail(newUser.email ?? '');
       clearFields();
-      setAccountState('signed-in');
+      setAccountState('secured');
       navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
       showToast(t('settingsKonto.toastSignInFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
@@ -380,18 +445,82 @@ export default function SettingsKontoScreen() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        email: inputEmail.trim(),
+      const address = inputEmail.trim();
+      const { data, error } = await supabase.auth.signUp({
+        email: address,
         password: inputPassword,
       });
       if (error) {
         showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
-      setAccountState('signed-in');
-      setEmail(inputEmail.trim());
+      // NICHT optimistisch auf `secured` setzen: erst wenn die Bestaetigung
+      // tatsaechlich vorliegt, wird synchronisiert. Ist die Bestaetigungspflicht
+      // im Projekt deaktiviert, liefert signUp() direkt `email_confirmed_at`.
+      const user = data.user;
+      if (user?.email_confirmed_at && data.session) {
+        await finishSecuring(user.id, user.email ?? address);
+        return;
+      }
+      // Ohne Session gaebe es beim naechsten Kaltstart keinen User, aus dem
+      // sich `pending-confirmation` ableiten liesse — daher die Adresse merken.
+      await savePendingEmail(address);
+      setEmail(address);
       clearFields();
-      showToast(t('settingsKonto.toastAccountSecured'), 'success');
+      setAccountState('pending-confirmation');
+      showToast(t('settingsKonto.toastConfirmationSent'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Bestaetigungsmail erneut anfordern. */
+  const handleResendConfirmation = async () => {
+    const supabase = getSupabase();
+    if (!supabase || !email) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) {
+        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
+        return;
+      }
+      showToast(t('settingsKonto.toastConfirmationSent'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Passwort vergessen: Supabase schickt einen Reset-Link. Aus
+   * Datenschutzgruenden wird nicht verraten, ob die Adresse existiert.
+   */
+  const handleForgotPassword = async () => {
+    const address = inputEmail.trim();
+    if (!address) {
+      showToast(t('settingsKonto.toastEnterEmailForReset'), 'error');
+      return;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(address);
+      if (error) {
+        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
+        return;
+      }
+      showToast(t('settingsKonto.toastResetSent'), 'success');
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
@@ -454,46 +583,46 @@ export default function SettingsKontoScreen() {
         {/* ══════════════════════════════════════════
             ANONYM  — Konto sichern / Anmelden
         ══════════════════════════════════════════ */}
-        {accountState === 'anonymous' && (
+        {accountState === 'local' && (
           <>
+            {/* Warnbanner: normaler Zustand fuer `local`, nicht nur im Signup-Tab */}
+            <View style={styles.warningBanner}>
+              <View style={styles.warningIcon}>
+                <MaterialCommunityIcons name="shield-alert-outline" size={20} color={Tokens.amberDeep} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.warningTitle}>{t('settingsKonto.warningTitle')}</Text>
+                <Text style={styles.warningText}>
+                  {t('settingsKonto.warningBody')}
+                </Text>
+              </View>
+            </View>
+
             {/* Tab-Umschalter */}
             <View style={styles.tabBar}>
               <TouchableOpacity
-                style={[styles.tabBtn, anonTab === 'signup' && styles.tabBtnActive]}
+                style={[styles.tabBtn, localTab === 'signup' && styles.tabBtnActive]}
                 onPress={() => switchTab('signup')}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.tabLabel, anonTab === 'signup' && styles.tabLabelActive]}>
+                <Text style={[styles.tabLabel, localTab === 'signup' && styles.tabLabelActive]}>
                   {t('settingsKonto.tabSecure')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tabBtn, anonTab === 'signin' && styles.tabBtnActive]}
+                style={[styles.tabBtn, localTab === 'signin' && styles.tabBtnActive]}
                 onPress={() => switchTab('signin')}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.tabLabel, anonTab === 'signin' && styles.tabLabelActive]}>
+                <Text style={[styles.tabLabel, localTab === 'signin' && styles.tabLabelActive]}>
                   {t('settingsKonto.tabSignIn')}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Konto sichern */}
-            {anonTab === 'signup' && (
+            {localTab === 'signup' && (
               <>
-                {/* Warnbanner */}
-                <View style={styles.warningBanner}>
-                  <View style={styles.warningIcon}>
-                    <MaterialCommunityIcons name="shield-alert-outline" size={20} color={Tokens.amberDeep} />
-                  </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.warningTitle}>{t('settingsKonto.warningTitle')}</Text>
-                    <Text style={styles.warningText}>
-                      {t('settingsKonto.warningBody')}
-                    </Text>
-                  </View>
-                </View>
-
                 {/* Formular */}
                 <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
                   <Field
@@ -530,7 +659,7 @@ export default function SettingsKontoScreen() {
             )}
 
             {/* Anmelden */}
-            {anonTab === 'signin' && (
+            {localTab === 'signin' && (
               <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
                 <Field
                   label={t('settingsKonto.emailLabel')}
@@ -554,16 +683,81 @@ export default function SettingsKontoScreen() {
                   loading={loading}
                   disabled={!inputEmail.trim() || !inputPassword}
                 />
+                <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+                  <Text style={styles.linkText}>{t('settingsKonto.forgotPassword')}</Text>
+                </TouchableOpacity>
               </View>
             )}
           </>
         )}
 
         {/* ══════════════════════════════════════════
+            BESTÄTIGUNG AUSSTEHEND
+        ══════════════════════════════════════════ */}
+        {accountState === 'pending-confirmation' && (
+          <>
+            <View style={styles.warningBanner}>
+              <View style={styles.warningIcon}>
+                <MaterialCommunityIcons name="email-alert-outline" size={20} color={Tokens.amberDeep} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.warningTitle}>{t('settingsKonto.pendingTitle')}</Text>
+                <Text style={styles.warningText}>
+                  {t('settingsKonto.pendingBody', { email })}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <PrimaryButton
+                label={t('settingsKonto.checkConfirmationButton')}
+                onPress={handleCheckConfirmation}
+                loading={loading}
+              />
+              <TouchableOpacity onPress={handleResendConfirmation} activeOpacity={0.7}>
+                <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
+              {t('settingsKonto.sessionLabel')}
+            </Text>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <PrimaryButton
+                label={t('settingsKonto.cancelRegistrationButton')}
+                onPress={handleSignOut}
+                loading={loading}
+                danger
+              />
+            </View>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════
             ANGEMELDET
         ══════════════════════════════════════════ */}
-        {accountState === 'signed-in' && (
+        {accountState === 'secured' && (
           <>
+            {/* Erstupload fehlgeschlagen: dauerhaft sichtbarer Retry statt Toast */}
+            {uploadRetryUid && (
+              <View style={styles.warningBanner}>
+                <View style={styles.warningIcon}>
+                  <MaterialCommunityIcons name="cloud-alert" size={20} color={Tokens.amberDeep} />
+                </View>
+                <View style={{ flex: 1, gap: 8 }}>
+                  <View style={{ gap: 2 }}>
+                    <Text style={styles.warningTitle}>{t('settingsKonto.uploadPendingTitle')}</Text>
+                    <Text style={styles.warningText}>{t('settingsKonto.uploadPendingBody')}</Text>
+                  </View>
+                  <PrimaryButton
+                    label={t('settingsKonto.retryUploadButton')}
+                    onPress={handleRetryUpload}
+                    loading={loading}
+                  />
+                </View>
+              </View>
+            )}
+
             {/* Konto-Info */}
             <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.accountSection')}</Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
@@ -624,44 +818,6 @@ export default function SettingsKontoScreen() {
           </>
         )}
 
-        {/* ══════════════════════════════════════════
-            ABGEMELDET — wieder anmelden
-        ══════════════════════════════════════════ */}
-        {accountState === 'signed-out' && (
-          <>
-            {/* Info-Banner */}
-            <View style={styles.infoBanner}>
-              <MaterialCommunityIcons name="account-off-outline" size={20} color={Tokens.inkDim} />
-              <Text style={styles.infoText}>{t('settingsKonto.signedOutBanner')}</Text>
-            </View>
-
-            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.signedOutEyebrow')}</Text>
-            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <Field
-                label={t('settingsKonto.emailLabel')}
-                value={inputEmail}
-                onChangeText={setInputEmail}
-                placeholder={t('settingsKonto.emailPlaceholder')}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <Field
-                label={t('settingsKonto.passwordLabel')}
-                value={inputPassword}
-                onChangeText={setInputPassword}
-                placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
-                secure
-                onSubmit={handleSignIn}
-              />
-              <PrimaryButton
-                label={t('settingsKonto.signInButton')}
-                onPress={handleSignIn}
-                loading={loading}
-                disabled={!inputEmail.trim() || !inputPassword}
-              />
-            </View>
-          </>
-        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -777,23 +933,13 @@ const styles = StyleSheet.create({
     color: Tokens.ink,
   },
 
-  // ── Info-Banner ──
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    backgroundColor: Tokens.paperDeep,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Tokens.paperEdge,
-  },
-  infoText: {
-    flex: 1,
-    fontFamily: Fonts.sans,
+  // ── Sekundaerer Textlink ──
+  linkText: {
+    fontFamily: Fonts.sansMedium,
     fontSize: 13,
-    lineHeight: 19,
-    color: Tokens.inkDim,
+    color: Tokens.amberDeep,
+    textAlign: 'center',
+    paddingVertical: 4,
   },
 
   // ── Account-Row ──

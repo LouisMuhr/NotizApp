@@ -28,6 +28,8 @@ interface ThoughtsContextType {
   unpinThread: (threadId: string) => void;
   clearAllThreads: () => void;
   resyncForUser: (userId: string) => Promise<void>;
+  /** Sync abschalten (Abmelden → Zustand `local`). */
+  detachSync: () => Promise<void>;
 }
 
 const ThoughtsContext = createContext<ThoughtsContextType>({} as ThoughtsContextType);
@@ -124,8 +126,24 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
     };
   }, [subscribeForUser]);
 
-  // Nach An-/Abmelden: Threads des neuen Users frisch laden (nur Remote) und
-  // Realtime-Subscription auf den neuen User umstellen.
+  /**
+   * Sync abschalten und die Threads des Kontos aus der Anzeige nehmen.
+   * Beim Abmelden geht die App damit zurueck nach `local`; es wird kein neuer
+   * User erzeugt. Threads sind reine Konto-Daten (Synthese laeuft serverseitig),
+   * lokal bleibt daher nichts stehen.
+   */
+  const detachSync = useCallback(async () => {
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    deviceIdRef.current = null;
+    setThreads([]);
+    await saveThreads([]);
+  }, []);
+
+  // Nach der Anmeldung: Threads des Kontos frisch laden (nur Remote) und
+  // Realtime-Subscription auf diesen User umstellen.
   const resyncForUser = useCallback(async (userId: string) => {
     deviceIdRef.current = userId;
     if (!isSyncConfigured()) return;
@@ -207,7 +225,7 @@ export function ThoughtsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThoughtsContext.Provider
-      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread, clearAllThreads, resyncForUser }}
+      value={{ threads, loading, archiveThread, restoreThread, deleteThreadPermanently, pinThread, unpinThread, clearAllThreads, resyncForUser, detachSync }}
     >
       {children}
     </ThoughtsContext.Provider>

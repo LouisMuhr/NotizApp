@@ -35,7 +35,6 @@ In claude.ai eine Antwort markieren (oder Strg+A für die ganze Seite) → Bookm
 Weitere Endpunkte (alle mit `Authorization: Bearer <Supabase-Access-Token des Users>`):
 - `POST /api/synthesize` — KI-Synthese, Rate-Limit nach Tier
 - `POST /api/bookmarklet-token` / `DELETE` — persönlichen Schlüssel erzeugen / widerrufen
-- `POST /api/migrate-user` mit Body `{ "fromToken": "<Access-Token des anonymen Users>" }` — Daten anonym → Konto (eine Transaktion)
 - `POST /api/delete-user` — löscht ausschließlich den Aufrufer selbst
 
 ```json
