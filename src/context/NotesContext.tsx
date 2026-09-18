@@ -6,7 +6,7 @@ import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
-  loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid,
+  loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid, clearSyncUid,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
@@ -58,7 +58,7 @@ interface NotesContextType {
   /** true, solange ein Erstupload fehlgeschlagen und noch offen ist. */
   initialUploadPending: boolean;
   /** Sync abschalten und lokalen Bestand behalten (Abmelden → Zustand `local`). */
-  detachSync: () => void;
+  detachSync: () => Promise<void>;
   /** Unbestaetigte lokale Aenderungen hochladen. Wirft, wenn etwas offen bleibt. */
   flushPending: () => Promise<void>;
   deleteAllData: () => Promise<void>;
@@ -640,13 +640,22 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
    * die App damit zurueck nach `local` — es wird KEIN neuer User erzeugt und
    * nichts geloescht.
    */
-  const detachSync = useCallback(() => {
+  const detachSync = useCallback(async () => {
     if (unsubscribeRef.current) {
       try { unsubscribeRef.current(); } catch {}
       unsubscribeRef.current = null;
     }
     deviceIdRef.current = null;
     clearUserIdCache();
+    // Die Outbox gehoert zum abgemeldeten Konto. Bliebe sie stehen, wuerde sie
+    // beim naechsten Anmelden in ein FREMDES Konto geschrieben. Der Aufrufer
+    // hat vorher `flushPending()` ausgefuehrt; was hier noch liegt, ist bereits
+    // hochgeladen oder gehoert nicht in das naechste Konto.
+    pendingRef.current = new Set();
+    await savePendingSync([]).catch(() => {});
+    // Zuletzt gesyncte UID vergessen, damit `identityChanged` beim naechsten
+    // Sync korrekt greift.
+    await clearSyncUid().catch(() => {});
   }, []);
 
   return (

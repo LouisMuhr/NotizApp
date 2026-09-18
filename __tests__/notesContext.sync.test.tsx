@@ -367,3 +367,28 @@ test('L4: Prozess-Kill nach dem ersten Write von restoreNote laesst die Notiz ni
   expect(inNotes || inArchive).toBe(true); // kein Datenverlust (erwartet: erfuellt)
   expect(inNotes).toBe(true); // Wiederherstellen darf nicht still verloren gehen
 });
+
+// ---------------------------------------------------------------------------
+// A5 — Abmelden hinterlaesst keine Outbox-Reste fuer das naechste Konto
+// ---------------------------------------------------------------------------
+test('A5: nach detachSync landen Notizen des alten Kontos nicht im naechsten', async () => {
+  const hook = await mountSynced();
+
+  // Offline eine Notiz erstellen → bleibt in der Outbox des aktuellen Kontos.
+  online = false;
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'alt' }), title: 'Konto A' }); });
+  online = true;
+
+  // Abmelden: Sync aus, Outbox und zuletzt gesyncte UID muessen weg sein.
+  await act(async () => { await hook.result.current.detachSync(); });
+  expect(await AsyncStorage.getItem('@notizapp_pending_sync')).toBe(JSON.stringify([]));
+  expect(await AsyncStorage.getItem('@notizapp_sync_uid')).toBeNull();
+
+  // Anmeldung an einem ANDEREN Konto (remote leer).
+  remote.clear();
+  remoteNotes.upsertRemote.mockClear();
+  await act(async () => { await hook.result.current.resyncForUser('konto-b'); });
+
+  // Die Notiz aus Konto A darf dort nicht auftauchen.
+  expect(Array.from(remote.values()).map((n) => n.title)).not.toContain('Konto A');
+});

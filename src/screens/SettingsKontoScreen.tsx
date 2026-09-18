@@ -397,7 +397,7 @@ export default function SettingsKontoScreen() {
       await clearPendingEmail();
       // Zurueck nach `local`: Sync abschalten, lokalen Notiz-Bestand behalten.
       // Es wird KEIN neuer (anonymer) User erzeugt.
-      detachSync();
+      await detachSync();
       await detachThreadsSync();
       await refreshSubscription();
       setEmail('');
