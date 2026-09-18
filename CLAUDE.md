@@ -10,8 +10,6 @@ Kategorien, Erinnerungen, Pinning, Archiv und optionalem Supabase-Sync. Daneben 
 (atomare Gedanken → Threads). Dazu eine **bridge** (Vercel serverless API + Browser-Bookmarklet) und eine
 **webapp** (Next.js Graph-Visualizer).
 
----
-
 ## Repository Layout
 
 ```
@@ -37,8 +35,6 @@ c:/NotizApp/
 └── README.md
 ```
 
----
-
 ## Tech Stack
 
 | Layer | Library/Tool |
@@ -58,8 +54,6 @@ c:/NotizApp/
 | i18n | i18n-js v4 + expo-localization (DE/EN, Geräte-Sprache + manueller Override) |
 | Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
----
-
 ## Build & Run Commands
 
 From `NotizApp/NotizApp/`:
@@ -73,8 +67,6 @@ npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstes
 Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`.
 Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 
----
-
 ## Environment Variables
 
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
@@ -82,8 +74,6 @@ Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
-
----
 
 ## Architecture Notes
 
@@ -107,9 +97,9 @@ NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
   `subscribeRemote()` (INSERT/UPDATE/DELETE). Archivieren = `archived_at` setzen, nie DELETE; endgültig
   löschen = Tombstone + `deleteRemote()` (Batches à 200).
 - `resyncForUser(uid, mode)`: Default `'replace'` (Anmeldung = Zweitgerät, Kontostand gilt). `'merge'` nur
-  beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`).
-- `detachSync()`: Abmelden schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`;
-  `signOut()`-Fehler bricht ab). Es wird **kein** neuer User erzeugt.
+  beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
+  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler
+  bricht ab) — Details unten.
 
 ### Konto-Zustände (lokal-first)
 `src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
@@ -118,11 +108,17 @@ Supabase-User an** — `local` ist der Default, Notizen bleiben rein lokal. `get
 liefern nur bei `secured` eine UID, damit sind die beiden anderen Zustände garantiert offline.
 Registrierung = `signUp()` → `pending-confirmation` (nicht optimistisch `secured`); erst nach Bestätigung
 läuft der einmalige `uploadLocalNotes()`, bei Fehler bleibt `@notizapp_initial_upload_pending` stehen und
-der Konto-Screen zeigt einen dauerhaften Retry. Weitere Keys: `@notizapp_pending_email` (rettet die
-Registrierung über einen Neustart, falls `signUp()` keine Session liefert), `@notizapp_first_seen` +
+der Konto-Screen zeigt einen dauerhaften Retry. Gibt `signUp()` keine Session aus, rettet
+`@notizapp_pending_email` den Zustand über einen Neustart — „Bestätigung prüfen" fragt dann nach dem
+Passwort, weil der Status ohne Session nicht abfragbar ist. Weitere Keys: `@notizapp_first_seen` +
 `@notizapp_unsecured_dismissed` (Banner-Schwelle). Altlast: anonyme Sessions werden beim Start nur
-abgemeldet (`src/sync/legacyAnon.ts`), verwaiste Anon-User räumt `scripts/cleanup-anon-users.sql`
-**manuell** ab. `UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
+abgemeldet (`src/sync/legacyAnon.ts`); die verwaisten Anon-User wurden per SQL bereits abgeräumt.
+Trennen (`detachSync`, UI „Sync beenden") behält Notizen **und** Threads lokal und räumt Outbox +
+`@notizapp_sync_uid` ab, damit nichts ins nächste Konto leckt. Erstupload in ein **anderes** Konto
+vergibt neue Notiz-IDs: `notes.id` ist PK über alle User, RLS würde den Upsert sonst ablehnen. Alles
+löschen geht nur über Einstellungen → Datenschutz (lokal **und** remote). Synthese braucht ein
+bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"), führt zum Konto-Screen.
+`UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
 `pending-confirmation` sofort; im Konto-Screen dauerhaft.
 
 ### Supabase schema
@@ -132,14 +128,13 @@ gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) �
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
 Schema source: `supabase-schema.sql` (frisch) bzw. `supabase-migration-2026-09-17.sql` (Delta für bestehende
 Projekte: `notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`,
-`profiles.bookmarklet_token_hash`). Die RPC `migrate_user` ist funktionslos — Drop-Statement liegt in
-`scripts/cleanup-anon-users.sql`.
+`profiles.bookmarklet_token_hash`). Die RPC `migrate_user` ist funktionslos (Altlast des anonymen
+Modells) und kann gedroppt werden.
 
 ### Theme
-`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces,
-Espresso-Tinte, Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings),
-Inter (UI/Body) via `expo-font` in App.tsx. Kategorien: Hue-Rotation via
-`src/theme/categoryAccents.ts` — **keine LinearGradient-Importe mehr in `src/`**.
+`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte,
+Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font` in
+App.tsx. Kategorien: Hue-Rotation via `categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
 
 ### App-Icon (Velm)
 „Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: `Velm Icon - Final.html`
@@ -174,12 +169,9 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
 
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
-Gesperrte Einträge bleiben in `SettingsScreen` sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`
-und navigieren zu `SettingsAbo`.
-
-`bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
-
----
+Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
+`SettingsAbo`. `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht
+Teil der API.
 
 ## Code Conventions
 
@@ -187,8 +179,8 @@ und navigieren zu `SettingsAbo`.
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
 - **Components**: functional + hooks only, no class components.
 - **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
-- **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch.
-- **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
+- **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch. **IDs**: `uuidv4()` —
+  always import `react-native-get-random-values` before uuid.
 - **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Tests beschreiben das
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.
