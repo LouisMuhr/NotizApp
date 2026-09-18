@@ -172,8 +172,12 @@ nur den Aufrufer. Fehlerantworten sind generische Codes (`ai_unavailable`, `inte
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
-zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`),
-Grenze wird deterministisch aus Server-Feldern berechnet (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`;
+`formatAvailabilityParts()` liefert `lead`/`detail` für den zweizeiligen Button), Grenze wird deterministisch aus
+Server-Feldern berechnet (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+
+**Abo-Gating in der UI**: Bookmarklet ab `basic`, Web App ab `pro`. Gesperrte Einträge bleiben in `SettingsScreen`
+sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan` statt des Sublabels und navigieren zu `SettingsAbo`.
 
 `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
 

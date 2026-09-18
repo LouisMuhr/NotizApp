@@ -22,6 +22,7 @@ function NavRow({
   sublabel,
   onPress,
   showDivider = true,
+  locked = false,
 }: {
   icon: IconName;
   iconBg: string;
@@ -29,16 +30,24 @@ function NavRow({
   sublabel?: string;
   onPress: () => void;
   showDivider?: boolean;
+  /** Funktion ist im aktuellen Abo nicht freigeschaltet — Zeile bleibt sichtbar, aber gedimmt. */
+  locked?: boolean;
 }) {
   const theme = useTheme();
   return (
     <>
       <TouchableOpacity activeOpacity={0.6} onPress={onPress} style={styles.row}>
-        <View style={[styles.rowIcon, { backgroundColor: iconBg }]}>
+        <View style={[styles.rowIcon, { backgroundColor: iconBg }, locked && styles.rowIconLocked]}>
           <MaterialCommunityIcons name={icon} size={19} color={Tokens.paper} />
         </View>
         <View style={styles.rowText}>
-          <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontFamily: Fonts.sansMedium }}>
+          <Text
+            style={{
+              color: locked ? theme.colors.onSurfaceVariant : theme.colors.onSurface,
+              fontSize: 15,
+              fontFamily: Fonts.sansMedium,
+            }}
+          >
             {label}
           </Text>
           {sublabel ? (
@@ -48,8 +57,8 @@ function NavRow({
           ) : null}
         </View>
         <MaterialCommunityIcons
-          name="chevron-right"
-          size={20}
+          name={locked ? 'lock-outline' : 'chevron-right'}
+          size={locked ? 17 : 20}
           color={theme.colors.onSurfaceVariant}
         />
       </TouchableOpacity>
@@ -115,6 +124,10 @@ export default function SettingsScreen() {
 
   const tierLabel = tier === 'pro' ? t('settings.tierPro') : tier === 'basic' ? t('settings.tierBasic') : t('settings.tierFree');
   const kontoSublabel = isSignedIn ? t('settings.accountSubSignedIn') : t('settings.accountSubSignedOut');
+
+  // Abo-Gating: Zeilen bleiben sichtbar, zeigen aber nur, ab welchem Plan sie nutzbar sind.
+  const bookmarkletLocked = tier === 'free';
+  const webAppLocked = tier !== 'pro';
 
   const colors = {
     amber: Tokens.amberDeep,
@@ -211,15 +224,27 @@ export default function SettingsScreen() {
           icon="bookmark-plus-outline"
           iconBg={colors.amberMid}
           label={t('settings.bookmarklet')}
-          sublabel={t('settings.bookmarkletSub')}
-          onPress={() => navigation.navigate('SettingsBookmarklet')}
+          sublabel={
+            bookmarkletLocked
+              ? t('settings.lockedFromPlan', { plan: t('settings.tierBasic') })
+              : t('settings.bookmarkletSub')
+          }
+          locked={bookmarkletLocked}
+          onPress={() =>
+            navigation.navigate(bookmarkletLocked ? 'SettingsAbo' : 'SettingsBookmarklet')
+          }
         />
         <NavRow
           icon="graph-outline"
           iconBg={colors.ink}
           label={t('settings.webApp')}
-          sublabel={t('settings.webAppSub')}
-          onPress={() => navigation.navigate('SettingsWebApp')}
+          sublabel={
+            webAppLocked
+              ? t('settings.lockedFromPlan', { plan: t('settings.tierPro') })
+              : t('settings.webAppSub')
+          }
+          locked={webAppLocked}
+          onPress={() => navigation.navigate(webAppLocked ? 'SettingsAbo' : 'SettingsWebApp')}
           showDivider={false}
         />
       </View>
@@ -313,6 +338,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  rowIconLocked: { opacity: 0.45 },
   rowText: { flex: 1 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 62 },
 });

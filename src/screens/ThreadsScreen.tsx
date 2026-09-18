@@ -21,7 +21,7 @@ import * as haptics from '../utils/haptics';
 import { getSupabase } from '../sync/supabaseClient';
 import ProBanner from '../components/ProBanner';
 import { useLanguage } from '../context/LanguageContext';
-import { formatAvailability, formatDateTime } from '../utils/limitFormat';
+import { formatAvailabilityParts, formatDateTime } from '../utils/limitFormat';
 
 interface Props {
   navigation: any;
@@ -246,11 +246,14 @@ export default function ThreadsScreen({ navigation }: Props) {
   // Is the user currently rate-limited?
   const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
 
-  function getSynthesizeLabel(): string {
-    if (synthesizing) return t('threads.synthesizeRunning');
-    if (isLimited) return formatAvailability(nextAllowedAt!, new Date(), locale, t);
-    return t('threads.synthesize');
+  /** Zweiteiliges Label, damit der Button umbrechen kann statt in einer Zeile zu ueberlaufen. */
+  function getSynthesizeLabel(): { lead: string; detail: string } {
+    if (synthesizing) return { lead: t('threads.synthesizeRunning'), detail: '' };
+    if (isLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
+    return { lead: t('threads.synthesize'), detail: '' };
   }
+
+  const synthesizeLabel = getSynthesizeLabel();
 
   async function handleSynthesize() {
     if (isLimited) return; // shouldn't happen since button is disabled
@@ -311,7 +314,7 @@ export default function ThreadsScreen({ navigation }: Props) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerTitleCol}>
             <Text style={styles.headerEyebrow}>
               {activeThreads.length === 0 ? t('threads.emptyEyebrow') : t('threads.activeCount', { count: activeThreads.length })}
             </Text>
@@ -336,9 +339,16 @@ export default function ThreadsScreen({ navigation }: Props) {
                 style={{ marginRight: 6 }}
               />
             )}
-            <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
-              {getSynthesizeLabel()}
-            </Text>
+            <View style={styles.synthesizeBtnLabel}>
+              <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
+                {synthesizeLabel.lead}
+              </Text>
+              {synthesizeLabel.detail ? (
+                <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
+                  {synthesizeLabel.detail}
+                </Text>
+              ) : null}
+            </View>
           </Pressable>
         </View>
       </View>
@@ -401,12 +411,18 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  headerTitleCol: {
+    flexShrink: 1,
   },
   synthesizeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '58%',
     backgroundColor: Tokens.amberSoft,
     borderRadius: Radii.md,
     paddingHorizontal: 12,
@@ -418,10 +434,15 @@ const styles = StyleSheet.create({
   synthesizeBtnDisabled: {
     backgroundColor: Tokens.inkFaint + '18', // very faint bg
   },
+  synthesizeBtnLabel: {
+    flexShrink: 1,
+  },
   synthesizeBtnText: {
     fontFamily: Fonts.sansSemibold,
     fontSize: 13,
+    lineHeight: 17,
     color: Tokens.amberDeep,
+    flexShrink: 1,
   },
   synthesizeBtnTextDisabled: {
     color: Tokens.inkFaint,

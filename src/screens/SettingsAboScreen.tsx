@@ -57,7 +57,8 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
         { icon: 'check-circle-outline', text: t('settingsAbo.plans.basic.features.0') },
         { icon: 'brain', text: t('settingsAbo.plans.basic.features.1') },
         { icon: 'cloud-sync-outline', text: t('settingsAbo.plans.basic.features.2') },
-        { icon: 'lightning-bolt-outline', text: t('settingsAbo.plans.basic.features.3') },
+        { icon: 'bookmark-plus-outline', text: t('settingsAbo.plans.basic.features.3') },
+        { icon: 'lightning-bolt-outline', text: t('settingsAbo.plans.basic.features.4') },
       ],
     },
     pro: {
