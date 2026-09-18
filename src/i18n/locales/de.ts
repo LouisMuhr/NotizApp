@@ -147,6 +147,7 @@ export default {
     },
     synthesizeRunning: 'Läuft…',
     synthesize: 'Synthetisieren',
+    needsAccount: 'Konto erforderlich',
     busy: 'Gerade ausgelastet – bitte gleich noch einmal versuchen.',
     limitReachedGeneric: 'Limit erreicht.',
     serverError: {

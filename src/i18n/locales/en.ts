@@ -149,6 +149,7 @@ const en: typeof de = {
     },
     synthesizeRunning: 'Running…',
     synthesize: 'Synthesize',
+    needsAccount: 'Account required',
     busy: 'Busy right now – please try again in a moment.',
     limitReachedGeneric: 'Limit reached.',
     serverError: {

@@ -264,12 +264,19 @@ export default function ThreadsScreen({ navigation }: Props) {
   }, []);
 
   // Is the user currently rate-limited?
-  const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
+  const rateLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
+  /**
+   * Button gesperrt: entweder Rate-Limit oder kein bestaetigtes Konto. Beides
+   * sieht gleich aus (ausgegraut), nur das Label erklaert den Grund — so bleibt
+   * sichtbar, dass es die Funktion gibt.
+   */
+  const isLimited = rateLimited || !hasAccount;
 
   /** Zweiteiliges Label, damit der Button umbrechen kann statt in einer Zeile zu ueberlaufen. */
   function getSynthesizeLabel(): { lead: string; detail: string } {
     if (synthesizing) return { lead: t('threads.synthesizeRunning'), detail: '' };
-    if (isLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
+    if (!hasAccount) return { lead: t('threads.synthesize'), detail: t('threads.needsAccount') };
+    if (rateLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
     return { lead: t('threads.synthesize'), detail: '' };
   }
 
@@ -341,12 +348,12 @@ export default function ThreadsScreen({ navigation }: Props) {
             <Text style={styles.headerTitle}>{t('threads.title')}</Text>
           </View>
           {/* Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
-              Ohne Konto waere der Button nur ein Weg in eine Fehlermeldung —
-              stattdessen weist der UnsecuredBanner darunter den Weg. */}
-          {hasAccount && (
+              Ohne Konto bleibt der Button sichtbar, aber ausgegraut — so ist
+              erkennbar, dass es die Funktion gibt. Ein Tap fuehrt dann zum
+              Konto-Screen statt in eine Fehlermeldung. */}
           <Pressable
-            onPress={handleSynthesize}
-            disabled={synthesizing || isLimited}
+            onPress={hasAccount ? handleSynthesize : () => navigation.navigate('SettingsKonto')}
+            disabled={synthesizing || rateLimited}
             style={({ pressed }) => [
               styles.synthesizeBtn,
               isLimited && styles.synthesizeBtnDisabled,
@@ -357,7 +364,7 @@ export default function ThreadsScreen({ navigation }: Props) {
               <ActivityIndicator size={16} color={isLimited ? Tokens.inkFaint : Tokens.amberDeep} style={{ marginRight: 6 }} />
             ) : (
               <MaterialCommunityIcons
-                name={isLimited ? 'clock-outline' : 'creation'}
+                name={!hasAccount ? 'lock-outline' : rateLimited ? 'clock-outline' : 'creation'}
                 size={16}
                 color={isLimited ? Tokens.inkFaint : Tokens.amberDeep}
                 style={{ marginRight: 6 }}
@@ -374,7 +381,6 @@ export default function ThreadsScreen({ navigation }: Props) {
               ) : null}
             </View>
           </Pressable>
-          )}
         </View>
       </View>
 
