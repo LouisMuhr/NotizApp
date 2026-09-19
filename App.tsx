@@ -43,7 +43,7 @@ const navTheme = {
   },
 };
 
-export const navigationRef = createNavigationContainerRef();
+const navigationRef = createNavigationContainerRef();
 
 function NotificationBootstrap() {
   const { rescheduleAllReminders } = useNotes();

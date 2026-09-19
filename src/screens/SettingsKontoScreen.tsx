@@ -20,7 +20,7 @@ import {
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Tokens } from '../theme/theme';
-import { Fonts, Type } from '../theme/typography';
+import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 
 type LocalTab = 'signup' | 'signin';

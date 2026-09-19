@@ -7,7 +7,6 @@ import { subscriptionService, Tier } from '../sync/subscriptionService';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
-import type { AppLocale } from '../i18n';
 import { formatDateTime } from '../utils/limitFormat';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];

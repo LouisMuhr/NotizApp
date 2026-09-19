@@ -3,8 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Tokens } from '../theme/theme';
-import { Type, Fonts } from '../theme/typography';
-import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Radii, Shadows } from '../theme/gradients';
 import { useLanguage } from '../context/LanguageContext';
 
 const WEBAPP_URL = 'https://www.velmnote.com';

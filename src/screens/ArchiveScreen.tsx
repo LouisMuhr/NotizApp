@@ -9,7 +9,7 @@ import { useThoughts } from '../context/ThoughtsContext';
 import { Note } from '../models/Note';
 import { Thread } from '../models/Thought';
 import { getCategoryAccent } from '../theme/categoryAccents';
-import { Radii, Shadows, Insets } from '../theme/gradients';
+import { Radii, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';

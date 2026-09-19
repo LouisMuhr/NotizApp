@@ -43,7 +43,6 @@ function formatRelativeTime(iso: string, t: ReturnType<typeof useLanguage>['t'])
 
 interface ThreadCardProps {
   thread: Thread;
-  index: number;
   newCount: number;
   onPress: () => void;
   onArchive: () => void;
@@ -51,8 +50,7 @@ interface ThreadCardProps {
   onUnpin: () => void;
 }
 
-function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
-  const theme = useTheme();
+function ThreadCard({ thread, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
   const { t } = useLanguage();
   const swipeableRef = useRef<Swipeable>(null);
   const accent = getCategoryAccent(thread.title);
@@ -403,10 +401,9 @@ export default function ThreadsScreen({ navigation }: Props) {
         <FlatList
           data={activeThreads}
           keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
+          renderItem={({ item }) => (
             <ThreadCard
               thread={item}
-              index={index}
               newCount={newCountByThread[item.id] ?? 0}
               onPress={() => navigation.navigate('ThreadDetail', { threadId: item.id, title: item.title })}
               onArchive={() => archiveThread(item.id)}

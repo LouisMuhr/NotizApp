@@ -6,7 +6,7 @@ import { Tokens } from '../../theme/theme';
 import { Fonts } from '../../theme/typography';
 import { useLanguage } from '../../context/LanguageContext';
 import { Dots, NextButton, SkipRow } from './components';
-import { CREAM, shared } from './shared';
+import { shared } from './shared';
 
 interface Props {
   onNext: () => void;
