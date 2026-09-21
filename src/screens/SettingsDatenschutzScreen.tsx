@@ -7,8 +7,9 @@ import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { exportNotesAsJson } from '../utils/exportNotes';
 import { getSupabase } from '../sync/supabaseClient';
-import { getUserId, clearUserIdCache } from '../sync/userId';
-import { deleteAccountCompletely } from '../sync/deleteAnonUser';
+import { clearUserIdCache } from '../sync/userId';
+import { clearPendingEmail, clearInitialUploadPending } from '../sync/accountState';
+import { deleteAccountCompletely } from '../sync/deleteAccount';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
@@ -77,7 +78,7 @@ export default function SettingsDatenschutzScreen() {
   };
 
   // DSGVO-Komplettlöschung: lokale Daten + alle Server-Daten + Auth-Account
-  // (inkl. E-Mail) werden unwiderruflich entfernt. Danach frischer anonymer User.
+  // (inkl. E-Mail) werden unwiderruflich entfernt. Danach laeuft die App lokal weiter.
   const handleDeleteAll = async () => {
     setConfirmVisible(false);
     setDeleteLoading(true);
@@ -100,12 +101,13 @@ export default function SettingsDatenschutzScreen() {
         await deleteAccountCompletely();
       }
 
-      // 3. Session beenden und frischen anonymen User holen, damit die App
-      //    nicht mit einem gelöschten Account weiterläuft.
+      // 3. Session beenden — die App laeuft danach im Zustand `local` weiter.
+      //    Es wird KEIN neuer (anonymer) User erzeugt.
       if (supabase) {
         await supabase.auth.signOut().catch(() => {});
         clearUserIdCache();
-        await getUserId().catch(() => {});
+        await clearPendingEmail();
+        await clearInitialUploadPending();
       }
 
       showToast(t('settingsDatenschutz.toastDeleted'), 'success');

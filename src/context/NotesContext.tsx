@@ -6,11 +6,15 @@ import { Note, DEFAULT_CATEGORIES } from '../models/Note';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
-  loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid,
+  loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid, clearSyncUid,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
 import { getUserId, clearUserIdCache } from '../sync/userId';
+import { signOutLegacyAnonymous } from '../sync/legacyAnon';
+import {
+  markInitialUploadPending, clearInitialUploadPending, isInitialUploadPending,
+} from '../sync/accountState';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
@@ -40,10 +44,21 @@ interface NotesContextType {
   rescheduleAllReminders: () => Promise<void>;
   /**
    * Sync auf einen (neuen) User umstellen.
-   * - 'merge' (Anmelden, Default): lokale Notizen werden in das Konto uebernommen.
-   * - 'replace' (Abmelden): lokaler Bestand wird durch den Remote-Bestand ersetzt.
+   * - 'merge': lokaler Bestand wird in das Konto uebernommen — nur beim
+   *   einmaligen Erstupload nach der Registrierung (`uploadLocalNotes`).
+   * - 'replace' (Default): lokaler Bestand wird durch den Remote-Bestand
+   *   ersetzt. Gilt fuer Anmeldung auf einem Zweitgeraet und fuer das Abmelden.
    */
   resyncForUser: (userId: string, mode?: ResyncMode) => Promise<void>;
+  /**
+   * Einmaliger Upload der lokalen Notizen bei Erstregistrierung. Wirft bei
+   * Fehler, damit der Aufrufer einen sichtbaren Retry anbieten kann.
+   */
+  uploadLocalNotes: (userId: string) => Promise<void>;
+  /** true, solange ein Erstupload fehlgeschlagen und noch offen ist. */
+  initialUploadPending: boolean;
+  /** Sync abschalten und lokalen Bestand behalten (Abmelden → Zustand `local`). */
+  detachSync: () => Promise<void>;
   /** Unbestaetigte lokale Aenderungen hochladen. Wirft, wenn etwas offen bleibt. */
   flushPending: () => Promise<void>;
   deleteAllData: () => Promise<void>;
@@ -58,6 +73,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState<Tier>('free');
   const [nextAllowedAt, setNextAllowedAt] = useState<Date | null>(null);
+  const [initialUploadPending, setInitialUploadPending] = useState(false);
 
   /** Gesamter lokaler Bestand (aktiv + archiviert). Quelle der Wahrheit fuer alle Mutationen. */
   const allRef = useRef<Note[]>([]);
@@ -67,6 +83,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const deviceIdRef = useRef<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
+  /** Vorwaertsreferenz: rescheduleAllReminders wird weiter unten definiert. */
+  const rescheduleAllRemindersRef = useRef<() => Promise<void>>(async () => {});
   const syncChainRef = useRef<Promise<void>>(Promise.resolve());
   const writeChainRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -335,9 +353,29 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
       if (!isSyncConfigured()) return;
       try {
+        // Altlast: anonyme Session aus dem frueheren Modell beenden, bevor
+        // irgendetwas synchronisiert wird. Danach ist der Zustand `local`.
+        await signOutLegacyAnonymous();
+        if (!mountedRef.current) return;
+
+        // Ohne bestaetigtes Konto liefert getUserId() null → kein Sync, die
+        // Notizen bleiben rein lokal. Das ist der Normalfall, kein Fehler.
         const deviceId = await getUserId();
         if (!deviceId || !mountedRef.current) return;
+
+        // Routine-Start eines bestaetigten Kontos: 'merge'. Offline entstandene
+        // Aenderungen duerfen nicht verworfen werden; `identityChanged` in
+        // mergeWithRemote unterscheidet dabei gleiche von neuer Identitaet.
+        const uploadOpen = await isInitialUploadPending();
+        if (!mountedRef.current) return;
+        if (uploadOpen) setInitialUploadPending(true);
         await startSync(deviceId, 'merge');
+        // Ein aus einer frueheren Sitzung offener Erstupload ist damit erledigt,
+        // sobald die Outbox leer ist — sonst bleibt der Retry sichtbar.
+        if (uploadOpen && mountedRef.current && pendingRef.current.size === 0) {
+          await clearInitialUploadPending();
+          setInitialUploadPending(false);
+        }
       } catch (e) {
         console.warn('[sync] init failed', e);
       }
@@ -420,6 +458,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // notificationId ist geraetelokal → kein Remote-Push, kein updatedAt-Bump
     if (changed) await commit(updated);
   }, [commit]);
+
+  // Vorwaertsreferenz fuer Aufrufer, die vor dieser Definition stehen.
+  rescheduleAllRemindersRef.current = rescheduleAllReminders;
 
   // ---------------------------------------------------------------------------
   // Mutationen (alle ueber allRef, damit parallele Aufrufe sich nicht ueberschreiben)
@@ -559,11 +600,87 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [publish]);
 
-  const resyncForUser = useCallback(async (userId: string, mode: ResyncMode = 'merge') => {
+  /**
+   * Default ist 'replace': eine Anmeldung auf einem Zweitgeraet uebernimmt den
+   * Kontostand, statt den dortigen lokalen Bestand ungefragt hineinzumischen.
+   * Der Erstupload nach der Registrierung geht ueber `uploadLocalNotes`.
+   */
+  const resyncForUser = useCallback(async (userId: string, mode: ResyncMode = 'replace') => {
     clearUserIdCache();
     if (!isSyncConfigured()) return;
     await startSync(userId, mode);
   }, [startSync]);
+
+  /**
+   * Einmaliger Upload der lokalen Notizen bei Erstregistrierung.
+   *
+   * Der Merker wird VOR dem Versuch gesetzt, damit ein Absturz mitten im
+   * Upload den Retry nicht verliert. Er faellt erst, wenn die Outbox leer ist.
+   * Wirft bei Fehler — der Aufrufer zeigt daraufhin einen sichtbaren Retry.
+   */
+  const uploadLocalNotes = useCallback(async (userId: string) => {
+    clearUserIdCache();
+    if (!isSyncConfigured()) return;
+    await markInitialUploadPending();
+    setInitialUploadPending(true);
+
+    // `notes.id` ist GLOBAL eindeutig (Primary Key ueber alle User). Wurde eine
+    // Notiz schon einmal in ein anderes Konto hochgeladen, gehoert die Zeile
+    // dort — RLS laesst sie fuer das neue Konto weder lesen noch ueberschreiben,
+    // und der Upsert scheitert. Solche Notizen bekommen deshalb eine neue ID,
+    // bevor sie in das neue Konto wandern.
+    const previousUid = await loadSyncUid();
+    if (previousUid && previousUid !== userId) {
+      // Geplante Erinnerungen tragen die alte noteId in ihren Daten und muessen
+      // danach neu angemeldet werden.
+      const reIded = allRef.current.map((n) => ({ ...n, id: uuidv4(), notificationId: null }));
+      pendingRef.current = new Set();
+      tombstonesRef.current = new Set();
+      await saveTombstones([]).catch(() => {});
+      await commit(reIded);
+      await rescheduleAllRemindersRef.current().catch((e) =>
+        console.warn('[sync] reschedule after re-id failed', e));
+    }
+
+    // Alles Lokale in die Outbox, damit auch bereits bestaetigte Notizen aus
+    // der Zeit vor der Registrierung im Konto landen.
+    for (const n of allRef.current) pendingRef.current.add(n.id);
+    await savePendingSync(Array.from(pendingRef.current));
+    try {
+      await startSync(userId, 'merge');
+      if (pendingRef.current.size > 0) {
+        throw new Error(`${pendingRef.current.size} Notiz(en) konnten nicht hochgeladen werden`);
+      }
+    } catch (e) {
+      // Merker bleibt stehen → Retry ueberlebt den Neustart.
+      throw e;
+    }
+    await clearInitialUploadPending();
+    setInitialUploadPending(false);
+  }, [startSync]);
+
+  /**
+   * Sync abschalten, lokalen Bestand unveraendert behalten. Beim Abmelden geht
+   * die App damit zurueck nach `local` — es wird KEIN neuer User erzeugt und
+   * nichts geloescht.
+   */
+  const detachSync = useCallback(async () => {
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    deviceIdRef.current = null;
+    clearUserIdCache();
+    // Die Outbox gehoert zum abgemeldeten Konto. Bliebe sie stehen, wuerde sie
+    // beim naechsten Anmelden in ein FREMDES Konto geschrieben. Der Aufrufer
+    // hat vorher `flushPending()` ausgefuehrt; was hier noch liegt, ist bereits
+    // hochgeladen oder gehoert nicht in das naechste Konto.
+    pendingRef.current = new Set();
+    await savePendingSync([]).catch(() => {});
+    // Zuletzt gesyncte UID vergessen, damit `identityChanged` beim naechsten
+    // Sync korrekt greift.
+    await clearSyncUid().catch(() => {});
+  }, []);
 
   return (
     <NotesContext.Provider
@@ -586,6 +703,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         rescheduleAllReminders,
         resyncForUser,
+        uploadLocalNotes,
+        initialUploadPending,
+        detachSync,
         flushPending,
         deleteAllData,
       }}

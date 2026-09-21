@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -18,10 +18,12 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
-import { getSupabase } from '../sync/supabaseClient';
+import { getSupabase, isSyncConfigured } from '../sync/supabaseClient';
+import { resolveAccountState } from '../sync/accountState';
 import ProBanner from '../components/ProBanner';
+import UnsecuredBanner from '../components/UnsecuredBanner';
 import { useLanguage } from '../context/LanguageContext';
-import { formatAvailability, formatDateTime } from '../utils/limitFormat';
+import { formatAvailabilityParts, formatDateTime } from '../utils/limitFormat';
 
 interface Props {
   navigation: any;
@@ -41,7 +43,6 @@ function formatRelativeTime(iso: string, t: ReturnType<typeof useLanguage>['t'])
 
 interface ThreadCardProps {
   thread: Thread;
-  index: number;
   newCount: number;
   onPress: () => void;
   onArchive: () => void;
@@ -49,8 +50,7 @@ interface ThreadCardProps {
   onUnpin: () => void;
 }
 
-function ThreadCard({ thread, index, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
-  const theme = useTheme();
+function ThreadCard({ thread, newCount, onPress, onArchive, onPin, onUnpin }: ThreadCardProps) {
   const { t } = useLanguage();
   const swipeableRef = useRef<Swipeable>(null);
   const accent = getCategoryAccent(thread.title);
@@ -242,15 +242,43 @@ export default function ThreadsScreen({ navigation }: Props) {
   const [synthesizing, setSynthesizing] = useState(false);
   const [snackMessage, setSnackMessage] = useState('');
   const [snackVisible, setSnackVisible] = useState(false);
+  /**
+   * Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
+   *
+   * Startwert ist `true`, wenn Sync gar nicht konfiguriert ist: dann gibt es
+   * keine Konto-Zustaende und der Button verhaelt sich wie vor der Umstellung.
+   */
+  const [hasAccount, setHasAccount] = useState(!isSyncConfigured());
+
+  useEffect(() => {
+    if (!isSyncConfigured()) return;
+    let cancelled = false;
+    resolveAccountState()
+      .then((snapshot) => {
+        if (!cancelled) setHasAccount(snapshot.state === 'secured');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Is the user currently rate-limited?
-  const isLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
+  const rateLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
+  /**
+   * Button gesperrt: entweder Rate-Limit oder kein bestaetigtes Konto. Beides
+   * sieht gleich aus (ausgegraut), nur das Label erklaert den Grund — so bleibt
+   * sichtbar, dass es die Funktion gibt.
+   */
+  const isLimited = rateLimited || !hasAccount;
 
-  function getSynthesizeLabel(): string {
-    if (synthesizing) return t('threads.synthesizeRunning');
-    if (isLimited) return formatAvailability(nextAllowedAt!, new Date(), locale, t);
-    return t('threads.synthesize');
+  /** Zweiteiliges Label, damit der Button umbrechen kann statt in einer Zeile zu ueberlaufen. */
+  function getSynthesizeLabel(): { lead: string; detail: string } {
+    if (synthesizing) return { lead: t('threads.synthesizeRunning'), detail: '' };
+    if (!hasAccount) return { lead: t('threads.synthesize'), detail: t('threads.needsAccount') };
+    if (rateLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
+    return { lead: t('threads.synthesize'), detail: '' };
   }
+
+  const synthesizeLabel = getSynthesizeLabel();
 
   async function handleSynthesize() {
     if (isLimited) return; // shouldn't happen since button is disabled
@@ -311,15 +339,19 @@ export default function ThreadsScreen({ navigation }: Props) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerTitleCol}>
             <Text style={styles.headerEyebrow}>
               {activeThreads.length === 0 ? t('threads.emptyEyebrow') : t('threads.activeCount', { count: activeThreads.length })}
             </Text>
             <Text style={styles.headerTitle}>{t('threads.title')}</Text>
           </View>
+          {/* Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
+              Ohne Konto bleibt der Button sichtbar, aber ausgegraut — so ist
+              erkennbar, dass es die Funktion gibt. Ein Tap fuehrt dann zum
+              Konto-Screen statt in eine Fehlermeldung. */}
           <Pressable
-            onPress={handleSynthesize}
-            disabled={synthesizing || isLimited}
+            onPress={hasAccount ? handleSynthesize : () => navigation.navigate('SettingsKonto')}
+            disabled={synthesizing || rateLimited}
             style={({ pressed }) => [
               styles.synthesizeBtn,
               isLimited && styles.synthesizeBtnDisabled,
@@ -330,19 +362,27 @@ export default function ThreadsScreen({ navigation }: Props) {
               <ActivityIndicator size={16} color={isLimited ? Tokens.inkFaint : Tokens.amberDeep} style={{ marginRight: 6 }} />
             ) : (
               <MaterialCommunityIcons
-                name={isLimited ? 'clock-outline' : 'creation'}
+                name={!hasAccount ? 'lock-outline' : rateLimited ? 'clock-outline' : 'creation'}
                 size={16}
                 color={isLimited ? Tokens.inkFaint : Tokens.amberDeep}
                 style={{ marginRight: 6 }}
               />
             )}
-            <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
-              {getSynthesizeLabel()}
-            </Text>
+            <View style={styles.synthesizeBtnLabel}>
+              <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
+                {synthesizeLabel.lead}
+              </Text>
+              {synthesizeLabel.detail ? (
+                <Text style={[styles.synthesizeBtnText, isLimited && styles.synthesizeBtnTextDisabled]}>
+                  {synthesizeLabel.detail}
+                </Text>
+              ) : null}
+            </View>
           </Pressable>
         </View>
       </View>
 
+      <UnsecuredBanner onPress={() => navigation.navigate('SettingsKonto')} />
       <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
 
       {activeThreads.length === 0 ? (
@@ -361,10 +401,9 @@ export default function ThreadsScreen({ navigation }: Props) {
         <FlatList
           data={activeThreads}
           keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
+          renderItem={({ item }) => (
             <ThreadCard
               thread={item}
-              index={index}
               newCount={newCountByThread[item.id] ?? 0}
               onPress={() => navigation.navigate('ThreadDetail', { threadId: item.id, title: item.title })}
               onArchive={() => archiveThread(item.id)}
@@ -401,12 +440,18 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  headerTitleCol: {
+    flexShrink: 1,
   },
   synthesizeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '58%',
     backgroundColor: Tokens.amberSoft,
     borderRadius: Radii.md,
     paddingHorizontal: 12,
@@ -418,10 +463,15 @@ const styles = StyleSheet.create({
   synthesizeBtnDisabled: {
     backgroundColor: Tokens.inkFaint + '18', // very faint bg
   },
+  synthesizeBtnLabel: {
+    flexShrink: 1,
+  },
   synthesizeBtnText: {
     fontFamily: Fonts.sansSemibold,
     fontSize: 13,
+    lineHeight: 17,
     color: Tokens.amberDeep,
+    flexShrink: 1,
   },
   synthesizeBtnTextDisabled: {
     color: Tokens.inkFaint,

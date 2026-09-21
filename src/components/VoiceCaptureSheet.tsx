@@ -19,7 +19,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 let ExpoSpeechRecognitionModule: any = null;
@@ -54,7 +54,6 @@ export default function VoiceCaptureSheet({
   initialMode = 'voice',
   onClose,
 }: Props) {
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { addNote } = useNotes();
   const { t, locale } = useLanguage();

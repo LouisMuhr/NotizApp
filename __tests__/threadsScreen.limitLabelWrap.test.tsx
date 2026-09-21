@@ -1,6 +1,8 @@
 /**
- * E6 (UI): Pro-User um 23:30 UTC sieht auf dem Synthese-Button "In 1 Tag verfuegbar",
- * obwohl der Reset in 30 Minuten ist. Entscheidung 13: Uhrzeit anzeigen.
+ * Regression: bei einem Limit, das erst an einem spaeteren Tag endet, war das
+ * Button-Label ein einziger langer String ("Ab Do., 23. Sep., 15:27 verfuegbar")
+ * und lief in einer Zeile ueber. Erwartung: zwei Textknoten ("Verfügbar ab" +
+ * Datum), damit der Button umbrechen kann.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
@@ -11,7 +13,7 @@ jest.mock('../src/context/ThoughtsContext', () => ({
 }));
 jest.mock('../src/context/LanguageContext', () => {
   const { t, setI18nLocale } = require('../src/i18n');
-  setI18nLocale('de'); // der Mock meldet locale 'de' → i18n muss auch auf DE stehen
+  setI18nLocale('de');
   return { useLanguage: () => ({ t, locale: 'de' }) };
 });
 jest.mock('../src/sync/supabaseClient', () => ({ getSupabase: () => null, isSyncConfigured: () => false }));
@@ -24,17 +26,22 @@ const ThreadsScreen = require('../src/screens/ThreadsScreen').default;
 
 afterEach(() => jest.useRealTimers());
 
-test('E6 (UI): 30 Minuten vor dem Pro-Reset zeigt der Button keine "1 Tag"-Angabe', () => {
-  jest.useFakeTimers({ now: Date.parse('2026-09-16T23:30:00Z') });
+test('Limit an einem spaeteren Tag: Label steht in zwei Zeilen, nicht in einer', () => {
+  jest.useFakeTimers({ now: Date.parse('2026-09-16T12:00:00Z') });
   useNotes.mockReturnValue({
-    tier: 'pro',
-    nextAllowedAt: new Date('2026-09-17T00:00:00Z'),
+    tier: 'free',
+    nextAllowedAt: new Date('2026-09-23T13:27:00Z'),
     refreshSubscription: jest.fn(),
   });
 
   render(<ThreadsScreen navigation={{ navigate: jest.fn() }} />);
 
-  const label = screen.getByText(/verfügbar/).props.children as string;
-  expect(label).not.toMatch(/1 Tag|1 day/);
-  expect(label).toMatch(/\d{1,2}:\d{2}|Min/); // Uhrzeit oder Minuten
+  // Zeile 1: nur der Einleitungstext, ohne Datum
+  const lead = screen.getByText('Verfügbar ab');
+  expect(lead).toBeTruthy();
+
+  // Zeile 2: das Datum mit Uhrzeit, als eigener Textknoten
+  const detail = screen.getByText(/\d{1,2}:\d{2}/);
+  expect(detail).not.toBe(lead);
+  expect(detail.props.children).toMatch(/Sep/);
 });

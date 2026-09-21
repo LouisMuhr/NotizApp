@@ -1,15 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import {
   Animated,
   Dimensions,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   View,
   ViewToken,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Tokens } from '../../theme/theme';
 import { ONBOARDING_KEY } from './shared';
 import SlideValue1 from './SlideValue1';
 import SlideValue2 from './SlideValue2';
@@ -41,7 +38,6 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
   const scrollX = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<Animated.FlatList<SlideKey>>(null);
   const activeIndexRef = useRef(0);
-  const [activeIndex, setActiveIndex] = useState(0);
 
   // Hintergrundfarbe interpoliert zwischen den Slides
   const backgroundColor = scrollX.interpolate({
@@ -56,7 +52,6 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
         const newIndex = viewableItems[0].index;
         if (newIndex !== activeIndexRef.current) {
           activeIndexRef.current = newIndex;
-          setActiveIndex(newIndex);
           // Haptisches Feedback beim Page-Change
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }

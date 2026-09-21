@@ -5,16 +5,10 @@
 
 ## Project Overview
 
-NotizApp is a German-language note-taking mobile app built with React Native / Expo.
-It supports notes with checklists, categories, reminders, pinning, archiving, and
-optional Supabase sync across devices. A secondary "Thoughts/Brainstorm" feature
-(atomare Gedanken → Threads) lives alongside the main notes flow.
-
-A companion **bridge** Vercel serverless API (`bridge/`) exposes note data via HTTP
-and a browser bookmarklet. A **webapp** (`webapp/`) is a Next.js graph visualizer
-for notes and threads.
-
----
+NotizApp (Velm) is a German-language note-taking app in React Native / Expo: Notizen mit Checklisten,
+Kategorien, Erinnerungen, Pinning, Archiv und optionalem Supabase-Sync. Daneben „Thoughts/Brainstorm"
+(atomare Gedanken → Threads). Dazu eine **bridge** (Vercel serverless API + Browser-Bookmarklet) und eine
+**webapp** (Next.js Graph-Visualizer).
 
 ## Repository Layout
 
@@ -28,22 +22,18 @@ c:/NotizApp/
 │   │   ├── i18n/          # index.ts (I18n setup), locales/de.ts + en.ts
 │   │   ├── models/        # Note.ts, Thought.ts (pure TypeScript types)
 │   │   ├── navigation/    # AppNavigator (Stack + BottomTabs)
-│   │   ├── screens/       # HomeScreen, EditorScreen, NoteDetailScreen,
-│   │   │                  #   ArchiveScreen, SettingsScreen,
-│   │   │                  #   ThreadsScreen, ThreadDetailScreen
+│   │   ├── screens/       # Home, Editor, NoteDetail, Archive, Settings*, Threads, ThreadDetail
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
-│   │   ├── sync/          # supabaseClient, remoteNotes, mergeNotes, remoteThoughts, userId, deleteAnonUser
+│   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, …
 │   ├── bridge/            # Vercel serverless bridge API + worker
-│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, migrate-user, delete-user; _lib/ = shared
+│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, delete-user; _lib/ = shared
 │   │   ├── bookmarklet/   # Browser bookmarklet source
 │   │   └── worker/        # brainstorm-worker.mjs, similarity-worker.mjs (CLI-Helfer)
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
-
----
 
 ## Tech Stack
 
@@ -64,8 +54,6 @@ c:/NotizApp/
 | i18n | i18n-js v4 + expo-localization (DE/EN, Geräte-Sprache + manueller Override) |
 | Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
----
-
 ## Build & Run Commands
 
 From `NotizApp/NotizApp/`:
@@ -76,19 +64,8 @@ npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
 
-Bridge (`bridge/`):
-```bash
-vercel dev
-vercel deploy --prod
-```
-
-Webapp (`webapp/`):
-```bash
-npm run dev             # Next.js dev server (localhost:3000)
-npm run build
-```
-
----
+Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`.
+Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 
 ## Environment Variables
 
@@ -96,11 +73,7 @@ npm run build
 `EXPO_PUBLIC_BRIDGE_URL`. (`EXPO_PUBLIC_BRIDGE_BEARER` wird nicht mehr gelesen — kein Admin-Token im App-Bundle.)
 Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-
-Sync is optional — if env vars are absent, `isSyncConfigured()` returns false and
-all sync code is silently skipped.
-
----
+Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 
 ## Architecture Notes
 
@@ -123,8 +96,31 @@ NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
   hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
   `subscribeRemote()` (INSERT/UPDATE/DELETE). Archivieren = `archived_at` setzen, nie DELETE; endgültig
   löschen = Tombstone + `deleteRemote()` (Batches à 200).
-- `resyncForUser(uid, 'merge' | 'replace')`: Anmelden merged lokale Notizen ins Konto, Abmelden ersetzt
-  (vorher `flushPending()`; `signOut()`-Fehler bricht ab).
+- `resyncForUser(uid, mode)`: Default `'replace'` (Anmeldung = Zweitgerät, Kontostand gilt). `'merge'` nur
+  beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
+  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler
+  bricht ab) — Details unten.
+
+### Konto-Zustände (lokal-first)
+`src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
+`user.email_confirmed_at` abgeleitet, nie aus einem lokalen Flag. **Die App legt nie selbst einen
+Supabase-User an** — `local` ist der Default, Notizen bleiben rein lokal. `getUserId()`/`getSyncUserId()`
+liefern nur bei `secured` eine UID, damit sind die beiden anderen Zustände garantiert offline.
+Registrierung = `signUp()` → `pending-confirmation` (nicht optimistisch `secured`); erst nach Bestätigung
+läuft der einmalige `uploadLocalNotes()`, bei Fehler bleibt `@notizapp_initial_upload_pending` stehen und
+der Konto-Screen zeigt einen dauerhaften Retry. Gibt `signUp()` keine Session aus, rettet
+`@notizapp_pending_email` den Zustand über einen Neustart — „Bestätigung prüfen" fragt dann nach dem
+Passwort, weil der Status ohne Session nicht abfragbar ist. Weitere Keys: `@notizapp_first_seen` +
+`@notizapp_unsecured_dismissed` (Banner-Schwelle). Altlast: anonyme Sessions werden beim Start nur
+abgemeldet (`src/sync/legacyAnon.ts`); die verwaisten Anon-User wurden per SQL bereits abgeräumt.
+Trennen (`detachSync`, UI „Sync beenden") behält Notizen **und** Threads lokal und räumt Outbox +
+`@notizapp_sync_uid` ab, damit nichts ins nächste Konto leckt. Erstupload in ein **anderes** Konto
+vergibt neue Notiz-IDs: `notes.id` ist PK über alle User, RLS würde den Upsert sonst ablehnen. Alles
+löschen geht nur über Einstellungen → Datenschutz (lokal **und** remote). Synthese braucht ein
+bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"), führt zum Konto-Screen.
+`UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
+`pending-confirmation` sofort; im Konto-Screen dauerhaft. Der Konto-Screen merkt sich in `busyAction`,
+**welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt (`disabled`) sind alle.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.
@@ -133,28 +129,26 @@ gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) �
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
 Schema source: `supabase-schema.sql` (frisch) bzw. `supabase-migration-2026-09-17.sql` (Delta für bestehende
 Projekte: `notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`,
-`profiles.bookmarklet_token_hash`, RPC `migrate_user`).
+`profiles.bookmarklet_token_hash`). Die RPC `migrate_user` ist funktionslos (Altlast des anonymen
+Modells) und kann gedroppt werden.
 
 ### Theme
-`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces,
-Espresso-Tinte, Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings),
-Inter (UI/Body) via `expo-font` in App.tsx. Kategorien: Hue-Rotation via
-`src/theme/categoryAccents.ts` — **keine LinearGradient-Importe mehr in `src/`**.
-Neue Themedateien: `typography.ts`, `categoryAccents.ts`.
+`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte,
+Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font` in
+App.tsx. Kategorien: Hue-Rotation via `categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
 
 ### App-Icon (Velm)
-„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: lokaler Design-Handoff
-`Velm Icon - Final.html` (gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`.
-Komponente: `src/components/VelmLogo.tsx` (App), `webapp/components/VelmIcon.tsx` (Web), Favicon: `webapp/app/icon.svg`.
+„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: `Velm Icon - Final.html`
+(gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`. Komponenten:
+`src/components/VelmLogo.tsx`, `webapp/components/VelmIcon.tsx`, Favicon `webapp/app/icon.svg`.
 
 ### i18n (Deutsch/Englisch)
-`src/i18n/index.ts` — i18n-js `I18n` Instanz (`de`/`en`), `defaultLocale = 'de'`, `enableFallback = true`,
-exportiert `t()`, `detectDeviceLocale()`, `setI18nLocale()`, Typ `AppLocale`. `src/i18n/locales/de.ts`/`en.ts` —
-verschachtelte Dictionaries, ein Namespace pro Screen (`en.ts` ist `typeof de`-typisiert für Parität);
-Plurale via `_one`/`_other`, Interpolation via `{{var}}`. `src/context/LanguageContext.tsx` —
-`useLanguage()` → `{ locale, preference, setPreference, t }`, `preference: 'system'|'de'|'en'` in
-AsyncStorage (`@notizapp_language`); Umschalter unter Settings → Darstellung. **Konventionen**:
-Navigation-Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
+`src/i18n/index.ts` — i18n-js `I18n` (`de`/`en`), `defaultLocale = 'de'`, `enableFallback = true`; exportiert
+`t()`, `detectDeviceLocale()`, `setI18nLocale()`, Typ `AppLocale`. `locales/de.ts`/`en.ts` — verschachtelte
+Dictionaries, ein Namespace pro Screen (`en.ts` ist `typeof de`-typisiert); Plurale via `_one`/`_other`,
+Interpolation via `%{var}` oder `{{var}}`. `LanguageContext.tsx` → `useLanguage()` = `{ locale, preference,
+setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, Umschalter unter Darstellung.
+**Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
 ### Webapp (graph visualizer)
@@ -163,21 +157,22 @@ Navigation-Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()` gegen `/auth/v1/user`); es gibt keinen statischen Admin-Token mehr. `/api/note` nutzt
-stattdessen den persönlichen Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert,
-ab Tier `basic`). `/api/migrate-user` (Body `fromToken` = anonymes Token) → RPC `migrate_user` in einer
-Transaktion; Client löscht den anonymen User nur nach vollständiger Bestätigung. `/api/delete-user` löscht
-nur den Aufrufer. Fehlerantworten sind generische Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` nutzt stattdessen den persönlichen
+Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert, ab Tier `basic`).
+`/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
+Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
-zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`),
-Grenze wird deterministisch aus Server-Feldern berechnet (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`,
+`formatAvailabilityParts()` → `lead`/`detail`), Grenze deterministisch aus Server-Feldern
+(`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
 
-`bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
-
----
+**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
+Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
+`SettingsAbo`. `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht
+Teil der API.
 
 ## Code Conventions
 
@@ -185,8 +180,8 @@ Grenze wird deterministisch aus Server-Feldern berechnet (`computeNextAllowedAt`
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
 - **Components**: functional + hooks only, no class components.
 - **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
-- **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch.
-- **IDs**: `uuidv4()` — always import `react-native-get-random-values` before uuid.
+- **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch. **IDs**: `uuidv4()` —
+  always import `react-native-get-random-values` before uuid.
 - **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Tests beschreiben das
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.

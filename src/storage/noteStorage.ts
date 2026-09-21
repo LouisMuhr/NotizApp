@@ -67,3 +67,8 @@ export async function loadSyncUid(): Promise<string | null> {
 export async function saveSyncUid(uid: string): Promise<void> {
   await AsyncStorage.setItem(SYNC_UID_KEY, uid);
 }
+
+/** Beim Abmelden: die zuletzt gesyncte UID vergessen. */
+export async function clearSyncUid(): Promise<void> {
+  await AsyncStorage.removeItem(SYNC_UID_KEY);
+}

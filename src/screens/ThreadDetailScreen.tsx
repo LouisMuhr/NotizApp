@@ -7,7 +7,7 @@ import { useThoughts } from '../context/ThoughtsContext';
 import { useNotes } from '../context/NotesContext';
 import { Insets, Shadows } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
-import { Type, Fonts } from '../theme/typography';
+import { Fonts } from '../theme/typography';
 import { groupNotesByTime } from '../utils/timeGrouping';
 import TimelineSection from '../components/TimelineSection';
 import { useLanguage } from '../context/LanguageContext';

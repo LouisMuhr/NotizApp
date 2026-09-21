@@ -9,7 +9,8 @@ import NoteCard from '../components/NoteCard';
 import FilterBar from '../components/FilterBar';
 import QuickCaptureFAB from '../components/QuickCaptureFAB';
 import ProBanner from '../components/ProBanner';
-import { Radii, Shadows } from '../theme/gradients';
+import UnsecuredBanner from '../components/UnsecuredBanner';
+import { Shadows } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
@@ -148,6 +149,7 @@ export default function HomeScreen({ navigation }: Props) {
         <Text style={styles.headerTitle}>{t('home.title')}</Text>
       </View>
 
+      <UnsecuredBanner onPress={() => navigation.navigate('SettingsKonto')} />
       <ProBanner onPress={() => navigation.navigate('SettingsAbo')} />
 
       <FilterBar

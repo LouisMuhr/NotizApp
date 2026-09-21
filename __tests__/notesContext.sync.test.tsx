@@ -127,11 +127,11 @@ test('S2: lokal neuere Version einer Remote-Notiz wird beim Start-Merge hochgela
 });
 
 // ---------------------------------------------------------------------------
-// S3 — neue (anonyme) Identitaet nach Session-Verlust loescht nicht die lokale Bibliothek
+// S3 — neue Identitaet nach Session-Verlust loescht nicht die lokale Bibliothek
 // ---------------------------------------------------------------------------
-test('S3: leeres Remote (neuer anonymer User nach Token-Verlust) loescht keine lokalen Notizen', async () => {
+test('S3: leeres Remote (neue UID nach Token-Verlust) loescht keine lokalen Notizen', async () => {
   await saveNotes([makeNote({ id: 'a' }), makeNote({ id: 'b' }), makeNote({ id: 'c' })]);
-  userId.getUserId.mockResolvedValue('fresh-anon-user'); // alte Session weg → neue UID, remote leer
+  userId.getUserId.mockResolvedValue('fresh-user'); // alte Session weg → neue UID, remote leer
 
   const hook = await mountSynced();
 
@@ -257,23 +257,68 @@ test('S13: zwei addNote-Aufrufe ohne await dazwischen erzeugen zwei Notizen', as
 });
 
 // ---------------------------------------------------------------------------
-// A2 — Sign-in mit unsynchronisierter lokaler Notiz
+// A2 — Erstupload bei Registrierung: lokale Notizen landen vollstaendig im Konto
+//
+// Im Lokal-first-Modell ist das der EINZIGE Weg, auf dem lokaler Bestand in ein
+// Konto wandert. Eine spaetere Anmeldung ist dagegen ein Zweitgeraet (siehe A4).
 // ---------------------------------------------------------------------------
-test('A2: resyncForUser (Sign-in) verwirft keine lokal erstellte, noch nicht hochgeladene Notiz', async () => {
-  remote.set('synced', makeNote({ id: 'synced' }));
-  const hook = await mountSynced();
+test('A2: uploadLocalNotes laedt auch bereits bestaetigte lokale Notizen vollstaendig hoch', async () => {
+  // Start im Zustand `local`: kein Sync-User, nichts geht raus.
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
 
-  // Netz weg, Notiz erstellen → Upsert scheitert, kein Retry
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'a' }), title: 'Lokal A' }); });
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'b' }), title: 'Lokal B' }); });
+  expect(remoteNotes.upsertRemote).not.toHaveBeenCalled(); // `local` bleibt offline
+
+  // Registrierung bestaetigt → einmaliger Erstupload.
+  await act(async () => { await hook.result.current.uploadLocalNotes('account-user'); });
+
+  expect(Array.from(remote.values()).map((n) => n.title).sort()).toEqual(['Lokal A', 'Lokal B']);
+  expect(hook.result.current.initialUploadPending).toBe(false);
+});
+
+test('A2: scheitert der Erstupload, bleibt er offen und die lokalen Notizen bleiben erhalten', async () => {
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'a' }), title: 'Lokal A' }); });
+
+  // Netz weg → Upload scheitert, muss werfen (Aufrufer zeigt Retry).
   online = false;
-  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'tmp' }), title: 'Offline-Notiz' }); });
-  expect(remote.size).toBe(1);
+  await act(async () => {
+    await expect(hook.result.current.uploadLocalNotes('account-user')).rejects.toThrow();
+  });
 
-  // Netz wieder da, User meldet sich in bestehendes Konto an (Remote dort: leer)
+  expect(hook.result.current.initialUploadPending).toBe(true);
+  expect(hook.result.current.notes.map((n) => n.title)).toContain('Lokal A');
+  expect(await AsyncStorage.getItem('@notizapp_initial_upload_pending')).toBe('1');
+
+  // Retry mit Netz → Upload geht durch, Merker faellt.
   online = true;
-  remote.clear();
+  await act(async () => { await hook.result.current.uploadLocalNotes('account-user'); });
+
+  expect(Array.from(remote.values()).map((n) => n.title)).toContain('Lokal A');
+  expect(hook.result.current.initialUploadPending).toBe(false);
+  expect(await AsyncStorage.getItem('@notizapp_initial_upload_pending')).toBeNull();
+});
+
+// ---------------------------------------------------------------------------
+// A4 — Anmeldung auf einem Zweitgeraet uebernimmt den Kontostand
+// ---------------------------------------------------------------------------
+test('A4: resyncForUser (Anmeldung) ersetzt den lokalen Bestand durch den des Kontos', async () => {
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'local-only' }), title: 'Nur hier' }); });
+
+  // Im Konto liegt ein anderer Bestand.
+  remote.set('konto-1', makeNote({ id: 'konto-1', title: 'Aus dem Konto' }));
+
   await act(async () => { await hook.result.current.resyncForUser('account-user'); });
 
-  expect(hook.result.current.notes.map((n) => n.title)).toContain('Offline-Notiz');
+  expect(hook.result.current.notes.map((n) => n.title)).toEqual(['Aus dem Konto']);
 });
 
 // ---------------------------------------------------------------------------
@@ -321,4 +366,71 @@ test('L4: Prozess-Kill nach dem ersten Write von restoreNote laesst die Notiz ni
   const inArchive = (await loadArchive()).some((n) => n.id === 'arch-1');
   expect(inNotes || inArchive).toBe(true); // kein Datenverlust (erwartet: erfuellt)
   expect(inNotes).toBe(true); // Wiederherstellen darf nicht still verloren gehen
+});
+
+// ---------------------------------------------------------------------------
+// A5 — Abmelden hinterlaesst keine Outbox-Reste fuer das naechste Konto
+// ---------------------------------------------------------------------------
+test('A5: nach detachSync landen Notizen des alten Kontos nicht im naechsten', async () => {
+  const hook = await mountSynced();
+
+  // Offline eine Notiz erstellen → bleibt in der Outbox des aktuellen Kontos.
+  online = false;
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'alt' }), title: 'Konto A' }); });
+  online = true;
+
+  // Abmelden: Sync aus, Outbox und zuletzt gesyncte UID muessen weg sein.
+  await act(async () => { await hook.result.current.detachSync(); });
+  expect(await AsyncStorage.getItem('@notizapp_pending_sync')).toBe(JSON.stringify([]));
+  expect(await AsyncStorage.getItem('@notizapp_sync_uid')).toBeNull();
+
+  // Anmeldung an einem ANDEREN Konto (remote leer).
+  remote.clear();
+  remoteNotes.upsertRemote.mockClear();
+  await act(async () => { await hook.result.current.resyncForUser('konto-b'); });
+
+  // Die Notiz aus Konto A darf dort nicht auftauchen.
+  expect(Array.from(remote.values()).map((n) => n.title)).not.toContain('Konto A');
+});
+
+// ---------------------------------------------------------------------------
+// A6 — Zweites Konto: notes.id ist global eindeutig
+//
+// Wurde eine Notiz schon in Konto A hochgeladen, gehoert die Zeile dort. RLS
+// laesst Konto B sie weder lesen noch ueberschreiben — der Upsert scheitert.
+// Beim Erstupload in ein anderes Konto muessen die Notizen daher neue IDs
+// bekommen.
+// ---------------------------------------------------------------------------
+test('A6: Erstupload in ein zweites Konto vergibt neue IDs statt am PK zu scheitern', async () => {
+  const hook = await mountSynced(); // Start-Sync gegen 'user-1'
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'x' }), title: 'Meine Notiz' }); });
+  const idInKontoA = hook.result.current.notes[0].id;
+  expect(remote.has(idInKontoA)).toBe(true);
+
+  // Die Zeile gehoert jetzt Konto A: ein Upsert derselben id durch ein anderes
+  // Konto wird von RLS abgelehnt.
+  remoteNotes.upsertRemote.mockImplementation(async (uid: string, note: Note) => {
+    if (!online) throw new Error('network request failed');
+    const existing = remote.get(note.id);
+    if (existing && (existing as any).__owner && (existing as any).__owner !== uid) {
+      throw new Error('upsertRemote: new row violates row-level security policy');
+    }
+    remote.set(note.id, { ...note, notificationId: null, __owner: uid } as any);
+  });
+  remote.set(idInKontoA, { ...remote.get(idInKontoA)!, __owner: 'user-1' } as any);
+  // RLS auch beim Lesen: Konto B sieht die Zeilen von Konto A nicht.
+  remoteNotes.pullRemote.mockImplementation(async (uid: string) =>
+    online ? Array.from(remote.values()).filter((n: any) => !n.__owner || n.__owner === uid) : null);
+
+  // Abmelden, dann mit einem ANDEREN Konto registrieren.
+  await act(async () => { await hook.result.current.detachSync(); });
+  // Stand vor dem Wechsel wiederherstellen (detachSync raeumt ihn ab).
+  await act(async () => { await AsyncStorage.setItem('@notizapp_sync_uid', 'user-1'); });
+  await act(async () => { await hook.result.current.uploadLocalNotes('konto-b'); });
+
+  // Notiz ist in Konto B angekommen — unter einer NEUEN id.
+  const idInKontoB = hook.result.current.notes[0].id;
+  expect(idInKontoB).not.toBe(idInKontoA);
+  expect(hook.result.current.notes[0].title).toBe('Meine Notiz');
+  expect(hook.result.current.initialUploadPending).toBe(false);
 });
