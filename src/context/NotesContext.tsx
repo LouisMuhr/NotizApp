@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
   loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid, clearSyncUid,
+  loadTierCache, saveTierCache, clearTierCache,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
@@ -28,7 +29,14 @@ interface NotesContextType {
   categories: string[];
   loading: boolean;
   // Subscription / Rate-Limit
-  tier: Tier;
+  /**
+   * `null` heisst "noch nicht bekannt" — nicht "free". Die UI darf solange
+   * keine Einschraenkung behaupten, sonst blitzt beim Start der Upsell fuer
+   * zahlende Nutzer auf.
+   */
+  tier: Tier | null;
+  /** Kurzform fuer `tier !== null`, damit Consumer nicht ueberall null pruefen. */
+  tierKnown: boolean;
   nextAllowedAt: Date | null;
   refreshSubscription: () => Promise<void>;
   /** Server-Wert (z. B. aus einer 429-Antwort) uebernehmen — Entscheidung 14. */
@@ -71,7 +79,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [archivedNotes, setArchivedNotes] = useState<Note[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
-  const [tier, setTier] = useState<Tier>('free');
+  const [tier, setTier] = useState<Tier | null>(null);
   const [nextAllowedAt, setNextAllowedAt] = useState<Date | null>(null);
   const [initialUploadPending, setInitialUploadPending] = useState(false);
 
@@ -92,12 +100,25 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // Subscription
   // ---------------------------------------------------------------------------
 
+  /**
+   * Hat der Server in dieser Sitzung schon geantwortet? Der Cache-Read darf
+   * eine bereits eingetroffene Server-Antwort nicht nachtraeglich ueberschreiben,
+   * wenn er zufaellig langsamer war.
+   */
+  const serverTierSeenRef = useRef(false);
+
   const refreshSubscription = useCallback(async () => {
     try {
       const status = await subscriptionService.getStatus();
+      serverTierSeenRef.current = true;
       setTier(status.tier);
       setNextAllowedAt(status.nextAllowedAt);
+      // Fuer den naechsten Kaltstart merken, damit der Upsell nicht aufblitzt.
+      const uid = await loadSyncUid();
+      if (uid) await saveTierCache({ uid, tier: status.tier }).catch(() => {});
     } catch (e) {
+      // Bewusst KEIN Rueckfall auf 'free': ein vorhandener Cache-Wert bleibt
+      // stehen, sonst wuerde ein Pro-Nutzer offline zum Free-Nutzer.
       console.warn('[subscription] refresh failed', e);
     }
   }, []);
@@ -107,7 +128,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    // Cache zuerst: liefert den zuletzt bestaetigten Tier in Millisekunden,
+    // waehrend der Server-Roundtrip noch laeuft.
+    (async () => {
+      const uid = await loadSyncUid();
+      const cache = await loadTierCache(uid);
+      if (cancelled || !cache) return;
+      if (serverTierSeenRef.current) return; // Server war schneller, der gilt
+      setTier(cache.tier);
+    })().catch(() => {});
+
     refreshSubscription();
+    return () => { cancelled = true; };
   }, [refreshSubscription]);
 
   // ---------------------------------------------------------------------------
@@ -581,6 +614,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       '@notizapp_tombstones',
       '@notizapp_pending_sync',
       '@notizapp_sync_uid',
+      '@notizapp_tier_cache',
     ]);
     publish([]);
     setCategories(DEFAULT_CATEGORIES);
@@ -680,6 +714,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // Zuletzt gesyncte UID vergessen, damit `identityChanged` beim naechsten
     // Sync korrekt greift.
     await clearSyncUid().catch(() => {});
+    // Der Tier gehoert zum abgemeldeten Konto. Zurueck auf "unbekannt", damit
+    // die UI nichts aus dem alten Konto behauptet.
+    await clearTierCache().catch(() => {});
+    serverTierSeenRef.current = false;
+    setTier(null);
+    setNextAllowedAt(null);
   }, []);
 
   return (
@@ -690,6 +730,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         categories,
         loading,
         tier,
+        tierKnown: tier !== null,
         nextAllowedAt,
         refreshSubscription,
         setServerNextAllowedAt,

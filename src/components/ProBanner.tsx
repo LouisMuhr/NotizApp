@@ -20,6 +20,10 @@ export default function ProBanner({ onPress }: Props) {
     { tier: 'basic' as const, text: t('proBanner.basicHint1'), sub: t('proBanner.basicHint2') },
   ];
 
+  // Solange der Tier unbekannt ist, wird nichts behauptet: sonst sieht ein
+  // Pro-Nutzer beim Start kurz den Upsell, den er laengst bezahlt hat.
+  if (tier === null) return null;
+
   const hint = UPGRADE_HINTS.find((h) => h.tier === tier);
   if (!hint) return null; // pro users see nothing
 

@@ -238,7 +238,7 @@ export default function ThreadsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { t, locale } = useLanguage();
   const { threads, loading, archiveThread, pinThread, unpinThread } = useThoughts();
-  const { nextAllowedAt, refreshSubscription, setServerNextAllowedAt } = useNotes();
+  const { nextAllowedAt, tierKnown, refreshSubscription, setServerNextAllowedAt } = useNotes();
   const [synthesizing, setSynthesizing] = useState(false);
   const [snackMessage, setSnackMessage] = useState('');
   const [snackVisible, setSnackVisible] = useState(false);
@@ -264,17 +264,20 @@ export default function ThreadsScreen({ navigation }: Props) {
   // Is the user currently rate-limited?
   const rateLimited = nextAllowedAt !== null && nextAllowedAt > new Date();
   /**
-   * Button gesperrt: entweder Rate-Limit oder kein bestaetigtes Konto. Beides
-   * sieht gleich aus (ausgegraut), nur das Label erklaert den Grund — so bleibt
-   * sichtbar, dass es die Funktion gibt.
+   * Button gesperrt: Rate-Limit, kein bestaetigtes Konto — oder der Abo-Status
+   * ist noch unbekannt. Letzteres ist der umgekehrte Fehler zum Upsell-Banner:
+   * `nextAllowedAt` startet `null`, der Button saehe also frei aus, obwohl der
+   * Nutzer gesperrt sein kann. Ein Tap endet dann garantiert in einer 429.
+   * Alle drei sehen gleich aus (ausgegraut), nur das Label erklaert den Grund.
    */
-  const isLimited = rateLimited || !hasAccount;
+  const isLimited = rateLimited || !hasAccount || !tierKnown;
 
   /** Zweiteiliges Label, damit der Button umbrechen kann statt in einer Zeile zu ueberlaufen. */
   function getSynthesizeLabel(): { lead: string; detail: string } {
     if (synthesizing) return { lead: t('threads.synthesizeRunning'), detail: '' };
     if (!hasAccount) return { lead: t('threads.synthesize'), detail: t('threads.needsAccount') };
     if (rateLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
+    // Status unbekannt: kein Versprechen im Detail-Text.
     return { lead: t('threads.synthesize'), detail: '' };
   }
 
@@ -351,7 +354,10 @@ export default function ThreadsScreen({ navigation }: Props) {
               Konto-Screen statt in eine Fehlermeldung. */}
           <Pressable
             onPress={hasAccount ? handleSynthesize : () => navigation.navigate('SettingsKonto')}
-            disabled={synthesizing || rateLimited}
+            // Ohne Konto bleibt der Tap erlaubt: er fuehrt zum Konto-Screen,
+            // nicht in die Synthese. Gesperrt wird nur der Synthese-Pfad —
+            // auch bei noch unbekanntem Abo-Status.
+            disabled={synthesizing || (hasAccount && (rateLimited || !tierKnown))}
             style={({ pressed }) => [
               styles.synthesizeBtn,
               isLimited && styles.synthesizeBtnDisabled,
@@ -362,7 +368,7 @@ export default function ThreadsScreen({ navigation }: Props) {
               <ActivityIndicator size={16} color={isLimited ? Tokens.inkFaint : Tokens.amberDeep} style={{ marginRight: 6 }} />
             ) : (
               <MaterialCommunityIcons
-                name={!hasAccount ? 'lock-outline' : rateLimited ? 'clock-outline' : 'creation'}
+                name={!hasAccount ? 'lock-outline' : (rateLimited || !tierKnown) ? 'clock-outline' : 'creation'}
                 size={16}
                 color={isLimited ? Tokens.inkFaint : Tokens.amberDeep}
                 style={{ marginRight: 6 }}

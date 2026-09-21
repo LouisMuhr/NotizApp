@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { useTheme, Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
@@ -87,12 +87,24 @@ export default function SettingsAboScreen() {
   const { tier, nextAllowedAt } = useNotes();
   const { t, locale } = useLanguage();
   const PLANS = getPlans(t);
-  const currentPlan = PLANS[tier] ?? PLANS.free;
 
   const nextRunText: string = (() => {
     if (!nextAllowedAt || nextAllowedAt <= new Date()) return t('settingsAbo.nextRunAvailable');
     return formatDateTime(nextAllowedAt, locale);
   })();
+
+  // Der ganze Screen redet ueber "deinen Plan". Solange der unbekannt ist,
+  // waere jede Anzeige geraten — lieber kurz warten als den Free-Plan zeigen
+  // und ihn eine Sekunde spaeter widerrufen.
+  if (tier === null) {
+    return (
+      <View style={[styles.loadingWrap, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  const currentPlan = PLANS[tier] ?? PLANS.free;
 
   return (
     <ScrollView
@@ -235,6 +247,8 @@ function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
 
 const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100, gap: 6 },
+
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   heroBadge: {
     flexDirection: 'row',

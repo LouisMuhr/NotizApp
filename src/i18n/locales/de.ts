@@ -238,6 +238,8 @@ export default {
     tierPro: 'Pro-Plan',
     tierBasic: 'Basic-Plan',
     tierFree: 'Free-Plan',
+    /** Solange der Tier noch nicht vom Server bestaetigt ist. */
+    tierLoading: 'Wird geladen …',
     categories: 'Kategorien',
     categoriesSub: 'Kategorien verwalten',
     notifications: 'Benachrichtigungen',

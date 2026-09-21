@@ -30,6 +30,7 @@ test('Limit an einem spaeteren Tag: Label steht in zwei Zeilen, nicht in einer',
   jest.useFakeTimers({ now: Date.parse('2026-09-16T12:00:00Z') });
   useNotes.mockReturnValue({
     tier: 'free',
+    tierKnown: true,
     nextAllowedAt: new Date('2026-09-23T13:27:00Z'),
     refreshSubscription: jest.fn(),
   });

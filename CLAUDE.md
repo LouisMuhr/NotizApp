@@ -88,7 +88,8 @@ NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
 ### Data flow (Notizen)
 - `NotesContext` hält aktive **und** archivierte Notizen als einen Bestand (`allRef`); `archivedAt`
   entscheidet die Liste. AsyncStorage-Keys: `@notizapp_notes`, `@notizapp_archive`, `@notizapp_categories`,
-  `@notizapp_tombstones`, `@notizapp_pending_sync` (Outbox), `@notizapp_sync_uid` (zuletzt gesyncte UID).
+  `@notizapp_tombstones`, `@notizapp_pending_sync` (Outbox), `@notizapp_sync_uid` (zuletzt gesyncte UID),
+  `@notizapp_tier_cache` (zuletzt bestätigter Tier, an die UID gebunden).
 - Jede Mutation: pending markieren → `commit()` (State sofort, Writes serialisiert; bei Write-Fehler Reload
   von Platte) → `pushRemote()`. Updates gehen als **PATCH nur geänderter Felder** (`upsertRemote(uid, note, patch)`).
 - Start/Vordergrund/Resync: `pullRemote()` (paginiert) → `mergeWithRemote()` in `src/sync/mergeNotes.ts`
@@ -171,7 +172,10 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
-`SettingsAbo`. `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht
+`SettingsAbo`. `tier` ist `Tier | null` — **`null` heisst „noch nicht bekannt", nie „free"**: die UI
+behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, `SettingsAbo` zeigt einen Spinner,
+Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler
+**nicht** auf `free` zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht
 Teil der API.
 
 ## Code Conventions

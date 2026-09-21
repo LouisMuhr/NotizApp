@@ -153,7 +153,7 @@ export default function SettingsBookmarkletScreen() {
           </Text>
           {!hasAccount ? (
             <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorAccount')}</Text>
-          ) : tier === 'free' ? (
+          ) : tier !== null && tier === 'free' ? (
             <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorTier')}</Text>
           ) : (
             <>

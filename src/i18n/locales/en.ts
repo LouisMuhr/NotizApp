@@ -240,6 +240,7 @@ const en: typeof de = {
     tierPro: 'Pro plan',
     tierBasic: 'Basic plan',
     tierFree: 'Free plan',
+    tierLoading: 'Loading …',
     categories: 'Categories',
     categoriesSub: 'Manage categories',
     notifications: 'Notifications',

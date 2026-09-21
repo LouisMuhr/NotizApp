@@ -125,12 +125,18 @@ export default function SettingsScreen() {
     );
   };
 
-  const tierLabel = tier === 'pro' ? t('settings.tierPro') : tier === 'basic' ? t('settings.tierBasic') : t('settings.tierFree');
+  const tierLabel =
+    tier === null ? t('settings.tierLoading')
+      : tier === 'pro' ? t('settings.tierPro')
+      : tier === 'basic' ? t('settings.tierBasic')
+      : t('settings.tierFree');
   const kontoSublabel = isSignedIn ? t('settings.accountSubSignedIn') : t('settings.accountSubSignedOut');
 
   // Abo-Gating: Zeilen bleiben sichtbar, zeigen aber nur, ab welchem Plan sie nutzbar sind.
-  const bookmarkletLocked = tier === 'free';
-  const webAppLocked = tier !== 'pro';
+  // Bei unbekanntem Tier wird NICHT gesperrt — ein Pro-Nutzer soll direkt nach
+  // dem Start weder ein Schloss sehen noch faelschlich nach SettingsAbo landen.
+  const bookmarkletLocked = tier !== null && tier === 'free';
+  const webAppLocked = tier !== null && tier !== 'pro';
 
   const colors = {
     amber: Tokens.amberDeep,

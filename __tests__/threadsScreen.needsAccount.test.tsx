@@ -39,6 +39,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   useNotes.mockReturnValue({
     tier: 'free',
+    tierKnown: true,
     nextAllowedAt: null,
     refreshSubscription: jest.fn(),
     setServerNextAllowedAt: jest.fn(),

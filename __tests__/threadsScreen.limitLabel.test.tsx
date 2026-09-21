@@ -28,6 +28,7 @@ test('E6 (UI): 30 Minuten vor dem Pro-Reset zeigt der Button keine "1 Tag"-Angab
   jest.useFakeTimers({ now: Date.parse('2026-09-16T23:30:00Z') });
   useNotes.mockReturnValue({
     tier: 'pro',
+    tierKnown: true,
     nextAllowedAt: new Date('2026-09-17T00:00:00Z'),
     refreshSubscription: jest.fn(),
   });
