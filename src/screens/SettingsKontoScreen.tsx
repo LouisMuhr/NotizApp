@@ -366,20 +366,22 @@ export default function SettingsKontoScreen() {
     setEmail(userEmail);
     setAccountState('secured');
     clearFields();
+    // SOFORT raus aus dem Konto-Screen: der Erstupload laeuft ueber Netz und
+    // kann dauern — darauf zu warten liesse den Nutzer ohne Grund hier stehen.
+    navigation.navigate('Home', { screen: 'Threads' });
     try {
       await uploadLocalNotes(uid);
       setUploadRetryUid(null);
       await resyncThreadsForUser(uid);
       await refreshSubscription();
       showToast(t('settingsKonto.toastAccountSecured'), 'success');
-      // Wie nach der Anmeldung: der Konto-Screen hat seinen Zweck erfuellt.
-      navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
       console.warn('[account] initial upload failed', e);
       setUploadRetryUid(uid);
       showToast(t('settingsKonto.toastUploadFailed') + ' ' + (e?.message ?? ''), 'error');
-      // BEWUSST kein navigate(): der Retry-Button lebt in diesem Screen.
-      // Wegnavigieren wuerde den fehlgeschlagenen Upload unsichtbar machen.
+      // Der Retry geht nicht verloren: `uploadLocalNotes()` setzt den Merker
+      // VOR dem Versuch in AsyncStorage, und der Konto-Screen leitet daraus
+      // beim naechsten Oeffnen wieder `uploadRetryUid` ab (siehe useEffect).
     }
   };
 
@@ -478,17 +480,26 @@ export default function SettingsKontoScreen() {
       }
       clearUserIdCache();
       await clearPendingEmail();
-      // 'replace': eine Anmeldung ist typischerweise ein Zweitgeraet — der
-      // Kontostand gilt. Lokale Notizen wandern nur beim einmaligen Erstupload
-      // nach der Registrierung ins Konto.
-      await resyncForUser(newUser.id, 'replace');
-      await resyncThreadsForUser(newUser.id);
-      // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
-      await refreshSubscription();
       setEmail(newUser.email ?? '');
       clearFields();
       setAccountState('secured');
+      // Wie beim Sichern: erst raus, dann syncen. Ein grosser Kontostand
+      // liesse den Nutzer sonst vor dem Konto-Screen warten.
       navigation.navigate('Home', { screen: 'Threads' });
+      // 'replace': eine Anmeldung ist typischerweise ein Zweitgeraet — der
+      // Kontostand gilt. Lokale Notizen wandern nur beim einmaligen Erstupload
+      // nach der Registrierung ins Konto.
+      // Ab hier ist die Anmeldung durch — ein Sync-Fehler darf nicht als
+      // "Anmeldung fehlgeschlagen" erscheinen. Der Sync holt sich beim
+      // naechsten Start ohnehin, was liegengeblieben ist.
+      try {
+        await resyncForUser(newUser.id, 'replace');
+        await resyncThreadsForUser(newUser.id);
+        // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
+        await refreshSubscription();
+      } catch (syncError) {
+        console.warn('[account] post-signin sync failed', syncError);
+      }
     } catch (e: any) {
       showToast(t('settingsKonto.toastSignInFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {

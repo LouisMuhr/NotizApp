@@ -140,7 +140,7 @@ test('nach dem Sichern geht es in den Notes-Screen', async () => {
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Threads' }));
 });
 
-test('scheitert der Erstupload, bleibt der Nutzer beim Retry-Button', async () => {
+test('scheitert der Erstupload, geht es trotzdem weiter — der Retry bleibt gemerkt', async () => {
   mockVerifyOtp.mockResolvedValue({
     data: {
       session: {
@@ -158,7 +158,9 @@ test('scheitert der Erstupload, bleibt der Nutzer beim Retry-Button', async () =
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');
   fireEvent.press(screen.getByText(t('settingsKonto.confirmCodeButton')));
 
-  // Der Retry lebt in diesem Screen — wegnavigieren wuerde ihn verstecken.
-  await screen.findByText(t('settingsKonto.retryUploadButton'));
-  expect(mockNavigate).not.toHaveBeenCalled();
+  // Der Nutzer wartet nicht auf den Upload — navigiert wird vorher.
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Threads' }));
+  // Der Fehler geht nicht verloren: uploadLocalNotes() setzt den Merker in
+  // AsyncStorage, der Konto-Screen leitet daraus beim Oeffnen den Retry ab.
+  await screen.findByText(t('settingsKonto.toastUploadFailed') + ' offline');
 });
