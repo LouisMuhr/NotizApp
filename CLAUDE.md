@@ -122,6 +122,11 @@ bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"),
 `UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
 `pending-confirmation` sofort; im Konto-Screen dauerhaft. Der Konto-Screen merkt sich in `busyAction`,
 **welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt (`disabled`) sind alle.
+**Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab
+ein Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach
+greift `updateUser({password})`. Der Link der Mail würde die Session nur im Browser anlegen; ein
+Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) und einen neuen Native Build.
+Mail-Templates für Supabase/Resend liegen in `supabase/templates/` und stellen den Code voran.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.

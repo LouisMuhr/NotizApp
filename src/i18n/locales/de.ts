@@ -354,7 +354,18 @@ export default {
     // Passwort vergessen
     forgotPassword: 'Passwort vergessen?',
     toastEnterEmailForReset: 'Bitte E-Mail-Adresse eingeben.',
-    toastResetSent: 'Falls ein Konto existiert, wurde ein Link zum Zurücksetzen gesendet.',
+    toastResetSent: 'Falls ein Konto existiert, wurde ein Code zum Zurücksetzen gesendet.',
+    // Passwort-Reset per Code (OTP) — kein Deep Link noetig
+    resetCodeTitle: 'Code aus der E-Mail',
+    resetCodeBody: 'Wir haben einen 6-stelligen Code an {email} gesendet. Gib ihn hier ein und wähle ein neues Passwort.',
+    resetCodeLabel: 'Bestätigungscode',
+    resetCodePlaceholder: '123456',
+    newPasswordPlaceholder: 'Mindestens 6 Zeichen',
+    resetSubmitButton: 'Passwort zurücksetzen',
+    resetCancelLink: 'Abbrechen',
+    toastEnterResetCode: 'Bitte den Code aus der E-Mail eingeben.',
+    toastResetCodeInvalid: 'Code ungültig oder abgelaufen. Fordere einen neuen an.',
+    toastResetSuccess: 'Passwort geändert. Du bist jetzt angemeldet.',
     // Erstupload
     uploadPendingTitle: 'Notizen noch nicht hochgeladen',
     uploadPendingBody: 'Dein Konto ist bestätigt, aber deine lokalen Notizen konnten noch nicht gesichert werden. Sie sind weiterhin auf diesem Gerät vorhanden.',

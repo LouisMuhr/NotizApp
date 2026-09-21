@@ -81,7 +81,7 @@ function Field({
   onChangeText: (v: string) => void;
   placeholder?: string;
   secure?: boolean;
-  keyboardType?: 'email-address' | 'default';
+  keyboardType?: 'email-address' | 'default' | 'number-pad';
   autoCapitalize?: 'none' | 'sentences';
   onSubmit?: () => void;
 }) {
@@ -163,7 +163,8 @@ type BusyAction =
   | 'upgrade'
   | 'resend-confirmation'
   | 'forgot-password'
-  | 'change-password';
+  | 'change-password'
+  | 'reset-with-code';
 
 // ─── Primärer Button ──────────────────────────────────────────────────────────
 function PrimaryButton({
@@ -239,6 +240,14 @@ export default function SettingsKontoScreen() {
   const [inputPassword, setInputPassword] = useState('');
   const [inputPasswordConfirm, setInputPasswordConfirm] = useState('');
   /**
+   * Reset per Code statt per Deep Link: Supabase schickt mit dem Link auch
+   * einen 6-stelligen OTP mit. `verifyOtp({type:'recovery'})` erzeugt damit
+   * eine echte Session IN DER APP — erst dadurch kann `updateUser()` das
+   * Passwort setzen. Ueber den Browser-Link entstuende die Session nur dort.
+   */
+  const [resetCodeSentTo, setResetCodeSentTo] = useState<string | null>(null);
+  const [inputResetCode, setInputResetCode] = useState('');
+  /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
    */
@@ -262,6 +271,7 @@ export default function SettingsKontoScreen() {
     setInputEmail('');
     setInputPassword('');
     setInputPasswordConfirm('');
+    setInputResetCode('');
   };
 
   const switchTab = (tab: LocalTab) => {
@@ -584,7 +594,88 @@ export default function SettingsKontoScreen() {
         showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
+      // Adresse merken: `verifyOtp()` braucht sie zusammen mit dem Code.
+      setResetCodeSentTo(address);
+      setInputResetCode('');
+      setInputPassword('');
+      setInputPasswordConfirm('');
       showToast(t('settingsKonto.toastResetSent'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Passwort per Code aus der Reset-Mail neu setzen.
+   *
+   * Bewusst OTP statt Deep Link: der Link in der Mail wuerde die
+   * Recovery-Session im Browser anlegen, wo die App nicht herankommt. Ein
+   * Deep Link zurueck in die App braeuchte ein `scheme` in app.json und damit
+   * einen neuen Native Build. `verifyOtp()` liefert die Session direkt hier.
+   */
+  const handleResetWithCode = async () => {
+    const code = inputResetCode.trim();
+    if (!code) {
+      showToast(t('settingsKonto.toastEnterResetCode'), 'error');
+      return;
+    }
+    if (!inputPassword) {
+      showToast(t('settingsKonto.toastEnterNewPassword'), 'error');
+      return;
+    }
+    if (inputPassword !== inputPasswordConfirm) {
+      showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
+      return;
+    }
+    if (inputPassword.length < 6) {
+      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
+      return;
+    }
+    const supabase = getSupabase();
+    if (!supabase || !resetCodeSentTo) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading('reset-with-code');
+    try {
+      // Schritt 1: Code einloesen -> Session in der App.
+      const { data, error: otpError } = await supabase.auth.verifyOtp({
+        email: resetCodeSentTo,
+        token: code,
+        type: 'recovery',
+      });
+      if (otpError || !data.session) {
+        showToast(t('settingsKonto.toastResetCodeInvalid'), 'error');
+        return;
+      }
+      // Schritt 2: erst mit dieser Session laesst sich das Passwort setzen.
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: inputPassword,
+      });
+      if (updateError) {
+        showToast(t('settingsKonto.toastErrorPrefix') + updateError.message, 'error');
+        return;
+      }
+      // Ein Reset bestaetigt die Adresse implizit — der Status kommt aber wie
+      // ueberall aus resolveAccountState(), nie aus einem lokalen Flag.
+      const user = data.session.user;
+      await clearPendingEmail().catch(() => {});
+      setResetCodeSentTo(null);
+      clearFields();
+      const snapshot = await resolveAccountState();
+      setAccountState(snapshot.state);
+      setEmail(snapshot.email ?? user.email ?? '');
+      if (snapshot.state === 'secured' && snapshot.userId) {
+        clearUserIdCache();
+        // 'replace' wie bei der Anmeldung: wer sein Passwort zuruecksetzt,
+        // sitzt typischerweise an einem Zweitgeraet — der Kontostand gilt.
+        await resyncForUser(snapshot.userId, 'replace').catch(() => {});
+        await resyncThreadsForUser(snapshot.userId).catch(() => {});
+        await refreshSubscription().catch(() => {});
+      }
+      showToast(t('settingsKonto.toastResetSuccess'), 'success');
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
@@ -723,7 +814,52 @@ export default function SettingsKontoScreen() {
             )}
 
             {/* Anmelden */}
-            {localTab === 'signin' && (
+            {localTab === 'signin' && resetCodeSentTo && (
+              <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+                <Text style={styles.cardTitle}>{t('settingsKonto.resetCodeTitle')}</Text>
+                <Text style={styles.hintText}>
+                  {t('settingsKonto.resetCodeBody', { email: resetCodeSentTo })}
+                </Text>
+                <Field
+                  label={t('settingsKonto.resetCodeLabel')}
+                  value={inputResetCode}
+                  onChangeText={setInputResetCode}
+                  placeholder={t('settingsKonto.resetCodePlaceholder')}
+                  keyboardType="number-pad"
+                  autoCapitalize="none"
+                />
+                <Field
+                  label={t('settingsKonto.newPasswordLabel')}
+                  value={inputPassword}
+                  onChangeText={setInputPassword}
+                  placeholder={t('settingsKonto.newPasswordPlaceholder')}
+                  secure
+                />
+                <Field
+                  label={t('settingsKonto.confirmPasswordLabel')}
+                  value={inputPasswordConfirm}
+                  onChangeText={setInputPasswordConfirm}
+                  placeholder={t('settingsKonto.confirmPasswordPlaceholder')}
+                  secure
+                  onSubmit={handleResetWithCode}
+                />
+                <PrimaryButton
+                  label={t('settingsKonto.resetSubmitButton')}
+                  onPress={handleResetWithCode}
+                  loading={busyAction === 'reset-with-code'}
+                  disabled={loading || !inputResetCode.trim() || !inputPassword || !inputPasswordConfirm}
+                />
+                <TouchableOpacity
+                  onPress={() => { setResetCodeSentTo(null); clearFields(); }}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.linkText}>{t('settingsKonto.resetCancelLink')}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {localTab === 'signin' && !resetCodeSentTo && (
               <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
                 <Field
                   label={t('settingsKonto.emailLabel')}
@@ -1013,6 +1149,14 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sans,
     fontSize: 12.5,
     lineHeight: 18,
+    color: Tokens.ink,
+  },
+
+  // ── Karten-Ueberschrift ──
+  cardTitle: {
+    fontFamily: Fonts.serif,
+    fontSize: 18,
+    lineHeight: 22,
     color: Tokens.ink,
   },
 

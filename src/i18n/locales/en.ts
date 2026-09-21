@@ -355,7 +355,18 @@ const en: typeof de = {
     // Forgot password
     forgotPassword: 'Forgot your password?',
     toastEnterEmailForReset: 'Please enter your email address.',
-    toastResetSent: 'If an account exists, a reset link has been sent.',
+    toastResetSent: 'If an account exists, a reset code has been sent.',
+    // Password reset via code (OTP) — no deep link required
+    resetCodeTitle: 'Code from your email',
+    resetCodeBody: 'We sent a 6-digit code to {email}. Enter it here and choose a new password.',
+    resetCodeLabel: 'Confirmation code',
+    resetCodePlaceholder: '123456',
+    newPasswordPlaceholder: 'At least 6 characters',
+    resetSubmitButton: 'Reset password',
+    resetCancelLink: 'Cancel',
+    toastEnterResetCode: 'Please enter the code from your email.',
+    toastResetCodeInvalid: 'Code invalid or expired. Request a new one.',
+    toastResetSuccess: 'Password changed. You are now signed in.',
     // Initial upload
     uploadPendingTitle: 'Notes not uploaded yet',
     uploadPendingBody: 'Your account is confirmed, but your local notes could not be secured yet. They are still on this device.',
