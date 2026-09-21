@@ -341,6 +341,16 @@ const en: typeof de = {
     accountSection: 'Account',
     signedInBadge: 'Signed in',
     changePassword: 'Change password',
+    // Change password: request a token, enter the code, then the new password
+    changePasswordIntro: 'For your security we email you a code before you set a new password.',
+    requestPasswordTokenButton: 'Request code',
+    changePasswordCodeTitle: 'Enter code',
+    changePasswordCodeBody: 'We sent a code to %{email}.',
+    changePasswordCodeButton: 'Confirm code',
+    changePasswordNewTitle: 'New password',
+    changePasswordCancel: 'Cancel',
+    toastPasswordTokenSent: 'Code sent. Please check your inbox.',
+    toastPasswordCodeInvalid: 'Code invalid or expired.',
     sessionLabel: 'Session',
     // Confirmation pending
     pendingTitle: 'Confirmation pending',

@@ -340,6 +340,16 @@ export default {
     accountSection: 'Konto',
     signedInBadge: 'Angemeldet',
     changePassword: 'Passwort ändern',
+    // Passwort aendern: erst Token anfordern, dann Code, dann neues Passwort
+    changePasswordIntro: 'Zur Sicherheit schicken wir dir einen Code per E-Mail, bevor du ein neues Passwort setzt.',
+    requestPasswordTokenButton: 'Code anfordern',
+    changePasswordCodeTitle: 'Code eingeben',
+    changePasswordCodeBody: 'Wir haben einen Code an %{email} geschickt.',
+    changePasswordCodeButton: 'Code bestätigen',
+    changePasswordNewTitle: 'Neues Passwort',
+    changePasswordCancel: 'Abbrechen',
+    toastPasswordTokenSent: 'Code gesendet. Bitte Postfach prüfen.',
+    toastPasswordCodeInvalid: 'Code ungültig oder abgelaufen.',
     sessionLabel: 'Sitzung',
     // Bestätigung ausstehend
     pendingTitle: 'Bestätigung ausstehend',

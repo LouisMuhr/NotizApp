@@ -129,6 +129,9 @@ Registrierung **und** Anmeldung navigieren **vor** dem Sync nach `Home/Threads` 
 danach im Hintergrund. Ein fehlgeschlagener Erstupload bleibt über `@notizapp_initial_upload_pending`
 gemerkt und taucht beim nächsten Öffnen des Konto-Screens als Retry auf.
 **Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab
+**Passwortwechsel im secured-Block ist dreistufig**: Code anfordern (`signInWithOtp`, `shouldCreateUser:
+false`) → einlösen (`verifyOtp type:'email'`) → neues Passwort. Eine Session allein reicht nicht, sonst
+könnte jeder mit dem entsperrten Gerät das Konto übernehmen. Danach zurück nach `Home/Threads`.
 Der Reset **ersetzt die Registrierungs-Bestätigung nicht**: `verifyOtp({type:'recovery'})` würde
 `email_confirmed_at` als Nebeneffekt setzen — läuft noch eine unbestätigte Registrierung, bricht der
 Handler vor `updateUser()` ab und verwirft die Session.

@@ -168,7 +168,9 @@ type BusyAction =
   | 'forgot-password'
   | 'change-password'
   | 'reset-with-code'
-  | 'confirm-with-code';
+  | 'confirm-with-code'
+  | 'request-password-token'
+  | 'verify-password-token';
 
 // ─── Primärer Button ──────────────────────────────────────────────────────────
 function PrimaryButton({
@@ -266,6 +268,16 @@ export default function SettingsKontoScreen() {
    */
   const [resendCooldown, setResendCooldown] = useState(0);
   /**
+   * Passwortwechsel in drei Schritten: idle -> code -> password.
+   *
+   * Eine bestehende Session allein darf nicht reichen: wer das entsperrte
+   * Geraet in die Hand bekommt, koennte das Konto sonst uebernehmen. Der
+   * Code aus der Mail ist der zweite Faktor — ohne Postfach-Zugriff kein
+   * neues Passwort.
+   */
+  const [pwStep, setPwStep] = useState<'idle' | 'code' | 'password'>('idle');
+  const [inputPwToken, setInputPwToken] = useState('');
+  /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
    */
@@ -298,6 +310,7 @@ export default function SettingsKontoScreen() {
     setInputPasswordConfirm('');
     setInputResetCode('');
     setInputConfirmCode('');
+    setInputPwToken('');
   };
 
   const switchTab = (tab: LocalTab) => {
@@ -769,7 +782,82 @@ export default function SettingsKontoScreen() {
     }
   };
 
+  /** Schritt 1: Code an die hinterlegte Adresse schicken. */
+  const handleRequestPasswordToken = async () => {
+    const supabase = getSupabase();
+    if (!supabase || !email) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading('request-password-token');
+    try {
+      // `shouldCreateUser: false`: der Nutzer existiert, hier soll nur ein
+      // Code an ein bestehendes Konto gehen — niemals ein neues entstehen.
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false, data: { locale } },
+      });
+      if (error) {
+        const wait = Number(/(d+)s*seconds?/i.exec(error.message)?.[1]);
+        if (Number.isFinite(wait) && wait > 0) {
+          setResendCooldown(wait);
+          return;
+        }
+        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
+        return;
+      }
+      setInputPwToken('');
+      setPwStep('code');
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      showToast(t('settingsKonto.toastPasswordTokenSent'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Schritt 2: Code einloesen — erst danach ist das Formular erreichbar. */
+  const handleVerifyPasswordToken = async () => {
+    const token = inputPwToken.trim();
+    if (!token) {
+      showToast(t('settingsKonto.toastEnterConfirmCode'), 'error');
+      return;
+    }
+    const supabase = getSupabase();
+    if (!supabase || !email) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading('verify-password-token');
+    try {
+      // 'email' ist der Typ fuer signInWithOtp-Codes (nicht 'signup').
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email',
+      });
+      if (error || !data.session) {
+        showToast(t('settingsKonto.toastPasswordCodeInvalid'), 'error');
+        return;
+      }
+      clearFields();
+      setPwStep('password');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /** Schritt 3: neues Passwort setzen — nur aus dem Schritt `password`. */
   const handleChangePassword = async () => {
+    // Ohne eingeloesten Code kein Wechsel — die UI zeigt das Formular zwar
+    // nur in Schritt 3, der Handler verlaesst sich aber nicht darauf.
+    if (pwStep !== 'password') {
+      showToast(t('settingsKonto.toastPasswordCodeInvalid'), 'error');
+      return;
+    }
     if (!inputPassword) {
       showToast(t('settingsKonto.toastEnterNewPassword'), 'error');
       return;
@@ -795,7 +883,10 @@ export default function SettingsKontoScreen() {
         return;
       }
       clearFields();
+      setPwStep('idle');
       showToast(t('settingsKonto.toastPasswordChanged'), 'success');
+      // Wie nach der Registrierung: der Konto-Screen hat seinen Zweck erfuellt.
+      navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
@@ -1091,27 +1182,84 @@ export default function SettingsKontoScreen() {
               {t('settingsKonto.changePassword')}
             </Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              <Field
-                label={t('settingsKonto.newPasswordLabel')}
-                value={inputPassword}
-                onChangeText={setInputPassword}
-                placeholder={t('settingsKonto.passwordPlaceholder')}
-                secure
-              />
-              <Field
-                label={t('settingsKonto.confirmPasswordLabel')}
-                value={inputPasswordConfirm}
-                onChangeText={setInputPasswordConfirm}
-                placeholder={t('settingsKonto.confirmPasswordPlaceholder')}
-                secure
-                onSubmit={handleChangePassword}
-              />
-              <PrimaryButton
-                label={t('settingsKonto.updatePasswordButton')}
-                onPress={handleChangePassword}
-                loading={busyAction === 'change-password'}
-                disabled={loading || !inputPassword || !inputPasswordConfirm}
-              />
+              {/* Schritt 1: Code anfordern. Eine Session allein reicht nicht —
+                  sonst koennte jeder mit dem entsperrten Geraet uebernehmen. */}
+              {pwStep === 'idle' && (
+                <>
+                  <Text style={styles.hintText}>{t('settingsKonto.changePasswordIntro')}</Text>
+                  <PrimaryButton
+                    label={t('settingsKonto.requestPasswordTokenButton')}
+                    onPress={handleRequestPasswordToken}
+                    loading={busyAction === 'request-password-token'}
+                    disabled={loading || resendCooldown > 0}
+                  />
+                  {resendCooldown > 0 && (
+                    <Text style={[styles.hintText, { textAlign: 'center' }]}>
+                      {t('settingsKonto.resendCooldown', { seconds: resendCooldown })}
+                    </Text>
+                  )}
+                </>
+              )}
+
+              {/* Schritt 2: Code aus der Mail. */}
+              {pwStep === 'code' && (
+                <>
+                  <Text style={styles.cardTitle}>{t('settingsKonto.changePasswordCodeTitle')}</Text>
+                  <Text style={styles.hintText}>
+                    {t('settingsKonto.changePasswordCodeBody', { email })}
+                  </Text>
+                  <Field
+                    label={t('settingsKonto.confirmCodeLabel')}
+                    value={inputPwToken}
+                    onChangeText={setInputPwToken}
+                    placeholder={t('settingsKonto.confirmCodePlaceholder')}
+                    keyboardType="number-pad"
+                    autoCapitalize="none"
+                    onSubmit={handleVerifyPasswordToken}
+                  />
+                  <PrimaryButton
+                    label={t('settingsKonto.changePasswordCodeButton')}
+                    onPress={handleVerifyPasswordToken}
+                    loading={busyAction === 'verify-password-token'}
+                    disabled={loading || !inputPwToken.trim()}
+                  />
+                  <TouchableOpacity
+                    onPress={() => { setPwStep('idle'); clearFields(); }}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.linkText}>{t('settingsKonto.changePasswordCancel')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* Schritt 3: neues Passwort — erst nach eingeloestem Code. */}
+              {pwStep === 'password' && (
+                <>
+                  <Text style={styles.cardTitle}>{t('settingsKonto.changePasswordNewTitle')}</Text>
+                  <Field
+                    label={t('settingsKonto.newPasswordLabel')}
+                    value={inputPassword}
+                    onChangeText={setInputPassword}
+                    placeholder={t('settingsKonto.passwordPlaceholder')}
+                    secure
+                  />
+                  <Field
+                    label={t('settingsKonto.confirmPasswordLabel')}
+                    value={inputPasswordConfirm}
+                    onChangeText={setInputPasswordConfirm}
+                    placeholder={t('settingsKonto.confirmPasswordPlaceholder')}
+                    secure
+                    onSubmit={handleChangePassword}
+                  />
+                  <PrimaryButton
+                    label={t('settingsKonto.updatePasswordButton')}
+                    onPress={handleChangePassword}
+                    loading={busyAction === 'change-password'}
+                    disabled={loading || !inputPassword || !inputPasswordConfirm}
+                  />
+                </>
+              )}
             </View>
 
             {/* Sync beenden */}
