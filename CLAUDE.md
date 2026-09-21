@@ -119,7 +119,8 @@ vergibt neue Notiz-IDs: `notes.id` ist PK über alle User, RLS würde den Upsert
 löschen geht nur über Einstellungen → Datenschutz (lokal **und** remote). Synthese braucht ein
 bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"), führt zum Konto-Screen.
 `UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
-`pending-confirmation` sofort; im Konto-Screen dauerhaft.
+`pending-confirmation` sofort; im Konto-Screen dauerhaft. Der Konto-Screen merkt sich in `busyAction`,
+**welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt (`disabled`) sind alle.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.

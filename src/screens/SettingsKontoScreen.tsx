@@ -150,6 +150,21 @@ const fieldStyles = StyleSheet.create({
   eyeBtn: { padding: 4 },
 });
 
+/**
+ * Welche Aktion gerade laeuft — nicht nur *ob* eine laeuft. Ein blosses Boolean
+ * liess jeden sichtbaren Button gleichzeitig den Spinner zeigen (beim Abmelden
+ * drehte auch "Passwort aendern" und umgekehrt).
+ */
+type BusyAction =
+  | 'check-confirmation'
+  | 'retry-upload'
+  | 'sign-out'
+  | 'sign-in'
+  | 'upgrade'
+  | 'resend-confirmation'
+  | 'forgot-password'
+  | 'change-password';
+
 // ─── Primärer Button ──────────────────────────────────────────────────────────
 function PrimaryButton({
   label,
@@ -223,7 +238,14 @@ export default function SettingsKontoScreen() {
   const [inputEmail, setInputEmail] = useState('');
   const [inputPassword, setInputPassword] = useState('');
   const [inputPasswordConfirm, setInputPasswordConfirm] = useState('');
-  const [loading, setLoading] = useState(false);
+  /**
+   * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
+   * aber nur der gedrueckte (`busyAction`).
+   */
+  const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  const loading = busyAction !== null;
+  const setLoading = (action: BusyAction | false) =>
+    setBusyAction(action === false ? null : action);
 
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' | 'info' }>({
     message: '',
@@ -279,7 +301,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('check-confirmation');
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -357,7 +379,7 @@ export default function SettingsKontoScreen() {
   /** Sichtbarer Retry fuer einen fehlgeschlagenen Erstupload. */
   const handleRetryUpload = async () => {
     if (!uploadRetryUid) return;
-    setLoading(true);
+    setLoading('retry-upload');
     try {
       await uploadLocalNotes(uploadRetryUid);
       setUploadRetryUid(null);
@@ -378,7 +400,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('sign-out');
     try {
       // Unbestaetigte lokale Aenderungen gehoeren noch in dieses Konto — erst hochladen.
       try {
@@ -422,7 +444,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('sign-in');
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: inputEmail.trim(),
@@ -485,7 +507,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('upgrade');
     try {
       const address = inputEmail.trim();
       const { data, error } = await supabase.auth.signUp({
@@ -525,7 +547,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('resend-confirmation');
     try {
       const { error } = await supabase.auth.resend({ type: 'signup', email });
       if (error) {
@@ -555,7 +577,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('forgot-password');
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(address);
       if (error) {
@@ -588,7 +610,7 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    setLoading(true);
+    setLoading('change-password');
     try {
       const { error } = await supabase.auth.updateUser({ password: inputPassword });
       if (error) {
@@ -693,8 +715,8 @@ export default function SettingsKontoScreen() {
                   <PrimaryButton
                     label={t('settingsKonto.secureNowButton')}
                     onPress={handleUpgrade}
-                    loading={loading}
-                    disabled={!inputEmail.trim() || !inputPassword || !inputPasswordConfirm}
+                    loading={busyAction === 'upgrade'}
+                    disabled={loading || !inputEmail.trim() || !inputPassword || !inputPasswordConfirm}
                   />
                 </View>
               </>
@@ -722,10 +744,10 @@ export default function SettingsKontoScreen() {
                 <PrimaryButton
                   label={t('settingsKonto.signInButton')}
                   onPress={handleSignIn}
-                  loading={loading}
-                  disabled={!inputEmail.trim() || !inputPassword}
+                  loading={busyAction === 'sign-in'}
+                  disabled={loading || !inputEmail.trim() || !inputPassword}
                 />
-                <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+                <TouchableOpacity onPress={handleForgotPassword} disabled={loading} activeOpacity={0.7}>
                   <Text style={styles.linkText}>{t('settingsKonto.forgotPassword')}</Text>
                 </TouchableOpacity>
               </View>
@@ -765,10 +787,10 @@ export default function SettingsKontoScreen() {
               <PrimaryButton
                 label={t('settingsKonto.checkConfirmationButton')}
                 onPress={handleCheckConfirmation}
-                loading={loading}
-                disabled={!inputPassword}
+                loading={busyAction === 'check-confirmation'}
+                disabled={loading || !inputPassword}
               />
-              <TouchableOpacity onPress={handleResendConfirmation} activeOpacity={0.7}>
+              <TouchableOpacity onPress={handleResendConfirmation} disabled={loading} activeOpacity={0.7}>
                 <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
               </TouchableOpacity>
             </View>
@@ -780,7 +802,8 @@ export default function SettingsKontoScreen() {
               <PrimaryButton
                 label={t('settingsKonto.cancelRegistrationButton')}
                 onPress={handleSignOut}
-                loading={loading}
+                loading={busyAction === 'sign-out'}
+                disabled={loading}
                 danger
               />
             </View>
@@ -806,7 +829,8 @@ export default function SettingsKontoScreen() {
                   <PrimaryButton
                     label={t('settingsKonto.retryUploadButton')}
                     onPress={handleRetryUpload}
-                    loading={loading}
+                    loading={busyAction === 'retry-upload'}
+                    disabled={loading}
                   />
                 </View>
               </View>
@@ -854,8 +878,8 @@ export default function SettingsKontoScreen() {
               <PrimaryButton
                 label={t('settingsKonto.updatePasswordButton')}
                 onPress={handleChangePassword}
-                loading={loading}
-                disabled={!inputPassword || !inputPasswordConfirm}
+                loading={busyAction === 'change-password'}
+                disabled={loading || !inputPassword || !inputPasswordConfirm}
               />
             </View>
 
@@ -869,7 +893,8 @@ export default function SettingsKontoScreen() {
               <PrimaryButton
                 label={t('settingsKonto.signOutButton')}
                 onPress={handleSignOut}
-                loading={loading}
+                loading={busyAction === 'sign-out'}
+                disabled={loading}
                 danger
               />
             </View>
