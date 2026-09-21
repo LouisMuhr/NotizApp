@@ -25,6 +25,9 @@ import { useLanguage } from '../context/LanguageContext';
 
 type LocalTab = 'signup' | 'signin';
 
+/** Supabase-Default fuer Auth-Mails an dieselbe Adresse. */
+const RESEND_COOLDOWN_SECONDS = 60;
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ message, type }: { message: string; type: 'error' | 'success' | 'info' }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -227,7 +230,7 @@ export default function SettingsKontoScreen() {
     resyncForUser: resyncThreadsForUser,
     detachSync: detachThreadsSync,
   } = useThoughts();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const [accountState, setAccountState] = useState<AccountState>('loading');
   const [localTab, setLocalTab] = useState<LocalTab>('signup');
@@ -256,6 +259,12 @@ export default function SettingsKontoScreen() {
    */
   const [inputConfirmCode, setInputConfirmCode] = useState('');
   /**
+   * Supabase laesst pro Adresse nur alle 60s eine Mail zu und meldet sonst
+   * einen Fehler. Statt das erst beim Druck als Toast zu zeigen, laeuft die
+   * Sperre sichtbar am Button ab.
+   */
+  const [resendCooldown, setResendCooldown] = useState(0);
+  /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
    */
@@ -274,6 +283,13 @@ export default function SettingsKontoScreen() {
     toastKey.current += 1;
     setToast({ message, type });
   };
+
+  // Sekundengenauer Countdown; laeuft nur, solange wirklich gesperrt ist.
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown((v) => v - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
 
   const clearFields = () => {
     setInputEmail('');
@@ -531,6 +547,9 @@ export default function SettingsKontoScreen() {
       const { data, error } = await supabase.auth.signUp({
         email: address,
         password: inputPassword,
+        // Sprache am User hinterlegen: die Mail-Templates lesen sie als
+        // {{ .Data.locale }} aus. Ohne das waeren alle Mails einsprachig.
+        options: { data: { locale } },
       });
       if (error) {
         showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
@@ -569,9 +588,17 @@ export default function SettingsKontoScreen() {
     try {
       const { error } = await supabase.auth.resend({ type: 'signup', email });
       if (error) {
+        // Rate Limit: Supabase nennt die Restzeit im Text ("after 47 seconds").
+        // Die wandert in den Countdown, statt als Toast zu verpuffen.
+        const wait = Number(/(\d+)\s*seconds?/i.exec(error.message)?.[1]);
+        if (Number.isFinite(wait) && wait > 0) {
+          setResendCooldown(wait);
+          return;
+        }
         showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
       showToast(t('settingsKonto.toastConfirmationSent'), 'success');
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
@@ -935,8 +962,16 @@ export default function SettingsKontoScreen() {
                 loading={busyAction === 'confirm-with-code'}
                 disabled={loading || !inputConfirmCode.trim()}
               />
-              <TouchableOpacity onPress={handleResendConfirmation} disabled={loading} activeOpacity={0.7}>
-                <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
+              <TouchableOpacity
+                onPress={handleResendConfirmation}
+                disabled={loading || resendCooldown > 0}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.linkText, resendCooldown > 0 && styles.linkTextDisabled]}>
+                  {resendCooldown > 0
+                    ? t('settingsKonto.resendCooldown', { seconds: resendCooldown })
+                    : t('settingsKonto.resendConfirmation')}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -1175,6 +1210,11 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     color: Tokens.inkDim,
+  },
+
+  // ── Gesperrter Textlink (Cooldown) ──
+  linkTextDisabled: {
+    color: Tokens.inkFaint,
   },
 
   // ── Sekundaerer Textlink ──

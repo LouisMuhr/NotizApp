@@ -345,6 +345,7 @@ export default {
     pendingTitle: 'Bestätigung ausstehend',
     pendingBody: 'Wir haben einen Bestätigungscode an %{email} geschickt. Gib ihn unten ein — erst danach werden deine Notizen gesichert und synchronisiert.',
     resendConfirmation: 'E-Mail erneut senden',
+    resendCooldown: 'Erneut senden in %{seconds}s',
     cancelRegistrationButton: 'Registrierung abbrechen',
     toastConfirmationSent: 'Bestätigungs-E-Mail gesendet. Bitte Postfach prüfen.',
     // Bestaetigung per Code (OTP) — kein Browser-Umweg noetig

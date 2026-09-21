@@ -132,6 +132,8 @@ gemerkt und taucht beim nächsten Öffnen des Konto-Screens als Retry auf.
 ein Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach
 greift `updateUser({password})`. Der Link der Mail würde die Session nur im Browser anlegen; ein
 Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) + Native Build. Mail-Templates
+Templates sind zweisprachig über `{{ if eq .Data.locale "en" }}`; `signUp()` legt `locale` in den
+user_metadata ab. „Erneut senden“ zeigt Supabases 60s-Sperre als Countdown am Button statt als Toast.
 für Supabase/Resend: `supabase/templates/`, beide stellen den Code dem Link voran.
 
 ### Supabase schema

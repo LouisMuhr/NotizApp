@@ -346,6 +346,7 @@ const en: typeof de = {
     pendingTitle: 'Confirmation pending',
     pendingBody: 'We sent a confirmation code to %{email}. Enter it below — your notes are only secured and synced afterwards.',
     resendConfirmation: 'Resend email',
+    resendCooldown: 'Resend in %{seconds}s',
     cancelRegistrationButton: 'Cancel registration',
     toastConfirmationSent: 'Confirmation email sent. Please check your inbox.',
     // Confirmation via code (OTP) — no browser detour required
