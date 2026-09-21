@@ -110,8 +110,7 @@ liefern nur bei `secured` eine UID, damit sind die beiden anderen Zustände gara
 Registrierung = `signUp()` → `pending-confirmation` (nicht optimistisch `secured`); erst nach Bestätigung
 läuft der einmalige `uploadLocalNotes()`, bei Fehler bleibt `@notizapp_initial_upload_pending` stehen und
 der Konto-Screen zeigt einen dauerhaften Retry. Gibt `signUp()` keine Session aus, rettet
-`@notizapp_pending_email` den Zustand über einen Neustart — „Bestätigung prüfen" fragt dann nach dem
-Passwort, weil der Status ohne Session nicht abfragbar ist. Weitere Keys: `@notizapp_first_seen` +
+`@notizapp_pending_email` den Zustand über einen Neustart. Weitere Keys: `@notizapp_first_seen` +
 `@notizapp_unsecured_dismissed` (Banner-Schwelle). Altlast: anonyme Sessions werden beim Start nur
 abgemeldet (`src/sync/legacyAnon.ts`); die verwaisten Anon-User wurden per SQL bereits abgeräumt.
 Trennen (`detachSync`, UI „Sync beenden") behält Notizen **und** Threads lokal und räumt Outbox +
@@ -122,11 +121,14 @@ bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"),
 `UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
 `pending-confirmation` sofort; im Konto-Screen dauerhaft. Der Konto-Screen merkt sich in `busyAction`,
 **welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt (`disabled`) sind alle.
+**Bestätigung läuft per OTP**: im `pending-confirmation`-Block ist die Code-Eingabe der Standard,
+`verifyOtp({type:'signup'})` bestätigt und liefert die Session in einem Schritt, danach `finishSecuring()`.
+Der Link-Weg (Browser + Passwort-Abfrage) bleibt als Fallback hinter einem Umschalter, für Mails ohne Code.
 **Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab
 ein Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach
 greift `updateUser({password})`. Der Link der Mail würde die Session nur im Browser anlegen; ein
-Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) und einen neuen Native Build.
-Mail-Templates für Supabase/Resend liegen in `supabase/templates/` und stellen den Code voran.
+Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) + Native Build. Mail-Templates
+für Supabase/Resend: `supabase/templates/`, beide stellen den Code dem Link voran.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.

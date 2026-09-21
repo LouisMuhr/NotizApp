@@ -351,6 +351,15 @@ export default {
     cancelRegistrationButton: 'Registrierung abbrechen',
     toastStillPending: 'Noch keine Bestätigung eingegangen. Prüfe dein Postfach.',
     toastConfirmationSent: 'Bestätigungs-E-Mail gesendet. Bitte Postfach prüfen.',
+    // Bestaetigung per Code (OTP) — kein Browser-Umweg noetig
+    confirmCodeLabel: 'Bestätigungscode',
+    confirmCodePlaceholder: '123456',
+    confirmCodeHint: 'Gib den 6-stelligen Code aus der Bestätigungs-E-Mail ein.',
+    confirmCodeButton: 'Konto bestätigen',
+    toastEnterConfirmCode: 'Bitte den Code aus der E-Mail eingeben.',
+    toastConfirmCodeInvalid: 'Code ungültig oder abgelaufen. Fordere einen neuen an.',
+    checkViaPasswordLink: 'Stattdessen per Passwort prüfen',
+    checkViaCodeLink: 'Stattdessen Code eingeben',
     // Passwort vergessen
     forgotPassword: 'Passwort vergessen?',
     toastEnterEmailForReset: 'Bitte E-Mail-Adresse eingeben.',

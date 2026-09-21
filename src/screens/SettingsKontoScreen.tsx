@@ -164,7 +164,8 @@ type BusyAction =
   | 'resend-confirmation'
   | 'forgot-password'
   | 'change-password'
-  | 'reset-with-code';
+  | 'reset-with-code'
+  | 'confirm-with-code';
 
 // ─── Primärer Button ──────────────────────────────────────────────────────────
 function PrimaryButton({
@@ -248,6 +249,15 @@ export default function SettingsKontoScreen() {
   const [resetCodeSentTo, setResetCodeSentTo] = useState<string | null>(null);
   const [inputResetCode, setInputResetCode] = useState('');
   /**
+   * Bestaetigung per Code statt per Link: der Link fuehrt in den Browser und
+   * laesst den Nutzer dort stehen — die App muesste den Status danach separat
+   * abfragen. `verifyOtp({type:'signup'})` bestaetigt und liefert die Session
+   * in einem Schritt. Der Passwort-Weg bleibt als Fallback fuer Mails, die
+   * noch ohne Code im Postfach liegen.
+   */
+  const [inputConfirmCode, setInputConfirmCode] = useState('');
+  const [checkViaPassword, setCheckViaPassword] = useState(false);
+  /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
    */
@@ -272,6 +282,7 @@ export default function SettingsKontoScreen() {
     setInputPassword('');
     setInputPasswordConfirm('');
     setInputResetCode('');
+    setInputConfirmCode('');
   };
 
   const switchTab = (tab: LocalTab) => {
@@ -305,6 +316,46 @@ export default function SettingsKontoScreen() {
    *   keinen anonymen Endpunkt dafuer). Der einzige Weg an eine Session ist
    *   eine Anmeldung — deshalb wird hier nach dem Passwort gefragt.
    */
+  /**
+   * Registrierung per Code aus der Bestaetigungsmail abschliessen.
+   *
+   * `verifyOtp({type:'signup'})` setzt `email_confirmed_at` UND gibt die
+   * Session zurueck — damit entfaellt der Umweg ueber den Browser-Link und
+   * die anschliessende Passwort-Abfrage.
+   */
+  const handleConfirmWithCode = async () => {
+    const code = inputConfirmCode.trim();
+    if (!code) {
+      showToast(t('settingsKonto.toastEnterConfirmCode'), 'error');
+      return;
+    }
+    const supabase = getSupabase();
+    if (!supabase || !email) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    setLoading('confirm-with-code');
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'signup',
+      });
+      if (error || !data.session?.user) {
+        showToast(t('settingsKonto.toastConfirmCodeInvalid'), 'error');
+        return;
+      }
+      const user = data.session.user;
+      clearUserIdCache();
+      // Gleicher Abschluss wie beim Link-Weg: Erstupload, Threads, Tier.
+      await finishSecuring(user.id, user.email ?? email);
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCheckConfirmation = async () => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -909,23 +960,61 @@ export default function SettingsKontoScreen() {
             </View>
 
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              {/* Ohne Session (Supabase gibt nach signUp() keine aus) kommen wir
-                  nur per Anmeldung an den Bestaetigungsstatus. */}
-              <Text style={styles.hintText}>{t('settingsKonto.checkConfirmationHint')}</Text>
-              <Field
-                label={t('settingsKonto.passwordLabel')}
-                value={inputPassword}
-                onChangeText={setInputPassword}
-                placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
-                secure
-                onSubmit={handleCheckConfirmation}
-              />
-              <PrimaryButton
-                label={t('settingsKonto.checkConfirmationButton')}
-                onPress={handleCheckConfirmation}
-                loading={busyAction === 'check-confirmation'}
-                disabled={loading || !inputPassword}
-              />
+              {/* Standard: Code aus der Mail. Der Link-Weg bleibt als Fallback,
+                  denn aeltere Mails im Postfach zeigen evtl. noch keinen Code. */}
+              {!checkViaPassword && (
+                <>
+                  <Text style={styles.hintText}>{t('settingsKonto.confirmCodeHint')}</Text>
+                  <Field
+                    label={t('settingsKonto.confirmCodeLabel')}
+                    value={inputConfirmCode}
+                    onChangeText={setInputConfirmCode}
+                    placeholder={t('settingsKonto.confirmCodePlaceholder')}
+                    keyboardType="number-pad"
+                    autoCapitalize="none"
+                    onSubmit={handleConfirmWithCode}
+                  />
+                  <PrimaryButton
+                    label={t('settingsKonto.confirmCodeButton')}
+                    onPress={handleConfirmWithCode}
+                    loading={busyAction === 'confirm-with-code'}
+                    disabled={loading || !inputConfirmCode.trim()}
+                  />
+                </>
+              )}
+
+              {/* Fallback: wer den Link geklickt hat, prueft per Anmeldung. */}
+              {checkViaPassword && (
+                <>
+                  <Text style={styles.hintText}>{t('settingsKonto.checkConfirmationHint')}</Text>
+                  <Field
+                    label={t('settingsKonto.passwordLabel')}
+                    value={inputPassword}
+                    onChangeText={setInputPassword}
+                    placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
+                    secure
+                    onSubmit={handleCheckConfirmation}
+                  />
+                  <PrimaryButton
+                    label={t('settingsKonto.checkConfirmationButton')}
+                    onPress={handleCheckConfirmation}
+                    loading={busyAction === 'check-confirmation'}
+                    disabled={loading || !inputPassword}
+                  />
+                </>
+              )}
+
+              <TouchableOpacity
+                onPress={() => setCheckViaPassword((v) => !v)}
+                disabled={loading}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.linkText}>
+                  {checkViaPassword
+                    ? t('settingsKonto.checkViaCodeLink')
+                    : t('settingsKonto.checkViaPasswordLink')}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={handleResendConfirmation} disabled={loading} activeOpacity={0.7}>
                 <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
               </TouchableOpacity>

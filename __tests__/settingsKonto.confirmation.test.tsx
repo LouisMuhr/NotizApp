@@ -6,6 +6,10 @@
  * scheitert mangels Session und die App meldete faelschlich "noch nicht
  * bestaetigt", obwohl der Link laengst geklickt war. Erwartung: in diesem Fall
  * wird per Anmeldung geprueft.
+ *
+ * Seit der Umstellung auf OTP ist die Code-Eingabe der Standard — dieser Weg
+ * liegt hinter "Stattdessen per Passwort pruefen" und bleibt fuer Mails ohne
+ * Code erhalten. Der Code-Pfad selbst: settingsKonto.confirmCode.test.tsx.
  */
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
@@ -68,6 +72,8 @@ test('ohne Session wird die Bestaetigung per Anmeldung geprueft, nicht per refre
   render(<SettingsKontoScreen />);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
+  // Der Passwort-Weg ist seit dem OTP-Umbau der Fallback hinter dem Umschalter.
+  fireEvent.press(screen.getByText(t('settingsKonto.checkViaPasswordLink')));
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.passwordPlaceholderGeneric')), 'geheim123');
   fireEvent.press(screen.getByText(t('settingsKonto.checkConfirmationButton')));
 
@@ -89,6 +95,8 @@ test('noch nicht bestaetigt → Zustand bleibt pending, kein Upload', async () =
   render(<SettingsKontoScreen />);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
+  // Der Passwort-Weg ist seit dem OTP-Umbau der Fallback hinter dem Umschalter.
+  fireEvent.press(screen.getByText(t('settingsKonto.checkViaPasswordLink')));
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.passwordPlaceholderGeneric')), 'geheim123');
   fireEvent.press(screen.getByText(t('settingsKonto.checkConfirmationButton')));
 

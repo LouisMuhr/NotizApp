@@ -352,6 +352,15 @@ const en: typeof de = {
     cancelRegistrationButton: 'Cancel registration',
     toastStillPending: 'No confirmation yet. Please check your inbox.',
     toastConfirmationSent: 'Confirmation email sent. Please check your inbox.',
+    // Confirmation via code (OTP) — no browser detour required
+    confirmCodeLabel: 'Confirmation code',
+    confirmCodePlaceholder: '123456',
+    confirmCodeHint: 'Enter the 6-digit code from the confirmation email.',
+    confirmCodeButton: 'Confirm account',
+    toastEnterConfirmCode: 'Please enter the code from your email.',
+    toastConfirmCodeInvalid: 'Code invalid or expired. Request a new one.',
+    checkViaPasswordLink: 'Verify with password instead',
+    checkViaCodeLink: 'Enter code instead',
     // Forgot password
     forgotPassword: 'Forgot your password?',
     toastEnterEmailForReset: 'Please enter your email address.',

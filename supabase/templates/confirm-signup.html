@@ -9,7 +9,7 @@
 <!--[if mso]><style>body,table,td,a{font-family:Georgia,serif !important}</style><![endif]-->
 </head>
 <body style="margin:0;padding:0;background-color:#F6F2EA;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Ein Klick, dann gehört Velm dir. Der Link gilt 24 Stunden.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Dein Bestätigungscode für Velm. Gültig für 24 Stunden.</div>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F6F2EA;">
 <tr><td align="center" style="padding:40px 16px;">
@@ -32,32 +32,28 @@
         Bestätige deine E-Mail-Adresse, dann sind deine Notizen auf allen Geräten synchron.
       </p>
 
-      <!-- CTA -->
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="background-color:#9C5F1F;border-radius:10px;">
-          <a href="{{ .ConfirmationURL }}"
-             style="display:inline-block;padding:14px 30px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#F6F2EA;text-decoration:none;border-radius:10px;">
-            E-Mail bestätigen
-          </a>
-        </td></tr>
-      </table>
-
-      <p style="margin:28px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:18px;color:#A29A8A;">
-        Der Link ist 24 Stunden gültig. Falls der Button nicht funktioniert, kopiere diese Adresse in deinen Browser:
-      </p>
-      <p style="margin:8px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:18px;word-break:break-all;">
-        <a href="{{ .ConfirmationURL }}" style="color:#9C5F1F;text-decoration:underline;">{{ .ConfirmationURL }}</a>
-      </p>
-
-      <!-- Alternativ: 6-stelliger Code -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-top:1px solid #D7CDB9;">
-        <tr><td style="padding-top:24px;">
+      <!-- Code steht vorn: die App loest ihn per verifyOtp ein und ist damit
+           sofort bestaetigt. Der Link fuehrt nur in den Browser. -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="background-color:#F6F2EA;border:1px solid #E2D8C6;border-radius:12px;padding:22px 24px;" align="center">
           <p style="margin:0 0 10px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:#A29A8A;">
-            Oder Code in der App eingeben
+            Dein Code
           </p>
-          <p style="margin:0;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:26px;letter-spacing:6px;color:#2B2419;">{{ .Token }}</p>
+          <p style="margin:0;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:32px;letter-spacing:8px;color:#2B2419;">{{ .Token }}</p>
         </td></tr>
       </table>
+
+      <p style="margin:24px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:24px;color:#6B6354;">
+        Gib den Code in der Velm-App ein — unter <strong style="color:#2B2419;font-weight:600;">Einstellungen › Konto</strong>. Danach sind deine Notizen auf allen Geräten synchron.
+      </p>
+
+      <p style="margin:20px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:18px;color:#A29A8A;">
+        Lieber im Browser bestätigen? <a href="{{ .ConfirmationURL }}" style="color:#9C5F1F;text-decoration:underline;">Hier entlang</a>.
+      </p>
+
+      <p style="margin:10px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12.5px;line-height:18px;color:#A29A8A;">
+        Der Code ist 24 Stunden gültig und nur einmal verwendbar.
+      </p>
 
     </td></tr>
 
