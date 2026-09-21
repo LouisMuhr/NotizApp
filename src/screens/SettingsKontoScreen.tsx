@@ -361,6 +361,8 @@ export default function SettingsKontoScreen() {
       }
       const user = data.session.user;
       clearUserIdCache();
+      // Sprache festhalten, solange die frische Session da ist.
+      await syncLocaleToUser();
       // Gleicher Abschluss wie beim Link-Weg: Erstupload, Threads, Tier.
       await finishSecuring(user.id, user.email ?? email);
     } catch (e: any) {
@@ -459,6 +461,25 @@ export default function SettingsKontoScreen() {
     }
   };
 
+  /**
+   * Aktuelle App-Sprache am User hinterlegen.
+   *
+   * Die Mail-Templates lesen sie als `{{ .Data.locale }}` — weder `resend()`
+   * noch `resetPasswordForEmail()` nehmen die Sprache als Parameter entgegen,
+   * sie muss also VOR dem Versand am User stehen. Der Aufruf ist bewusst
+   * fehlertolerant: eine nicht gespeicherte Sprache darf keine Anmeldung und
+   * keinen Mailversand scheitern lassen, die Mail kommt dann eben deutsch.
+   */
+  const syncLocaleToUser = async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      await supabase.auth.updateUser({ data: { locale } });
+    } catch (e) {
+      console.warn('[account] locale sync failed', e);
+    }
+  };
+
   const handleSignIn = async () => {
     if (!inputEmail.trim() || !inputPassword) {
       showToast(t('settingsKonto.toastEnterEmailPassword'), 'error');
@@ -509,6 +530,8 @@ export default function SettingsKontoScreen() {
       // "Anmeldung fehlgeschlagen" erscheinen. Der Sync holt sich beim
       // naechsten Start ohnehin, was liegengeblieben ist.
       try {
+        // Sprache am User nachziehen: kuenftige Mails (Reset!) lesen sie aus.
+        await syncLocaleToUser();
         await resyncForUser(newUser.id, 'replace');
         await resyncThreadsForUser(newUser.id);
         // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
@@ -586,6 +609,8 @@ export default function SettingsKontoScreen() {
     }
     setLoading('resend-confirmation');
     try {
+      // Sprache zuerst: das Template liest sie beim Rendern der Mail.
+      await syncLocaleToUser();
       const { error } = await supabase.auth.resend({ type: 'signup', email });
       if (error) {
         // Rate Limit: Supabase nennt die Restzeit im Text ("after 47 seconds").
