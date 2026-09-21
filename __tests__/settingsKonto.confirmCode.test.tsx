@@ -57,12 +57,11 @@ beforeEach(async () => {
   await AsyncStorage.setItem('@notizapp_pending_email', 'louis@example.com');
 });
 
-test('Code-Eingabe ist der Standard, nicht die Passwort-Abfrage', async () => {
+test('pending-confirmation zeigt die Code-Eingabe', async () => {
   render(<SettingsKontoScreen />);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   expect(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder'))).toBeTruthy();
-  expect(screen.queryByText(t('settingsKonto.checkConfirmationButton'))).toBeNull();
 });
 
 test('gueltiger Code bestaetigt das Konto und startet den Erstupload', async () => {
@@ -108,25 +107,14 @@ test('ungueltiger Code sichert das Konto nicht', async () => {
   expect(mockUploadLocalNotes).not.toHaveBeenCalled();
 });
 
-test('Fallback: der Passwort-Weg bleibt fuer Mails ohne Code erreichbar', async () => {
-  mockSignInWithPassword.mockResolvedValue({
-    data: {
-      user: { id: 'u1', email: 'louis@example.com', email_confirmed_at: '2026-01-01T00:00:00.000Z' },
-      session: { access_token: 'tok' },
-    },
-    error: null,
-  });
-
+test('kein Passwort-Fallback mehr: der Code ist der einzige Weg', async () => {
   render(<SettingsKontoScreen />);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
-  fireEvent.press(screen.getByText(t('settingsKonto.checkViaPasswordLink')));
-  fireEvent.changeText(
-    await screen.findByPlaceholderText(t('settingsKonto.passwordPlaceholderGeneric')),
-    'geheim123',
-  );
-  fireEvent.press(screen.getByText(t('settingsKonto.checkConfirmationButton')));
-
-  await waitFor(() => expect(mockSignInWithPassword).toHaveBeenCalled());
-  expect(mockVerifyOtp).not.toHaveBeenCalled();
+  // Die Templates enthalten keinen Link mehr — ein "Bestaetigung pruefen"
+  // haette nichts zu pruefen und liefe ins Leere.
+  expect(screen.queryByPlaceholderText(t('settingsKonto.passwordPlaceholderGeneric'))).toBeNull();
+  expect(mockSignInWithPassword).not.toHaveBeenCalled();
+  // Erneut senden bleibt erreichbar, falls die Mail nicht ankam.
+  expect(screen.getByText(t('settingsKonto.resendConfirmation'))).toBeTruthy();
 });

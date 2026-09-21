@@ -156,7 +156,6 @@ const fieldStyles = StyleSheet.create({
  * drehte auch "Passwort aendern" und umgekehrt).
  */
 type BusyAction =
-  | 'check-confirmation'
   | 'retry-upload'
   | 'sign-out'
   | 'sign-in'
@@ -256,7 +255,6 @@ export default function SettingsKontoScreen() {
    * noch ohne Code im Postfach liegen.
    */
   const [inputConfirmCode, setInputConfirmCode] = useState('');
-  const [checkViaPassword, setCheckViaPassword] = useState(false);
   /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
@@ -349,62 +347,6 @@ export default function SettingsKontoScreen() {
       clearUserIdCache();
       // Gleicher Abschluss wie beim Link-Weg: Erstupload, Threads, Tier.
       await finishSecuring(user.id, user.email ?? email);
-    } catch (e: any) {
-      showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckConfirmation = async () => {
-    const supabase = getSupabase();
-    if (!supabase) {
-      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
-      return;
-    }
-    setLoading('check-confirmation');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        // Ohne Session brauchen wir das Passwort, um an eine zu kommen.
-        if (!inputPassword) {
-          showToast(t('settingsKonto.toastEnterPasswordToCheck'), 'error');
-          return;
-        }
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password: inputPassword,
-        });
-        if (error) {
-          // Supabase meldet eine unbestaetigte E-Mail als eigenen Fehlercode;
-          // das ist kein Passwortfehler, sondern schlicht "noch nicht bestaetigt".
-          const code = (error as any)?.code;
-          if (code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) {
-            showToast(t('settingsKonto.toastStillPending'), 'info');
-          } else {
-            showToast(t('settingsKonto.toastSignInFailed') + error.message, 'error');
-          }
-          return;
-        }
-        const user = data.user;
-        if (!user?.email_confirmed_at) {
-          showToast(t('settingsKonto.toastStillPending'), 'info');
-          return;
-        }
-        clearUserIdCache();
-        await finishSecuring(user.id, user.email ?? email);
-        return;
-      }
-
-      await supabase.auth.refreshSession().catch(() => {});
-      const snapshot = await resolveAccountState();
-      if (snapshot.state !== 'secured' || !snapshot.userId) {
-        showToast(t('settingsKonto.toastStillPending'), 'info');
-        return;
-      }
-      clearUserIdCache();
-      await finishSecuring(snapshot.userId, snapshot.email ?? '');
     } catch (e: any) {
       showToast(t('settingsKonto.toastErrorPrefix') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
@@ -960,61 +902,24 @@ export default function SettingsKontoScreen() {
             </View>
 
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              {/* Standard: Code aus der Mail. Der Link-Weg bleibt als Fallback,
-                  denn aeltere Mails im Postfach zeigen evtl. noch keinen Code. */}
-              {!checkViaPassword && (
-                <>
-                  <Text style={styles.hintText}>{t('settingsKonto.confirmCodeHint')}</Text>
-                  <Field
-                    label={t('settingsKonto.confirmCodeLabel')}
-                    value={inputConfirmCode}
-                    onChangeText={setInputConfirmCode}
-                    placeholder={t('settingsKonto.confirmCodePlaceholder')}
-                    keyboardType="number-pad"
-                    autoCapitalize="none"
-                    onSubmit={handleConfirmWithCode}
-                  />
-                  <PrimaryButton
-                    label={t('settingsKonto.confirmCodeButton')}
-                    onPress={handleConfirmWithCode}
-                    loading={busyAction === 'confirm-with-code'}
-                    disabled={loading || !inputConfirmCode.trim()}
-                  />
-                </>
-              )}
-
-              {/* Fallback: wer den Link geklickt hat, prueft per Anmeldung. */}
-              {checkViaPassword && (
-                <>
-                  <Text style={styles.hintText}>{t('settingsKonto.checkConfirmationHint')}</Text>
-                  <Field
-                    label={t('settingsKonto.passwordLabel')}
-                    value={inputPassword}
-                    onChangeText={setInputPassword}
-                    placeholder={t('settingsKonto.passwordPlaceholderGeneric')}
-                    secure
-                    onSubmit={handleCheckConfirmation}
-                  />
-                  <PrimaryButton
-                    label={t('settingsKonto.checkConfirmationButton')}
-                    onPress={handleCheckConfirmation}
-                    loading={busyAction === 'check-confirmation'}
-                    disabled={loading || !inputPassword}
-                  />
-                </>
-              )}
-
-              <TouchableOpacity
-                onPress={() => setCheckViaPassword((v) => !v)}
-                disabled={loading}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.linkText}>
-                  {checkViaPassword
-                    ? t('settingsKonto.checkViaCodeLink')
-                    : t('settingsKonto.checkViaPasswordLink')}
-                </Text>
-              </TouchableOpacity>
+              {/* Der Code aus der Mail ist der einzige Weg: die Templates
+                  enthalten keinen Link mehr, es gibt also nichts zu "pruefen". */}
+              <Text style={styles.hintText}>{t('settingsKonto.confirmCodeHint')}</Text>
+              <Field
+                label={t('settingsKonto.confirmCodeLabel')}
+                value={inputConfirmCode}
+                onChangeText={setInputConfirmCode}
+                placeholder={t('settingsKonto.confirmCodePlaceholder')}
+                keyboardType="number-pad"
+                autoCapitalize="none"
+                onSubmit={handleConfirmWithCode}
+              />
+              <PrimaryButton
+                label={t('settingsKonto.confirmCodeButton')}
+                onPress={handleConfirmWithCode}
+                loading={busyAction === 'confirm-with-code'}
+                disabled={loading || !inputConfirmCode.trim()}
+              />
               <TouchableOpacity onPress={handleResendConfirmation} disabled={loading} activeOpacity={0.7}>
                 <Text style={styles.linkText}>{t('settingsKonto.resendConfirmation')}</Text>
               </TouchableOpacity>

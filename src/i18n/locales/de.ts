@@ -343,13 +343,9 @@ export default {
     sessionLabel: 'Sitzung',
     // Bestätigung ausstehend
     pendingTitle: 'Bestätigung ausstehend',
-    pendingBody: 'Wir haben eine E-Mail an %{email} geschickt. Bestätige den Link darin — erst danach werden deine Notizen gesichert und synchronisiert.',
-    checkConfirmationButton: 'Bestätigung prüfen',
-    checkConfirmationHint: 'Du hast den Link bestätigt? Gib zum Abschließen einmal dein Passwort ein.',
-    toastEnterPasswordToCheck: 'Bitte Passwort eingeben, um die Bestätigung abzuschließen.',
+    pendingBody: 'Wir haben einen Bestätigungscode an %{email} geschickt. Gib ihn unten ein — erst danach werden deine Notizen gesichert und synchronisiert.',
     resendConfirmation: 'E-Mail erneut senden',
     cancelRegistrationButton: 'Registrierung abbrechen',
-    toastStillPending: 'Noch keine Bestätigung eingegangen. Prüfe dein Postfach.',
     toastConfirmationSent: 'Bestätigungs-E-Mail gesendet. Bitte Postfach prüfen.',
     // Bestaetigung per Code (OTP) — kein Browser-Umweg noetig
     confirmCodeLabel: 'Bestätigungscode',
@@ -358,8 +354,6 @@ export default {
     confirmCodeButton: 'Konto bestätigen',
     toastEnterConfirmCode: 'Bitte den Code aus der E-Mail eingeben.',
     toastConfirmCodeInvalid: 'Code ungültig oder abgelaufen. Fordere einen neuen an.',
-    checkViaPasswordLink: 'Stattdessen per Passwort prüfen',
-    checkViaCodeLink: 'Stattdessen Code eingeben',
     // Passwort vergessen
     forgotPassword: 'Passwort vergessen?',
     toastEnterEmailForReset: 'Bitte E-Mail-Adresse eingeben.',

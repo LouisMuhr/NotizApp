@@ -344,13 +344,9 @@ const en: typeof de = {
     sessionLabel: 'Session',
     // Confirmation pending
     pendingTitle: 'Confirmation pending',
-    pendingBody: 'We sent an email to %{email}. Confirm the link inside — only then are your notes secured and synced.',
-    checkConfirmationButton: 'Check confirmation',
-    checkConfirmationHint: 'Confirmed the link? Enter your password once to finish.',
-    toastEnterPasswordToCheck: 'Please enter your password to finish confirming.',
+    pendingBody: 'We sent a confirmation code to %{email}. Enter it below — your notes are only secured and synced afterwards.',
     resendConfirmation: 'Resend email',
     cancelRegistrationButton: 'Cancel registration',
-    toastStillPending: 'No confirmation yet. Please check your inbox.',
     toastConfirmationSent: 'Confirmation email sent. Please check your inbox.',
     // Confirmation via code (OTP) — no browser detour required
     confirmCodeLabel: 'Confirmation code',
@@ -359,8 +355,6 @@ const en: typeof de = {
     confirmCodeButton: 'Confirm account',
     toastEnterConfirmCode: 'Please enter the code from your email.',
     toastConfirmCodeInvalid: 'Code invalid or expired. Request a new one.',
-    checkViaPasswordLink: 'Verify with password instead',
-    checkViaCodeLink: 'Enter code instead',
     // Forgot password
     forgotPassword: 'Forgot your password?',
     toastEnterEmailForReset: 'Please enter your email address.',
