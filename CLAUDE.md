@@ -125,6 +125,8 @@ bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"),
 `verifyOtp({type:'signup'})` bestätigt und liefert die Session in einem Schritt, danach `finishSecuring()`.
 Die Templates enthalten **keinen Link** mehr, der Code ist der einzige Weg — ein Status-Check per Passwort
 hätte nichts zu prüfen. Browser-Bestaetigung scheitert ohnehin: Supabase hängt die Tokens als Fragment an.
+Nach erfolgreichem `finishSecuring()` geht es nach `Home/Threads` (wie nach der Anmeldung) — bei
+fehlgeschlagenem Erstupload **nicht**, sonst wäre der Retry-Button im Konto-Screen unsichtbar.
 **Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab
 ein Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach
 greift `updateUser({password})`. Der Link der Mail würde die Session nur im Browser anlegen; ein

@@ -372,10 +372,14 @@ export default function SettingsKontoScreen() {
       await resyncThreadsForUser(uid);
       await refreshSubscription();
       showToast(t('settingsKonto.toastAccountSecured'), 'success');
+      // Wie nach der Anmeldung: der Konto-Screen hat seinen Zweck erfuellt.
+      navigation.navigate('Home', { screen: 'Threads' });
     } catch (e: any) {
       console.warn('[account] initial upload failed', e);
       setUploadRetryUid(uid);
       showToast(t('settingsKonto.toastUploadFailed') + ' ' + (e?.message ?? ''), 'error');
+      // BEWUSST kein navigate(): der Retry-Button lebt in diesem Screen.
+      // Wegnavigieren wuerde den fehlgeschlagenen Upload unsichtbar machen.
     }
   };
 

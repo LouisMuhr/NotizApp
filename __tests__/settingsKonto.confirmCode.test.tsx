@@ -15,7 +15,8 @@ const mockVerifyOtp = jest.fn();
 const mockSignInWithPassword = jest.fn();
 const mockUploadLocalNotes = jest.fn(async () => {});
 
-jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
+const mockNavigate = jest.fn();
+jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: mockNavigate }) }));
 jest.mock('../src/context/NotesContext', () => ({
   useNotes: () => ({
     resyncForUser: jest.fn(async () => {}),
@@ -117,4 +118,47 @@ test('kein Passwort-Fallback mehr: der Code ist der einzige Weg', async () => {
   expect(mockSignInWithPassword).not.toHaveBeenCalled();
   // Erneut senden bleibt erreichbar, falls die Mail nicht ankam.
   expect(screen.getByText(t('settingsKonto.resendConfirmation'))).toBeTruthy();
+});
+
+test('nach dem Sichern geht es in den Notes-Screen', async () => {
+  mockVerifyOtp.mockResolvedValue({
+    data: {
+      session: {
+        access_token: 'tok',
+        user: { id: 'u1', email: 'louis@example.com', email_confirmed_at: '2026-01-01T00:00:00.000Z' },
+      },
+    },
+    error: null,
+  });
+
+  render(<SettingsKontoScreen />);
+  await screen.findByText(t('settingsKonto.pendingTitle'));
+
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');
+  fireEvent.press(screen.getByText(t('settingsKonto.confirmCodeButton')));
+
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Threads' }));
+});
+
+test('scheitert der Erstupload, bleibt der Nutzer beim Retry-Button', async () => {
+  mockVerifyOtp.mockResolvedValue({
+    data: {
+      session: {
+        access_token: 'tok',
+        user: { id: 'u1', email: 'louis@example.com', email_confirmed_at: '2026-01-01T00:00:00.000Z' },
+      },
+    },
+    error: null,
+  });
+  mockUploadLocalNotes.mockRejectedValueOnce(new Error('offline'));
+
+  render(<SettingsKontoScreen />);
+  await screen.findByText(t('settingsKonto.pendingTitle'));
+
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');
+  fireEvent.press(screen.getByText(t('settingsKonto.confirmCodeButton')));
+
+  // Der Retry lebt in diesem Screen — wegnavigieren wuerde ihn verstecken.
+  await screen.findByText(t('settingsKonto.retryUploadButton'));
+  expect(mockNavigate).not.toHaveBeenCalled();
 });
