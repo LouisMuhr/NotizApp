@@ -791,12 +791,11 @@ export default function SettingsKontoScreen() {
     }
     setLoading('request-password-token');
     try {
-      // `shouldCreateUser: false`: der Nutzer existiert, hier soll nur ein
-      // Code an ein bestehendes Konto gehen — niemals ein neues entstehen.
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: false, data: { locale } },
-      });
+      // Bewusst `resetPasswordForEmail` statt `signInWithOtp`: es zieht das
+      // Recovery-Template, das schon im Velm-Stil steht und den Code vorn
+      // zeigt. `signInWithOtp` haette ein drittes Template ("Magic Link")
+      // verlangt, nur um denselben Token anders zu verpacken.
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
       if (error) {
         const wait = Number(/(d+)s*seconds?/i.exec(error.message)?.[1]);
         if (Number.isFinite(wait) && wait > 0) {
@@ -831,11 +830,11 @@ export default function SettingsKontoScreen() {
     }
     setLoading('verify-password-token');
     try {
-      // 'email' ist der Typ fuer signInWithOtp-Codes (nicht 'signup').
+      // 'recovery' passt zum Token aus `resetPasswordForEmail`.
       const { data, error } = await supabase.auth.verifyOtp({
         email,
         token,
-        type: 'email',
+        type: 'recovery',
       });
       if (error || !data.session) {
         showToast(t('settingsKonto.toastPasswordCodeInvalid'), 'error');

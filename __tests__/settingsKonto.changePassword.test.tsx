@@ -11,7 +11,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const mockSignInWithOtp = jest.fn(async () => ({ error: null }));
+const mockResetPasswordForEmail = jest.fn(async () => ({ error: null }));
 const mockVerifyOtp = jest.fn();
 const mockUpdateUser = jest.fn(async () => ({ error: null }));
 const mockNavigate = jest.fn();
@@ -47,7 +47,7 @@ jest.mock('../src/sync/supabaseClient', () => ({
       // Angemeldet und bestaetigt — der Konto-Screen zeigt den secured-Block.
       getUser: async () => ({ data: { user: CONFIRMED_USER } }),
       getSession: async () => ({ data: { session: { access_token: 'tok', user: CONFIRMED_USER } } }),
-      signInWithOtp: mockSignInWithOtp,
+      resetPasswordForEmail: mockResetPasswordForEmail,
       verifyOtp: mockVerifyOtp,
       updateUser: mockUpdateUser,
     },
@@ -74,11 +74,9 @@ test('Schritt 1 fordert einen Code fuer das bestehende Konto an', async () => {
   render(<SettingsKontoScreen />);
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
 
-  await waitFor(() => expect(mockSignInWithOtp).toHaveBeenCalledWith({
-    email: 'louis@example.com',
-    // shouldCreateUser: false — hier darf nie ein neues Konto entstehen.
-    options: { shouldCreateUser: false, data: { locale: 'de' } },
-  }));
+  // resetPasswordForEmail zieht das Recovery-Template, das bereits im
+  // Velm-Stil steht — signInWithOtp haette ein drittes Template verlangt.
+  await waitFor(() => expect(mockResetPasswordForEmail).toHaveBeenCalledWith('louis@example.com'));
   await screen.findByText(t('settingsKonto.changePasswordCodeTitle'));
 });
 
@@ -99,7 +97,7 @@ test('erst nach eingeloestem Code erscheint das Passwortfeld', async () => {
   await waitFor(() => expect(mockVerifyOtp).toHaveBeenCalledWith({
     email: 'louis@example.com',
     token: '123456',
-    type: 'email',
+    type: 'recovery',
   }));
   await screen.findByPlaceholderText(t('settingsKonto.passwordPlaceholder'));
 });
