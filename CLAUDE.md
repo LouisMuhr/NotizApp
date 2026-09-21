@@ -129,6 +129,9 @@ Registrierung **und** Anmeldung navigieren **vor** dem Sync nach `Home/Threads` 
 danach im Hintergrund. Ein fehlgeschlagener Erstupload bleibt über `@notizapp_initial_upload_pending`
 gemerkt und taucht beim nächsten Öffnen des Konto-Screens als Retry auf.
 **Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab
+Der Reset **ersetzt die Registrierungs-Bestätigung nicht**: `verifyOtp({type:'recovery'})` würde
+`email_confirmed_at` als Nebeneffekt setzen — läuft noch eine unbestätigte Registrierung, bricht der
+Handler vor `updateUser()` ab und verwirft die Session.
 ein Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach
 greift `updateUser({password})`. Der Link der Mail würde die Session nur im Browser anlegen; ein
 Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) + Native Build. Mail-Templates

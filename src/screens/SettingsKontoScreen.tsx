@@ -16,6 +16,7 @@ import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
 import {
   AccountState, resolveAccountState, savePendingEmail, clearPendingEmail,
+  loadPendingEmail,
 } from '../sync/accountState';
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
@@ -676,6 +677,12 @@ export default function SettingsKontoScreen() {
    * einen neuen Native Build. `verifyOtp()` liefert die Session direkt hier.
    */
   const handleResetWithCode = async () => {
+    // Vor jedem Server-Call festhalten: laeuft fuer diese Adresse noch eine
+    // unbestaetigte Registrierung? Danach ist der Wert nicht mehr aussagekraeftig,
+    // weil verifyOtp() die Adresse als Nebeneffekt bestaetigt.
+    const pendingBefore =
+      accountState === 'pending-confirmation' ||
+      (await loadPendingEmail()) === resetCodeSentTo;
     const code = inputResetCode.trim();
     if (!code) {
       showToast(t('settingsKonto.toastEnterResetCode'), 'error');
@@ -708,6 +715,25 @@ export default function SettingsKontoScreen() {
       });
       if (otpError || !data.session) {
         showToast(t('settingsKonto.toastResetCodeInvalid'), 'error');
+        return;
+      }
+      /*
+       * Der Reset darf die Registrierungs-Bestaetigung nicht ersetzen.
+       *
+       * `verifyOtp({type:'recovery'})` setzt `email_confirmed_at` als
+       * Nebeneffekt — wer direkt nach der Registrierung "Passwort vergessen"
+       * waehlt, haette sein Konto sonst ohne die Bestaetigungsmail
+       * freigeschaltet.
+       *
+       * Geprueft wird der Zustand VOR dem Einloesen: `pendingBefore` stammt
+       * aus `accountState`/`@notizapp_pending_email` und damit aus der
+       * laufenden Registrierung — nicht aus dem gerade veraenderten User.
+       * Ein Zeitvergleich mit `email_confirmed_at` waere unzuverlaessig, weil
+       * er an der Geraeteuhr haengt.
+       */
+      if (pendingBefore) {
+        await supabase.auth.signOut().catch(() => {});
+        showToast(t('settingsKonto.toastResetNeedsConfirmed'), 'error');
         return;
       }
       // Schritt 2: erst mit dieser Session laesst sich das Passwort setzen.

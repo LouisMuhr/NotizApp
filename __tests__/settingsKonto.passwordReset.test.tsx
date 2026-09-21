@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const mockResetPasswordForEmail = jest.fn(async () => ({ error: null }));
 const mockVerifyOtp = jest.fn();
 const mockUpdateUser = jest.fn(async () => ({ error: null }));
+const mockSignOut = jest.fn(async () => ({ error: null }));
 const mockResyncForUser = jest.fn(async () => {});
 
 jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
@@ -49,6 +50,7 @@ jest.mock('../src/sync/supabaseClient', () => ({
       verifyOtp: mockVerifyOtp,
       updateUser: mockUpdateUser,
       signInWithPassword: jest.fn(),
+      signOut: mockSignOut,
     },
   }),
 }));
@@ -134,4 +136,26 @@ test('abweichende Passwort-Wiederholung loest den Code gar nicht erst ein', asyn
 
   await screen.findByText(t('settingsKonto.toastPasswordsMismatch'));
   expect(mockVerifyOtp).not.toHaveBeenCalled();
+});
+
+test('laufende Registrierung: der Reset ersetzt die Bestaetigung nicht', async () => {
+  // Kein pending-Screen: der Nutzer ist im Anmelden-Tab (Neustart, zweites
+  // Geraet). Der Merker verraet aber, dass die Bestaetigung noch aussteht.
+  mockVerifyOtp.mockResolvedValue({
+    data: { session: { access_token: 'tok', user: CONFIRMED_USER } },
+    error: null,
+  });
+  await requestResetCode();
+  await AsyncStorage.setItem('@notizapp_pending_email', 'louis@example.com');
+
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.resetCodePlaceholder')), '123456');
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.newPasswordPlaceholder')), 'neuesPw123');
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmPasswordPlaceholder')), 'neuesPw123');
+  fireEvent.press(screen.getByText(t('settingsKonto.resetSubmitButton')));
+
+  await screen.findByText(t('settingsKonto.toastResetNeedsConfirmed'));
+  // verifyOtp() haette die Adresse als Nebeneffekt bestaetigt — das Passwort
+  // darf trotzdem nicht gesetzt werden, und die Session wird verworfen.
+  expect(mockUpdateUser).not.toHaveBeenCalled();
+  expect(mockSignOut).toHaveBeenCalled();
 });

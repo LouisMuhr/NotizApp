@@ -370,6 +370,7 @@ const en: typeof de = {
     resetCancelLink: 'Cancel',
     toastEnterResetCode: 'Please enter the code from your email.',
     toastResetCodeInvalid: 'Code invalid or expired. Request a new one.',
+    toastResetNeedsConfirmed: 'Confirm your email address first. You can change your password afterwards.',
     toastResetSuccess: 'Password changed. You are now signed in.',
     // Initial upload
     uploadPendingTitle: 'Notes not uploaded yet',

@@ -369,6 +369,7 @@ export default {
     resetCancelLink: 'Abbrechen',
     toastEnterResetCode: 'Bitte den Code aus der E-Mail eingeben.',
     toastResetCodeInvalid: 'Code ungültig oder abgelaufen. Fordere einen neuen an.',
+    toastResetNeedsConfirmed: 'Bestätige zuerst deine E-Mail-Adresse. Danach kannst du dein Passwort ändern.',
     toastResetSuccess: 'Passwort geändert. Du bist jetzt angemeldet.',
     // Erstupload
     uploadPendingTitle: 'Notizen noch nicht hochgeladen',
