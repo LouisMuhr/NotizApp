@@ -4,14 +4,12 @@
 > Keep it under 200 lines — compress or merge sections if it grows beyond that.
 
 ## Project Overview
-
 NotizApp (Velm) is a German-language note-taking app in React Native / Expo: Notizen mit Checklisten,
 Kategorien, Erinnerungen, Pinning, Archiv und optionalem Supabase-Sync. Daneben „Thoughts/Brainstorm"
 (atomare Gedanken → Threads). Dazu eine **bridge** (Vercel serverless API + Browser-Bookmarklet) und eine
 **webapp** (Next.js Graph-Visualizer).
 
 ## Repository Layout
-
 ```
 c:/NotizApp/
 ├── NotizApp/              # Main Expo app (primary working directory)
@@ -27,16 +25,13 @@ c:/NotizApp/
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, …
-│   ├── bridge/            # Vercel serverless bridge API + worker
-│   │   ├── api/           # Functions: synthesize, note, bookmarklet-token, delete-user; _lib/ = shared
-│   │   ├── bookmarklet/   # Browser bookmarklet source
-│   │   └── worker/        # brainstorm-worker.mjs, similarity-worker.mjs (CLI-Helfer)
+│   ├── bridge/            # Vercel serverless: api/ (synthesize, note, bookmarklet-token,
+│   │                      #   delete-user, _lib/), bookmarklet/, worker/ (CLI-Helfer)
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
 
 ## Tech Stack
-
 | Layer | Library/Tool |
 |---|---|
 | Framework | React Native 0.81, Expo SDK 54 |
@@ -44,10 +39,8 @@ c:/NotizApp/
 | Navigation | React Navigation 7 (native-stack + bottom-tabs) |
 | UI | React Native Paper (MD3 light theme) |
 | Icons | `@expo/vector-icons` – MaterialCommunityIcons |
-| Local storage | AsyncStorage |
-| Remote sync | Supabase JS v2 (optional) |
-| Notifications | expo-notifications |
-| Haptics | expo-haptics |
+| Storage | AsyncStorage lokal, Supabase JS v2 remote (optional) |
+| Device | expo-notifications, expo-haptics |
 | IDs | uuid v13 + react-native-get-random-values |
 | Bridge API | Vercel serverless (ESM TypeScript) |
 | Share-Target | `expo-share-extension` (iOS) + `react-native-receive-sharing-intent` (Android) |
@@ -55,7 +48,6 @@ c:/NotizApp/
 | Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
 ## Build & Run Commands
-
 From `NotizApp/NotizApp/`:
 ```bash
 npx expo start [--android | --ios | --web]
@@ -68,22 +60,18 @@ Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`.
 Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 
 ## Environment Variables
-
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
-`EXPO_PUBLIC_BRIDGE_URL`. (`EXPO_PUBLIC_BRIDGE_BEARER` wird nicht mehr gelesen — kein Admin-Token im App-Bundle.)
+`EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle).
 Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 
 ## Architecture Notes
 
-### Provider tree (App.tsx)
+### Provider tree (App.tsx) & Navigation
 GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer →
-NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
-
-### Navigation
-- **Bottom tabs**: Threads, Notizen (HomeScreen), Archiv, Einstellungen
-- **Stack screens**: NoteDetail, Editor, ThreadDetail
+NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator).
+Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDetail, Editor, ThreadDetail.
 
 ### Data flow (Notizen)
 - `NotesContext` hält aktive **und** archivierte Notizen als einen Bestand (`allRef`); `archivedAt`
@@ -99,29 +87,47 @@ NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator)
   löschen = Tombstone + `deleteRemote()` (Batches à 200).
 - `resyncForUser(uid, mode)`: Default `'replace'` (Anmeldung = Zweitgerät, Kontostand gilt). `'merge'` nur
   beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
-  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler
-  bricht ab) — Details unten.
+  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler bricht
+  ab) — Details unten.
 
 ### Konto-Zustände (lokal-first)
 `src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
 `user.email_confirmed_at` abgeleitet, nie aus einem lokalen Flag. **Die App legt nie selbst einen
 Supabase-User an** — `local` ist der Default, Notizen bleiben rein lokal. `getUserId()`/`getSyncUserId()`
 liefern nur bei `secured` eine UID, damit sind die beiden anderen Zustände garantiert offline.
-Registrierung = `signUp()` → `pending-confirmation` (nicht optimistisch `secured`); erst nach Bestätigung
-läuft der einmalige `uploadLocalNotes()`, bei Fehler bleibt `@notizapp_initial_upload_pending` stehen und
-der Konto-Screen zeigt einen dauerhaften Retry. Gibt `signUp()` keine Session aus, rettet
-`@notizapp_pending_email` den Zustand über einen Neustart — „Bestätigung prüfen" fragt dann nach dem
-Passwort, weil der Status ohne Session nicht abfragbar ist. Weitere Keys: `@notizapp_first_seen` +
-`@notizapp_unsecured_dismissed` (Banner-Schwelle). Altlast: anonyme Sessions werden beim Start nur
-abgemeldet (`src/sync/legacyAnon.ts`); die verwaisten Anon-User wurden per SQL bereits abgeräumt.
+Registrierung = `signUp()` → `pending-confirmation` (nicht optimistisch `secured`); erst danach läuft der
+einmalige `uploadLocalNotes()`. Ohne Session aus `signUp()` rettet `@notizapp_pending_email` den Zustand
+über den Neustart. Weitere Keys: `@notizapp_first_seen` + `@notizapp_unsecured_dismissed`
+(Banner-Schwelle). Altlast: anonyme Sessions werden beim Start nur abgemeldet (`src/sync/legacyAnon.ts`).
 Trennen (`detachSync`, UI „Sync beenden") behält Notizen **und** Threads lokal und räumt Outbox +
 `@notizapp_sync_uid` ab, damit nichts ins nächste Konto leckt. Erstupload in ein **anderes** Konto
 vergibt neue Notiz-IDs: `notes.id` ist PK über alle User, RLS würde den Upsert sonst ablehnen. Alles
 löschen geht nur über Einstellungen → Datenschutz (lokal **und** remote). Synthese braucht ein
-bestätigtes Konto: Button bleibt sichtbar, ausgegraut („Konto erforderlich"), führt zum Konto-Screen.
-`UnsecuredBanner` warnt im Haupt-Screen ab 10 Notizen bzw. 7 Tagen (wegklickbar), bei
-`pending-confirmation` sofort; im Konto-Screen dauerhaft. Der Konto-Screen merkt sich in `busyAction`,
-**welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt (`disabled`) sind alle.
+bestätigtes Konto (Button ausgegraut, führt zum Konto-Screen). `UnsecuredBanner` warnt im Haupt-Screen ab
+10 Notizen bzw. 7 Tagen (wegklickbar), bei `pending-confirmation` sofort; im Konto-Screen dauerhaft.
+`busyAction` merkt, **welche** Aktion läuft: Spinner nur am gedrückten Button, gesperrt sind alle.
+**Bestätigung läuft per OTP**: `verifyOtp({type:'signup'})` bestätigt und liefert die Session in einem
+Schritt, danach `finishSecuring()`. Die Templates enthalten **keinen Link** mehr — Browser-Bestätigung
+scheitert ohnehin, Supabase hängt die Tokens als Fragment an. Registrierung **und** Anmeldung navigieren
+**vor** dem Sync nach `Home/Threads`; ein fehlgeschlagener Erstupload bleibt über
+`@notizapp_initial_upload_pending` gemerkt und erscheint beim nächsten Öffnen als Retry.
+**Abbruch der Registrierung löscht den unbestätigten User** (`handleCancelRegistration` →
+`deleteAccountCompletely()`), nach Alert-Rückfrage. Nur Abmelden ließe ihn mit `email_confirmed_at = null`
+stehen und die Adresse belegt: ein zweites `signUp()` meldet aus Enumeration-Schutz **keinen** Fehler,
+fällt aber ins Mail-Rate-Limit — die App behauptete einen Versand, der nie stattfand. Schlägt das Löschen
+fehl, bleibt der Zustand `pending` (keine Waise erzeugen); ohne Session fehlt das Token, dann wird nur
+lokal aufgeräumt und auf den alten Code verwiesen — ein Löschpfad ohne Auth käme nicht in Frage.
+**Passwort-Reset läuft per OTP, nicht per Deep Link**: `resetPasswordForEmail()` öffnet im Signin-Tab ein
+Code-Formular, `verifyOtp({type:'recovery'})` erzeugt die Session **in der App**, erst danach greift
+`updateUser({password})`. Ein Deep Link zurück bräuchte ein `scheme` in `app.json` (fehlt bewusst) +
+Native Build. Der Reset **ersetzt die Registrierungs-Bestätigung nicht**: `verifyOtp({type:'recovery'})`
+würde `email_confirmed_at` als Nebeneffekt setzen — läuft noch eine unbestätigte Registrierung, bricht der
+Handler vor `updateUser()` ab und verwirft die Session. **Passwortwechsel im secured-Block ist
+dreistufig**: Code anfordern (`signInWithOtp`, `shouldCreateUser: false`) → einlösen (`verifyOtp
+type:'email'`) → neues Passwort; eine Session allein darf nicht reichen, sonst übernähme jeder mit dem
+entsperrten Gerät das Konto. Mail-Templates: `supabase/templates/`, Code vor dem Link, zweisprachig über
+`{{ if eq .Data.locale "en" }}`; `signUp()` legt `locale` in den user_metadata ab, `setPreference()` zieht
+sie nach — der Versand kennt keine Sprache, sie muss vorher am User stehen.
 
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.
@@ -166,17 +172,17 @@ Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
-zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit (`src/utils/limitFormat.ts`,
-`formatAvailabilityParts()` → `lead`/`detail`), Grenze deterministisch aus Server-Feldern
+zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit
+(`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
 (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
 
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
 `SettingsAbo`. `tier` ist `Tier | null` — **`null` heisst „noch nicht bekannt", nie „free"**: die UI
-behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, `SettingsAbo` zeigt einen Spinner,
-Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler
-**nicht** auf `free` zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*.mjs` — lokale CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht
-Teil der API.
+behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in `SettingsAbo`, Synthese-Button
+gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf
+`free` zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*.mjs` sind lokale
+CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
 
 ## Code Conventions
 

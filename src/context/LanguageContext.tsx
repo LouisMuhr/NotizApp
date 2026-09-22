@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSupabase } from '../sync/supabaseClient';
 import {
   AppLocale,
   DEFAULT_LOCALE,
@@ -44,11 +45,36 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * Sprache am Supabase-User hinterlegen, damit die Mail-Templates sie als
+   * `{{ .Data.locale }}` lesen koennen.
+   *
+   * Der Versand selbst kennt die Sprache nicht: weder `resend()` noch
+   * `resetPasswordForEmail()` nehmen sie als Parameter. Sie muss also schon
+   * am User stehen, bevor eine Mail ausgeloest wird — gerade beim Reset, wo
+   * der Nutzer ausgesperrt ist und die App keine Session mehr hat.
+   *
+   * Ohne Konto ist das ein No-op; Fehler werden geschluckt, denn ein
+   * Sprachwechsel darf nie an der Netzverbindung scheitern.
+   */
+  const persistLocaleToAccount = async (next: AppLocale) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await supabase.auth.updateUser({ data: { locale: next } });
+    } catch (e) {
+      console.warn('[language] locale sync failed', e);
+    }
+  };
+
   const setPreference = (next: LanguagePreference) => {
     setPreferenceState(next);
     const resolved = next === 'system' ? detectDeviceLocale() : next;
     setLocale(resolved);
     setI18nLocale(resolved);
+    void persistLocaleToAccount(resolved);
     if (next === 'system') {
       AsyncStorage.removeItem(LANGUAGE_KEY);
     } else {
