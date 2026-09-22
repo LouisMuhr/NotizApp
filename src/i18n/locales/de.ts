@@ -357,6 +357,17 @@ export default {
     resendConfirmation: 'E-Mail erneut senden',
     resendCooldown: 'Erneut senden in %{seconds}s',
     cancelRegistrationButton: 'Registrierung abbrechen',
+    // Abbruch loescht den unbestaetigten Account serverseitig — sonst blockiert
+    // er die Adresse und Supabase schickt beim naechsten Versuch keine Mail.
+    cancelRegistrationConfirmTitle: 'Registrierung abbrechen?',
+    cancelRegistrationConfirmBody:
+      'Der angelegte Zugang wird gelöscht. Deine Notizen bleiben auf diesem Gerät. Du kannst dich danach jederzeit neu registrieren.',
+    cancelRegistrationConfirmOk: 'Abbrechen und löschen',
+    cancelRegistrationConfirmCancel: 'Zurück',
+    toastRegistrationCancelled: 'Registrierung abgebrochen. Die Adresse ist wieder frei.',
+    toastCancelFailed: 'Abbruch fehlgeschlagen. Bitte mit Internetverbindung erneut versuchen.',
+    toastCancelNoSession:
+      'Abbruch nur lokal möglich. Für eine neue Registrierung mit derselben Adresse bitte den Code aus der bereits erhaltenen E-Mail verwenden.',
     toastConfirmationSent: 'Bestätigungs-E-Mail gesendet. Bitte Postfach prüfen.',
     // Bestaetigung per Code (OTP) — kein Browser-Umweg noetig
     confirmCodeLabel: 'Bestätigungscode',

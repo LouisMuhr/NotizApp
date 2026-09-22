@@ -358,6 +358,17 @@ const en: typeof de = {
     resendConfirmation: 'Resend email',
     resendCooldown: 'Resend in %{seconds}s',
     cancelRegistrationButton: 'Cancel registration',
+    // Cancelling deletes the unconfirmed account server-side — otherwise it
+    // blocks the address and Supabase sends no mail on the next attempt.
+    cancelRegistrationConfirmTitle: 'Cancel registration?',
+    cancelRegistrationConfirmBody:
+      'The account that was created will be deleted. Your notes stay on this device. You can register again at any time.',
+    cancelRegistrationConfirmOk: 'Cancel and delete',
+    cancelRegistrationConfirmCancel: 'Back',
+    toastRegistrationCancelled: 'Registration cancelled. The address is free again.',
+    toastCancelFailed: 'Could not cancel. Please try again with an internet connection.',
+    toastCancelNoSession:
+      'Could only cancel locally. To register again with the same address, please use the code from the email you already received.',
     toastConfirmationSent: 'Confirmation email sent. Please check your inbox.',
     // Confirmation via code (OTP) — no browser detour required
     confirmCodeLabel: 'Confirmation code',

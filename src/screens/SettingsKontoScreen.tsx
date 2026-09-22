@@ -8,6 +8,7 @@ import {
   TextInput as RNTextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useTheme, Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import {
   AccountState, resolveAccountState, savePendingEmail, clearPendingEmail,
   loadPendingEmail,
 } from '../sync/accountState';
+import { deleteAccountCompletely } from '../sync/deleteAccount';
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
 import { Tokens } from '../theme/theme';
@@ -162,6 +164,7 @@ const fieldStyles = StyleSheet.create({
 type BusyAction =
   | 'retry-upload'
   | 'sign-out'
+  | 'cancel-registration'
   | 'sign-in'
   | 'upgrade'
   | 'resend-confirmation'
@@ -435,6 +438,88 @@ export default function SettingsKontoScreen() {
   };
 
   // ── Actions ──
+
+  /**
+   * Zurueck nach `local`: Sync abschalten, lokalen Notiz-Bestand behalten.
+   * Es wird KEIN neuer (anonymer) User erzeugt.
+   *
+   * Gemeinsamer Abschluss von Abmelden und Registrierungs-Abbruch. Aufrufer
+   * stellen vorher sicher, dass serverseitig nichts mehr offen ist — beim
+   * Abmelden eine erfolgreiche `signOut()`, beim Abbruch die Loeschung.
+   */
+  const resetToLocal = async () => {
+    clearUserIdCache();
+    await clearPendingEmail();
+    await detachSync();
+    await detachThreadsSync();
+    await refreshSubscription();
+    setEmail('');
+    setUploadRetryUid(null);
+    setAccountState('local');
+    navigation.navigate('Home', { screen: 'Threads' });
+  };
+
+  /**
+   * Registrierung abbrechen — loescht den noch unbestaetigten Supabase-User.
+   *
+   * Ein blosses Abmelden wuerde den Eintrag mit `email_confirmed_at = null`
+   * stehen lassen. Die Adresse waere damit belegt: ein erneutes `signUp()`
+   * liefert aus Enumeration-Schutz zwar keinen Fehler, faellt aber ins
+   * Mail-Rate-Limit — der Nutzer bekaeme nie wieder eine Bestaetigungsmail und
+   * die App behauptete trotzdem, eine verschickt zu haben.
+   */
+  const handleCancelRegistration = async () => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
+      return;
+    }
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        t('settingsKonto.cancelRegistrationConfirmTitle'),
+        t('settingsKonto.cancelRegistrationConfirmBody'),
+        [
+          { text: t('settingsKonto.cancelRegistrationConfirmCancel'), style: 'cancel', onPress: () => resolve(false) },
+          { text: t('settingsKonto.cancelRegistrationConfirmOk'), style: 'destructive', onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+    if (!confirmed) return;
+
+    setLoading('cancel-registration');
+    try {
+      // Ohne Session gab `signUp()` keine aus (daher `@notizapp_pending_email`,
+      // siehe accountState.ts). Dann fehlt das Token, mit dem sich der User
+      // selbst loeschen koennte — und ein Loeschpfad ohne Authentifizierung
+      // kaeme nicht in Frage, er liesse fremde Registrierungen abraeumen.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        await resetToLocal();
+        showToast(t('settingsKonto.toastCancelNoSession'), 'info');
+        return;
+      }
+      // Schlaegt die Loeschung fehl, bleibt der Zustand `pending-confirmation`:
+      // ein lokaler Reset wuerde genau die Waise erzeugen, die wir vermeiden.
+      try {
+        await deleteAccountCompletely();
+      } catch (e: any) {
+        console.warn('[account] cancel registration failed', e);
+        showToast(t('settingsKonto.toastCancelFailed'), 'error');
+        return;
+      }
+      // Die Session ist serverseitig mit dem User weg — ein Fehler hier darf
+      // den bereits erfolgten Abbruch nicht mehr aufhalten.
+      await supabase.auth.signOut().catch(() => {});
+      await resetToLocal();
+      showToast(t('settingsKonto.toastRegistrationCancelled'), 'success');
+    } catch (e: any) {
+      showToast(t('settingsKonto.toastCancelFailed'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -457,17 +542,7 @@ export default function SettingsKontoScreen() {
         showToast(t('settingsKonto.toastSignOutFailed') + error.message, 'error');
         return;
       }
-      clearUserIdCache();
-      await clearPendingEmail();
-      // Zurueck nach `local`: Sync abschalten, lokalen Notiz-Bestand behalten.
-      // Es wird KEIN neuer (anonymer) User erzeugt.
-      await detachSync();
-      await detachThreadsSync();
-      await refreshSubscription();
-      setEmail('');
-      setUploadRetryUid(null);
-      setAccountState('local');
-      navigation.navigate('Home', { screen: 'Threads' });
+      await resetToLocal();
     } catch (e: any) {
       showToast(t('settingsKonto.toastSignOutFailed') + (e?.message ?? 'Unbekannter Fehler'), 'error');
     } finally {
@@ -1122,8 +1197,8 @@ export default function SettingsKontoScreen() {
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <PrimaryButton
                 label={t('settingsKonto.cancelRegistrationButton')}
-                onPress={handleSignOut}
-                loading={busyAction === 'sign-out'}
+                onPress={handleCancelRegistration}
+                loading={busyAction === 'cancel-registration'}
                 disabled={loading}
                 danger
               />
