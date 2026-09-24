@@ -4,6 +4,10 @@
 //   • voice  → Mikrofon-Button + Live-Transkript via expo-speech-recognition
 //   • text   → TextInput-Fallback (Long-Press auf FAB, oder "Lieber tippen")
 //
+// Titel: Knopf „Titel diktieren“ (alle User, sprachunabhängig). Pro: diktierte
+// Notizen strukturiert Claude beim Speichern (Checkliste, Kategorie, Erinnerung)
+// über /api/parse-note — schlägt das fehl, wird das Diktat unverändert gespeichert.
+//
 // Benötigt Custom Dev Build (EAS) für Spracherkennung. Im Expo Go läuft
 // der Text-Modus; beim Tippen auf Mikrofon zeigt sich ein Hinweis.
 
@@ -18,10 +22,12 @@ import {
   Keyboard,
   Animated,
   Easing,
+  Alert,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 let ExpoSpeechRecognitionModule: any = null;
 let useSpeechRecognitionEvent: (event: string, handler: (e: any) => void) => void =
   () => {};
@@ -42,6 +48,13 @@ import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
+import { isVoiceAiEnabled } from '../utils/voiceAiPref';
+import { structuredToNote } from '../utils/structuredNote';
+import { parseNoteRemote } from '../sync/parseNote';
+import { isSyncConfigured } from '../sync/supabaseClient';
+import { resolveAccountState } from '../sync/accountState';
+
+type Target = 'title' | 'content';
 
 interface Props {
   visible: boolean;
@@ -49,13 +62,16 @@ interface Props {
   onClose: () => void;
 }
 
+const join = (a: string, b: string) => (a && b ? `${a} ${b}` : a || b);
+
 export default function VoiceCaptureSheet({
   visible,
   initialMode = 'voice',
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { addNote } = useNotes();
+  const navigation = useNavigation<any>();
+  const { addNote, tier, categories } = useNotes();
   const { t, locale } = useLanguage();
 
   const [mode, setMode] = useState<'voice' | 'text'>(
@@ -64,10 +80,22 @@ export default function VoiceCaptureSheet({
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
+  const [titleText, setTitleText] = useState('');
+  const [titlePartial, setTitlePartial] = useState('');
+  // Wohin die laufende Erkennung schreibt. Gewechselt wird nur zwischen zwei
+  // Sitzungen (Stop → Neustart), weil iOS im Dauerbetrieb erst beim Stoppen ein
+  // finales Ergebnis liefert — ein Wechsel mitten in der Sitzung würde Text
+  // zwischen Titel und Inhalt verschieben.
+  const [target, setTarget] = useState<Target>('content');
+  const sessionTargetRef = useRef<Target>('content');
+  const pendingRestartRef = useRef<Target | null>(null);
+  // Vom User (oder beim Schließen) gestoppt: das nachlaufende finale Ergebnis
+  // darf die Erkennung nicht automatisch neu starten.
+  const stoppedRef = useRef(false);
   // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
   // (switching to "Lieber tippen" and typing everything is not a voice note).
   const [dictated, setDictated] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [saving, setSaving] = useState<null | 'saving' | 'structuring'>(null);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const keyboardShift = useRef(new Animated.Value(0)).current;
@@ -138,50 +166,17 @@ export default function VoiceCaptureSheet({
     }
   }, [isListening, pulseAnim]);
 
-  useSpeechRecognitionEvent('start', () => setIsListening(true));
-  useSpeechRecognitionEvent('end', () => setIsListening(false));
-  useSpeechRecognitionEvent('result', (event) => {
-    const text = event.results[0]?.transcript ?? '';
-    if (text.trim()) setDictated(true);
-    if (event.isFinal) {
-      setTranscript((prev) => (prev ? `${prev} ${text}` : text).trim());
-      setPartialTranscript('');
-    } else {
-      setPartialTranscript(text);
-    }
-  });
-  useSpeechRecognitionEvent('error', (event) => {
-    console.warn('[voice] Fehler:', event.error, event.message);
-    setIsListening(false);
-  });
-
-  useEffect(() => {
-    if (!visible) {
-      if (isListening) {
-        ExpoSpeechRecognitionModule.stop();
-      }
-      Keyboard.dismiss();
-      keyboardShift.setValue(0);
-      setKeyboardOffset(0);
-      setTranscript('');
-      setPartialTranscript('');
-      setDictated(false);
-      setIsListening(false);
-      setMode(initialMode);
-    }
-  }, [visible, initialMode]);
-
-  const requestPermissionAndStart = useCallback(async () => {
-    if (!speechAvailable || !ExpoSpeechRecognitionModule) return;
-    haptics.medium();
-    const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    setPermissionGranted(granted);
-    if (!granted) return;
-
+  const startRecognition = useCallback((into: Target) => {
+    sessionTargetRef.current = into;
+    stoppedRef.current = false;
+    setTarget(into);
     ExpoSpeechRecognitionModule.start({
       lang: locale === 'en' ? 'en-US' : 'de-DE',
       continuous: true,
       interimResults: true,
+      // Satzzeichen + Großschreibung durch die Erkennung (iOS 16+, Android 13+;
+      // ältere Systeme ignorieren die Option).
+      addsPunctuation: true,
       iosCategory: {
         category: AVAudioSessionCategory.playAndRecord,
         categoryOptions: [],
@@ -190,7 +185,76 @@ export default function VoiceCaptureSheet({
     });
   }, [locale]);
 
+  useSpeechRecognitionEvent('start', () => setIsListening(true));
+  useSpeechRecognitionEvent('end', () => {
+    setIsListening(false);
+    const next = pendingRestartRef.current;
+    pendingRestartRef.current = null;
+    if (next) startRecognition(next);
+  });
+  useSpeechRecognitionEvent('result', (event) => {
+    const text = event.results[0]?.transcript ?? '';
+    if (text.trim()) setDictated(true);
+    const intoTitle = sessionTargetRef.current === 'title';
+    if (event.isFinal) {
+      if (intoTitle) {
+        setTitleText((prev) => join(prev, text).trim());
+        setTitlePartial('');
+        // Titel steht — zurück auf Inhalt, ohne dass der User nochmal tippt.
+        if (!pendingRestartRef.current && !stoppedRef.current) {
+          pendingRestartRef.current = 'content';
+          ExpoSpeechRecognitionModule.stop();
+        }
+      } else {
+        setTranscript((prev) => join(prev, text).trim());
+        setPartialTranscript('');
+      }
+    } else if (intoTitle) {
+      setTitlePartial(text);
+    } else {
+      setPartialTranscript(text);
+    }
+  });
+  useSpeechRecognitionEvent('error', (event) => {
+    console.warn('[voice] Fehler:', event.error, event.message);
+    pendingRestartRef.current = null;
+    setIsListening(false);
+  });
+
+  useEffect(() => {
+    if (!visible) {
+      pendingRestartRef.current = null;
+      stoppedRef.current = true;
+      if (isListening) {
+        ExpoSpeechRecognitionModule.stop();
+      }
+      Keyboard.dismiss();
+      keyboardShift.setValue(0);
+      setKeyboardOffset(0);
+      setTranscript('');
+      setPartialTranscript('');
+      setTitleText('');
+      setTitlePartial('');
+      setTarget('content');
+      sessionTargetRef.current = 'content';
+      setDictated(false);
+      setIsListening(false);
+      setMode(initialMode);
+    }
+  }, [visible, initialMode]);
+
+  const requestPermissionAndStart = useCallback(async (into: Target) => {
+    if (!speechAvailable || !ExpoSpeechRecognitionModule) return;
+    haptics.medium();
+    const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    setPermissionGranted(granted);
+    if (!granted) return;
+    startRecognition(into);
+  }, [startRecognition]);
+
   const stopListening = useCallback(() => {
+    pendingRestartRef.current = null;
+    stoppedRef.current = true;
     if (speechAvailable && ExpoSpeechRecognitionModule) {
       ExpoSpeechRecognitionModule.stop();
     }
@@ -201,7 +265,23 @@ export default function VoiceCaptureSheet({
     if (isListening) {
       stopListening();
     } else {
-      requestPermissionAndStart();
+      requestPermissionAndStart(target);
+    }
+  };
+
+  // Titel-Knopf: schaltet das Ziel um. Läuft die Erkennung, wird die Sitzung
+  // beendet (ihr Text landet noch im alten Ziel) und ins neue Ziel neu gestartet.
+  const toggleTitleTarget = () => {
+    const next: Target = target === 'title' ? 'content' : 'title';
+    haptics.tap();
+    if (isListening) {
+      pendingRestartRef.current = next;
+      setTarget(next);
+      ExpoSpeechRecognitionModule.stop();
+    } else if (next === 'title' && speechAvailable) {
+      requestPermissionAndStart('title');
+    } else {
+      setTarget(next);
     }
   };
 
@@ -213,35 +293,65 @@ export default function VoiceCaptureSheet({
     setMode(next);
   }, []);
 
+  const displayText = join(transcript, partialTranscript);
+  const displayTitle = join(titleText, titlePartial);
+  const canSave = displayText.trim().length > 0 || displayTitle.trim().length > 0;
+  const tierKnown = tier !== null;
+  const showProHint = speechAvailable && tierKnown && tier !== 'pro';
+
   const handleSave = async () => {
-    const content = (transcript + (partialTranscript ? ` ${partialTranscript}` : '')).trim();
-    if (!content) return;
-    setIsSaving(true);
+    if (!canSave || saving) return;
+    if (isListening) stopListening();
+    const title = displayTitle.trim();
+    const content = displayText.trim();
+    const plainNote = {
+      title,
+      content,
+      category: 'Allgemein',
+      isPinned: false,
+      checklist: [],
+      reminderAt: null,
+      reminderRecurrence: 'once' as const,
+      reminderWeekday: null,
+      reminderDayOfMonth: null,
+      feedsThreads: false,
+      source: dictated ? ('voice' as const) : ('app' as const),
+    };
+
+    let aiNotice: string | null = null;
+    let note: Parameters<typeof addNote>[0] = plainNote;
+
+    const wantsAi = dictated && !!content && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+    if (wantsAi) {
+      setSaving('structuring');
+      const account = await resolveAccountState().catch(() => null);
+      if (account?.state === 'secured') {
+        const res = await parseNoteRemote({ transcript: content, title, categories, locale });
+        if ('result' in res) {
+          note = structuredToNote(res.result);
+        } else if (res.error === 'limit_reached') {
+          aiNotice = t('voiceCapture.aiLimit');
+        } else if (res.error === 'unavailable') {
+          aiNotice = t('voiceCapture.aiUnavailable');
+        }
+      }
+    }
+
+    setSaving('saving');
     haptics.success();
     try {
-      await addNote({
-        title: '',
-        content,
-        category: 'Allgemein',
-        isPinned: false,
-        checklist: [],
-        reminderAt: null,
-        reminderRecurrence: 'once',
-        reminderWeekday: null,
-        reminderDayOfMonth: null,
-        feedsThreads: false,
-        source: dictated ? 'voice' : 'app',
-      });
+      await addNote(note);
       onClose();
+      if (aiNotice) Alert.alert(t('voiceCapture.aiFallbackTitle'), aiNotice);
     } catch (e) {
       console.warn('[capture] addNote fehlgeschlagen', e);
     } finally {
-      setIsSaving(false);
+      setSaving(null);
     }
   };
 
-  const displayText = transcript + (partialTranscript ? (transcript ? ' ' : '') + partialTranscript : '');
-  const canSave = displayText.trim().length > 0;
+  const titleActive = target === 'title';
+  const listeningInto = isListening ? target : null;
 
   return (
     <Modal
@@ -288,7 +398,7 @@ export default function VoiceCaptureSheet({
 
           {mode === 'voice' ? (
             <>
-              {/* Transkript-Anzeige */}
+              {/* Transkript-Anzeige: Titelzeile + Inhalt */}
               <View
                 style={[
                   styles.transcriptBox,
@@ -298,14 +408,27 @@ export default function VoiceCaptureSheet({
                   },
                 ]}
               >
-                {displayText ? (
-                  <Text style={[styles.transcriptText, { color: Tokens.ink }]}>
-                    {displayText}
-                    {isListening && (
+                {displayTitle || titleActive ? (
+                  <Text
+                    style={[
+                      styles.transcriptTitle,
+                      { color: displayTitle ? Tokens.ink : Tokens.inkFaint },
+                    ]}
+                  >
+                    {displayTitle || t('voiceCapture.titlePlaceholder')}
+                    {listeningInto === 'title' && (
                       <Text style={{ color: Tokens.amber }}> |</Text>
                     )}
                   </Text>
-                ) : (
+                ) : null}
+                {displayText ? (
+                  <Text style={[styles.transcriptText, { color: Tokens.ink }]}>
+                    {displayText}
+                    {listeningInto === 'content' && (
+                      <Text style={{ color: Tokens.amber }}> |</Text>
+                    )}
+                  </Text>
+                ) : !titleActive ? (
                   <Text
                     style={[
                       styles.transcriptText,
@@ -316,8 +439,39 @@ export default function VoiceCaptureSheet({
                       ? t('voiceCapture.listening')
                       : t('voiceCapture.tapToSpeak')}
                   </Text>
-                )}
+                ) : null}
               </View>
+
+              {/* Titel-Knopf */}
+              {speechAvailable && (
+                <View style={styles.chipRow}>
+                  <Pressable
+                    onPress={toggleTitleTarget}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: titleActive }}
+                    style={[
+                      styles.chip,
+                      titleActive
+                        ? { backgroundColor: Tokens.amber, borderColor: Tokens.amber }
+                        : { backgroundColor: Tokens.paperDeep, borderColor: Tokens.rule },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="format-title"
+                      size={16}
+                      color={titleActive ? Tokens.paper : Tokens.inkDim}
+                    />
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: titleActive ? Tokens.paper : Tokens.inkDim },
+                      ]}
+                    >
+                      {titleActive ? t('voiceCapture.titleChipActive') : t('voiceCapture.titleChip')}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
 
               {/* Mikrofon-Button */}
               <View style={styles.micRow}>
@@ -353,6 +507,19 @@ export default function VoiceCaptureSheet({
                   {t('voiceCapture.micDenied')}
                 </Text>
               )}
+              {showProHint && (
+                <Pressable
+                  onPress={() => {
+                    if (isListening) stopListening();
+                    onClose();
+                    navigation.navigate('SettingsAbo');
+                  }}
+                >
+                  <Text style={[styles.hintText, { color: Tokens.inkFaint }]}>
+                    {t('voiceCapture.proHint')}
+                  </Text>
+                </Pressable>
+              )}
 
               <Pressable onPress={() => switchMode('text')} style={styles.switchRow}>
                 <MaterialCommunityIcons
@@ -367,6 +534,21 @@ export default function VoiceCaptureSheet({
             </>
           ) : (
             <>
+              <TextInput
+                value={titleText}
+                onChangeText={setTitleText}
+                placeholder={t('voiceCapture.titlePlaceholder')}
+                placeholderTextColor={Tokens.inkFaint}
+                returnKeyType="next"
+                style={[
+                  styles.titleInput,
+                  {
+                    color: Tokens.ink,
+                    backgroundColor: Tokens.paperDeep,
+                    borderColor: Tokens.paperEdge,
+                  },
+                ]}
+              />
               <TextInput
                 autoFocus
                 multiline
@@ -415,22 +597,26 @@ export default function VoiceCaptureSheet({
 
             <Pressable
               onPress={handleSave}
-              disabled={!canSave || isSaving}
+              disabled={!canSave || !!saving}
               style={[
                 styles.btnSave,
                 {
-                  backgroundColor: canSave && !isSaving ? Tokens.ink : Tokens.paperEdge,
+                  backgroundColor: canSave && !saving ? Tokens.ink : Tokens.paperEdge,
                 },
               ]}
             >
               <Text
                 style={{
-                  color: canSave && !isSaving ? Tokens.paper : Tokens.inkFaint,
+                  color: canSave && !saving ? Tokens.paper : Tokens.inkFaint,
                   fontWeight: '700',
                   fontSize: 15,
                 }}
               >
-                {isSaving ? t('voiceCapture.saving') : t('voiceCapture.save')}
+                {saving === 'structuring'
+                  ? t('voiceCapture.structuring')
+                  : saving
+                    ? t('voiceCapture.saving')
+                    : t('voiceCapture.save')}
               </Text>
             </Pressable>
           </View>
@@ -477,12 +663,36 @@ const styles = StyleSheet.create({
     padding: 16,
     minHeight: 110,
     justifyContent: 'flex-start',
-    marginBottom: 24,
+    marginBottom: 14,
+  },
+  transcriptTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontFamily: 'InstrumentSerif_400Regular',
+    marginBottom: 6,
   },
   transcriptText: {
     fontSize: 16,
     lineHeight: 24,
     fontFamily: 'Inter_400Regular',
+  },
+  chipRow: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    fontWeight: '600',
   },
   micRow: {
     alignItems: 'center',
@@ -518,6 +728,15 @@ const styles = StyleSheet.create({
   switchText: {
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  titleInput: {
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontFamily: 'InstrumentSerif_400Regular',
+    marginBottom: 10,
   },
   textInput: {
     borderRadius: Radii.md,

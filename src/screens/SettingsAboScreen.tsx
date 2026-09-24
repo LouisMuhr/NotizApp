@@ -72,6 +72,7 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
         { icon: 'priority-high', text: t('settingsAbo.plans.pro.features.2') },
         { icon: 'graph-outline', text: t('settingsAbo.plans.pro.features.3') },
         { icon: 'headset', text: t('settingsAbo.plans.pro.features.4') },
+        { icon: 'microphone-outline', text: t('settingsAbo.plans.pro.features.5') },
       ],
     },
   };

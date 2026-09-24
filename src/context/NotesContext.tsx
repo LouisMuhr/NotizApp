@@ -19,6 +19,7 @@ import {
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
+import { loadVoiceAiPref } from '../utils/voiceAiPref';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
 
 export type ResyncMode = 'merge' | 'replace';
@@ -329,6 +330,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       haptics.loadHapticsPref().catch(() => {});
+      loadVoiceAiPref().catch(() => {});
       const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones, loadedPending] = await Promise.all([
         loadNotes(), loadCategories(), loadArchive(), loadTombstones(), loadPendingSync(),
       ]);

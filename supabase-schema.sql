@@ -159,7 +159,9 @@ create table if not exists public.profiles (
   ai_runs_today int not null default 0,
   ai_day_reset  date,
   created_at    timestamptz default now(),
-  bookmarklet_token_hash text                   -- SHA-256 des persoenlichen Bookmarklet-Schluessels
+  bookmarklet_token_hash text,                  -- SHA-256 des persoenlichen Bookmarklet-Schluessels
+  voice_ai_runs_today int not null default 0,   -- /api/parse-note: Laeufe am UTC-Tag voice_ai_day_reset
+  voice_ai_day_reset  date
 );
 
 create unique index if not exists profiles_bookmarklet_token_hash_idx

@@ -24,9 +24,8 @@ c:/NotizApp/
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
-│   │   └── utils/         # notifications, haptics, timeGrouping, …
-│   ├── bridge/            # Vercel serverless: api/ (synthesize, note, bookmarklet-token,
-│   │                      #   delete-user, _lib/), bookmarklet/, worker/ (CLI-Helfer)
+│   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, voiceAiPref, …
+│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), bookmarklet/, worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
@@ -134,10 +133,9 @@ Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`
 Jede Zeile gehört einem `auth.users`-User via `user_id` (Ausnahme `thought_threads`:
 gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) — Queries
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
-Schema source: `supabase-schema.sql` (frisch) bzw. `supabase-migration-2026-09-17.sql` (Delta für bestehende
-Projekte: `notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`,
-`profiles.bookmarklet_token_hash`). Die RPC `migrate_user` ist funktionslos (Altlast des anonymen
-Modells) und kann gedroppt werden.
+Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projekte: `supabase-migration-2026-09-17.sql`
+(`notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`, `profiles.bookmarklet_token_hash`),
+`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte,
@@ -176,13 +174,15 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
 (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
 
-**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
-Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
-`SettingsAbo`. `tier` ist `Tier | null` — **`null` heisst „noch nicht bekannt", nie „free"**: die UI
-behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in `SettingsAbo`, Synthese-Button
-gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf
-`free` zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*.mjs` sind lokale
-CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
+**KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
+in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter (`voiceAiPref`) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
+Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
+
+**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
+Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
+**`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
+`SettingsAbo`, Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf `free`
+zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
 
 ## Code Conventions
 
