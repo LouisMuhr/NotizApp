@@ -8,8 +8,9 @@
  * behauptete. Deshalb gilt: geloescht oder gar nichts.
  */
 import React from 'react';
-import { Alert } from 'react-native';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
+// Portal-Host fuer den Dialog (in der App liefert ihn App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const mockDeleteAccount = jest.fn(async () => {});
@@ -55,16 +56,6 @@ jest.mock('../src/sync/supabaseClient', () => ({
 const SettingsKontoScreen = require('../src/screens/SettingsKontoScreen').default;
 const { t } = require('../src/i18n');
 
-/** Alert ist in jest-expo kein echter Dialog — die Auswahl wird direkt gedrueckt. */
-function answerAlert(choice: 'confirm' | 'cancel') {
-  jest.spyOn(Alert, 'alert').mockImplementation(((_title: string, _msg: string, buttons: any[]) => {
-    const btn = choice === 'confirm'
-      ? buttons.find((b) => b.style === 'destructive')
-      : buttons.find((b) => b.style === 'cancel');
-    btn?.onPress?.();
-  }) as any);
-}
-
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
@@ -72,19 +63,27 @@ beforeEach(async () => {
   mockGetSession.mockResolvedValue({ data: { session: { access_token: 'tok' } } });
 });
 
-afterEach(() => {
-  jest.restoreAllMocks();
-});
-
-async function pressCancel() {
-  render(<SettingsKontoScreen />);
+/**
+ * Der Abbruch-Button oeffnet nur den Dialog; erst dessen Aktion loescht. Beides
+ * ist echtes UI (Paper-Dialog, kein `Alert.alert`) und wird auch so gedrueckt.
+ */
+async function openCancelDialog() {
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
   fireEvent.press(screen.getByText(t('settingsKonto.cancelRegistrationButton')));
+  await screen.findByText(t('settingsKonto.cancelRegistrationConfirmBody'));
+}
+
+async function answerDialog(choice: 'confirm' | 'cancel') {
+  const label = choice === 'confirm'
+    ? t('settingsKonto.cancelRegistrationConfirmOk')
+    : t('settingsKonto.cancelRegistrationConfirmCancel');
+  fireEvent.press(screen.getByText(label));
 }
 
 test('bestaetigter Abbruch loescht den User und geht nach `local`', async () => {
-  answerAlert('confirm');
-  await pressCancel();
+  await openCancelDialog();
+  await answerDialog('confirm');
 
   await waitFor(() => expect(mockDeleteAccount).toHaveBeenCalled());
   await waitFor(() => expect(mockDetachNotes).toHaveBeenCalled());
@@ -97,9 +96,9 @@ test('bestaetigter Abbruch loescht den User und geht nach `local`', async () => 
   await waitFor(() => expect(screen.queryByText(t('settingsKonto.tabSecure'))).not.toBeNull());
 });
 
-test('abgelehnter Alert aendert nichts', async () => {
-  answerAlert('cancel');
-  await pressCancel();
+test('abgelehnter Dialog aendert nichts', async () => {
+  await openCancelDialog();
+  await answerDialog('cancel');
 
   await new Promise((r) => setTimeout(r, 50));
   expect(mockDeleteAccount).not.toHaveBeenCalled();
@@ -108,10 +107,18 @@ test('abgelehnter Alert aendert nichts', async () => {
   expect(screen.queryByText(t('settingsKonto.tabSecure'))).toBeNull();
 });
 
+test('der Button allein loescht noch nichts — erst die Bestaetigung', async () => {
+  await openCancelDialog();
+
+  await new Promise((r) => setTimeout(r, 50));
+  expect(mockDeleteAccount).not.toHaveBeenCalled();
+  expect(mockDetachNotes).not.toHaveBeenCalled();
+});
+
 test('scheiternde Loeschung laesst den Zustand pending — keine Waise erzeugen', async () => {
-  answerAlert('confirm');
   mockDeleteAccount.mockRejectedValueOnce(new Error('offline'));
-  await pressCancel();
+  await openCancelDialog();
+  await answerDialog('confirm');
 
   await screen.findByText(t('settingsKonto.toastCancelFailed'));
   expect(mockDetachNotes).not.toHaveBeenCalled();
@@ -121,11 +128,11 @@ test('scheiternde Loeschung laesst den Zustand pending — keine Waise erzeugen'
 });
 
 test('ohne Session wird nur lokal abgeraeumt, mit Hinweis auf die alte Mail', async () => {
-  answerAlert('confirm');
   // signUp() ohne Session: es gibt kein Token, mit dem sich der User selbst
   // loeschen koennte — ein Loeschpfad ohne Auth kommt nicht in Frage.
   mockGetSession.mockResolvedValue({ data: { session: null } });
-  await pressCancel();
+  await openCancelDialog();
+  await answerDialog('confirm');
 
   await screen.findByText(t('settingsKonto.toastCancelNoSession'));
   expect(mockDeleteAccount).not.toHaveBeenCalled();

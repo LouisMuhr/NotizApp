@@ -8,9 +8,8 @@ import {
   TextInput as RNTextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
-import { useTheme, Text, ActivityIndicator } from 'react-native-paper';
+import { useTheme, Text, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { getSupabase } from '../sync/supabaseClient';
@@ -285,6 +284,12 @@ export default function SettingsKontoScreen() {
    * aber nur der gedrueckte (`busyAction`).
    */
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  /**
+   * Rueckfrage vor dem Abbruch. Bewusst ein Paper-Dialog wie im Archiv und im
+   * Editor statt `Alert.alert`: der native Dialog bricht aus dem Papier-Look
+   * aus — weder Farben noch Radien noch die Schrift lassen sich mitziehen.
+   */
+  const [cancelDialogVisible, setCancelDialogVisible] = useState(false);
   const loading = busyAction !== null;
   const setLoading = (action: BusyAction | false) =>
     setBusyAction(action === false ? null : action);
@@ -469,24 +474,14 @@ export default function SettingsKontoScreen() {
    * die App behauptete trotzdem, eine verschickt zu haben.
    */
   const handleCancelRegistration = async () => {
+    // Der Dialog schliesst zuerst: der Spinner gehoert an den Button im Screen,
+    // nicht unter einen halb offenen Dialog.
+    setCancelDialogVisible(false);
     const supabase = getSupabase();
     if (!supabase) {
       showToast(t('settingsKonto.toastSyncNotConfigured'), 'error');
       return;
     }
-    const confirmed = await new Promise<boolean>((resolve) => {
-      Alert.alert(
-        t('settingsKonto.cancelRegistrationConfirmTitle'),
-        t('settingsKonto.cancelRegistrationConfirmBody'),
-        [
-          { text: t('settingsKonto.cancelRegistrationConfirmCancel'), style: 'cancel', onPress: () => resolve(false) },
-          { text: t('settingsKonto.cancelRegistrationConfirmOk'), style: 'destructive', onPress: () => resolve(true) },
-        ],
-        { cancelable: true, onDismiss: () => resolve(false) },
-      );
-    });
-    if (!confirmed) return;
-
     setLoading('cancel-registration');
     try {
       // Ohne Session gab `signUp()` keine aus (daher `@notizapp_pending_email`,
@@ -1197,7 +1192,7 @@ export default function SettingsKontoScreen() {
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
               <PrimaryButton
                 label={t('settingsKonto.cancelRegistrationButton')}
-                onPress={handleCancelRegistration}
+                onPress={() => setCancelDialogVisible(true)}
                 loading={busyAction === 'cancel-registration'}
                 disabled={loading}
                 danger
@@ -1355,11 +1350,47 @@ export default function SettingsKontoScreen() {
         )}
 
       </ScrollView>
+
+      {/* Rueckfrage vor dem Abbruch — destruktiv, der Zugang wird geloescht. */}
+      <Portal>
+        <Dialog
+          visible={cancelDialogVisible}
+          onDismiss={() => setCancelDialogVisible(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>
+            {t('settingsKonto.cancelRegistrationConfirmTitle')}
+          </Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              {t('settingsKonto.cancelRegistrationConfirmBody')}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => setCancelDialogVisible(false)}
+              textColor={theme.colors.onSurfaceVariant}
+            >
+              {t('settingsKonto.cancelRegistrationConfirmCancel')}
+            </Button>
+            <Button
+              onPress={handleCancelRegistration}
+              mode="contained"
+              buttonColor={theme.colors.errorContainer}
+              textColor={theme.colors.error}
+              style={{ borderRadius: 12 }}
+            >
+              {t('settingsKonto.cancelRegistrationConfirmOk')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  dialog: { borderRadius: 24 },
   content: {
     padding: 16,
     paddingBottom: 100,
