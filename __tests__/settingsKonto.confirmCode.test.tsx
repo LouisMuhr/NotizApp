@@ -10,6 +10,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Portal-Host fuer den Abbruch-Dialog im Screen (in der App steht er in App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 
 const mockVerifyOtp = jest.fn();
 const mockSignInWithPassword = jest.fn();
@@ -59,7 +61,7 @@ beforeEach(async () => {
 });
 
 test('pending-confirmation zeigt die Code-Eingabe', async () => {
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   expect(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder'))).toBeTruthy();
@@ -76,7 +78,7 @@ test('gueltiger Code bestaetigt das Konto und startet den Erstupload', async () 
     error: null,
   });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');
@@ -98,7 +100,7 @@ test('gueltiger Code bestaetigt das Konto und startet den Erstupload', async () 
 test('ungueltiger Code sichert das Konto nicht', async () => {
   mockVerifyOtp.mockResolvedValue({ data: { session: null }, error: { message: 'Token has expired' } });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '000000');
@@ -109,7 +111,7 @@ test('ungueltiger Code sichert das Konto nicht', async () => {
 });
 
 test('kein Passwort-Fallback mehr: der Code ist der einzige Weg', async () => {
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   // Die Templates enthalten keinen Link mehr — ein "Bestaetigung pruefen"
@@ -131,7 +133,7 @@ test('nach dem Sichern geht es in den Notes-Screen', async () => {
     error: null,
   });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');
@@ -152,7 +154,7 @@ test('scheitert der Erstupload, geht es trotzdem weiter — der Retry bleibt gem
   });
   mockUploadLocalNotes.mockRejectedValueOnce(new Error('offline'));
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')), '123456');

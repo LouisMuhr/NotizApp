@@ -6,6 +6,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Portal-Host fuer den Abbruch-Dialog im Screen (in der App steht er in App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 
 const mockDetachNotes = jest.fn();
 const mockDetachThreads = jest.fn(async () => {});
@@ -59,7 +61,7 @@ beforeEach(async () => {
 test('A3: signOut() scheitert (offline) → Sync bleibt aktiv, kein Wechsel nach `local`', async () => {
   mockSignOut.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', message: 'Network request failed', status: 0 } });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   const btn = await screen.findByText(t('settingsKonto.signOutButton'));
   fireEvent.press(btn);
 
@@ -75,7 +77,7 @@ test('A3: signOut() scheitert (offline) → Sync bleibt aktiv, kein Wechsel nach
 test('signOut() erfolgreich → zurueck nach `local`, kein neuer anonymer User', async () => {
   mockSignOut.mockResolvedValue({ error: null });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   const btn = await screen.findByText(t('settingsKonto.signOutButton'));
   fireEvent.press(btn);
 

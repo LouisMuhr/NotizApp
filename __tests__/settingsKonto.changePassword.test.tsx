@@ -10,6 +10,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Portal-Host fuer den Abbruch-Dialog im Screen (in der App steht er in App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 
 const mockResetPasswordForEmail = jest.fn(async () => ({ error: null }));
 const mockVerifyOtp = jest.fn();
@@ -63,7 +65,7 @@ beforeEach(async () => {
 });
 
 test('ohne Code gibt es kein Passwortfeld — nur den Anforderungs-Button', async () => {
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.requestPasswordTokenButton'));
 
   // Genau das war die Luecke: hier stand frueher direkt das Formular.
@@ -71,7 +73,7 @@ test('ohne Code gibt es kein Passwortfeld — nur den Anforderungs-Button', asyn
 });
 
 test('Schritt 1 fordert einen Code fuer das bestehende Konto an', async () => {
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
 
   // resetPasswordForEmail zieht das Recovery-Template, das bereits im
@@ -86,7 +88,7 @@ test('erst nach eingeloestem Code erscheint das Passwortfeld', async () => {
     error: null,
   });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),
@@ -105,7 +107,7 @@ test('erst nach eingeloestem Code erscheint das Passwortfeld', async () => {
 test('falscher Code fuehrt nicht zum Passwortfeld', async () => {
   mockVerifyOtp.mockResolvedValue({ data: { session: null }, error: { message: 'expired' } });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),
@@ -124,7 +126,7 @@ test('nach dem Wechsel geht es zurueck in den Threads-Screen', async () => {
     error: null,
   });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),

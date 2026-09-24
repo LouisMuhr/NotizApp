@@ -9,6 +9,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Portal-Host fuer den Abbruch-Dialog im Screen (in der App steht er in App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 
 const mockResend = jest.fn();
 
@@ -55,7 +57,7 @@ beforeEach(async () => {
 test('nach erfolgreichem Versand laeuft der Countdown am Button', async () => {
   mockResend.mockResolvedValue({ error: null });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.press(screen.getByText(t('settingsKonto.resendConfirmation')));
@@ -71,7 +73,7 @@ test('Rate-Limit-Fehler wandert in den Countdown statt in einen Roh-Toast', asyn
     error: { message: 'For security purposes, you can only request this after 47 seconds.' },
   });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.press(screen.getByText(t('settingsKonto.resendConfirmation')));
@@ -85,7 +87,7 @@ test('Rate-Limit-Fehler wandert in den Countdown statt in einen Roh-Toast', asyn
 test('andere Fehler bleiben ein Toast', async () => {
   mockResend.mockResolvedValue({ error: { message: 'Network unreachable' } });
 
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   await screen.findByText(t('settingsKonto.pendingTitle'));
 
   fireEvent.press(screen.getByText(t('settingsKonto.resendConfirmation')));

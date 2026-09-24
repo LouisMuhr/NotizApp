@@ -11,6 +11,8 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Portal-Host fuer den Abbruch-Dialog im Screen (in der App steht er in App.tsx).
+import { Provider as PaperProvider } from 'react-native-paper';
 
 const mockResetPasswordForEmail = jest.fn(async () => ({ error: null }));
 const mockVerifyOtp = jest.fn();
@@ -72,7 +74,7 @@ beforeEach(async () => {
 
 /** Vom lokalen Zustand bis zum abgeschickten Reset-Code. */
 async function requestResetCode() {
-  render(<SettingsKontoScreen />);
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.press(await screen.findByText(t('settingsKonto.tabSignIn')));
   fireEvent.changeText(
     screen.getByPlaceholderText(t('settingsKonto.emailPlaceholder')),
