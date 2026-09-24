@@ -66,23 +66,46 @@ export default function VoiceCaptureSheet({
   const [partialTranscript, setPartialTranscript] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const keyboardShift = useRef(new Animated.Value(0)).current;
+  const overlayRef = useRef<View>(null);
 
-  // On iOS the Modal does not resize for the keyboard, so we measure it and lift
-  // the sheet via marginBottom. On Android the translucent Modal window already
-  // resizes natively (adjustResize) — adding our own offset there would double the
-  // gap, so we keep keyboardHeight at 0 on Android and let the system handle it.
+  // Neither platform resizes the Modal for the keyboard: iOS never does, and with
+  // edgeToEdgeEnabled the Android dialog window is edge-to-edge too, so adjustResize
+  // is a no-op there. We lift the sheet by how far the keyboard overlaps the overlay
+  // (measured, not the raw keyboard height) — should a system ever resize the window
+  // itself, the overlap is 0 and we don't add a second gap.
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-    const showSub = Keyboard.addListener('keyboardWillShow', (e) =>
-      setKeyboardHeight(e.endCoordinates?.height ?? 0),
-    );
-    const hideSub = Keyboard.addListener('keyboardWillHide', () => setKeyboardHeight(0));
+    const animateTo = (value: number, duration?: number) => {
+      setKeyboardOffset(value);
+      Animated.timing(keyboardShift, {
+        toValue: -value,
+        duration: duration && duration > 0 ? duration : 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    };
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const keyboardTop = e.endCoordinates?.screenY;
+      const fallback = e.endCoordinates?.height ?? 0;
+      const overlay = overlayRef.current;
+      if (keyboardTop == null || !overlay) {
+        animateTo(fallback, e.duration);
+        return;
+      }
+      overlay.measureInWindow((_x, y, _w, h) => {
+        const overlap = h > 0 ? y + h - keyboardTop : fallback;
+        animateTo(Math.max(0, overlap), e.duration);
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (e) => animateTo(0, e?.duration));
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [keyboardShift]);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -134,6 +157,8 @@ export default function VoiceCaptureSheet({
         ExpoSpeechRecognitionModule.stop();
       }
       Keyboard.dismiss();
+      keyboardShift.setValue(0);
+      setKeyboardOffset(0);
       setTranscript('');
       setPartialTranscript('');
       setIsListening(false);
@@ -175,9 +200,9 @@ export default function VoiceCaptureSheet({
     }
   };
 
-  // Switching modes must dismiss the keyboard. On Android, unmounting the focused
-  // TextInput alone doesn't reliably close it, so KeyboardAvoidingView keeps its
-  // shrunk frame and the sheet's button row stays pushed off-screen.
+  // Switching to voice must dismiss the keyboard. On Android, unmounting the focused
+  // TextInput alone doesn't reliably close it, so no hide event fires and the sheet
+  // would stay lifted above a keyboard that is no longer needed.
   const switchMode = useCallback((next: 'voice' | 'text') => {
     if (next === 'voice') Keyboard.dismiss();
     setMode(next);
@@ -223,21 +248,22 @@ export default function VoiceCaptureSheet({
         onClose();
       }}
     >
-      <View style={styles.overlay}>
+      <View ref={overlayRef} style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={() => {
           if (isListening) stopListening();
           onClose();
         }} />
 
-        <View
+        <Animated.View
           style={[
             styles.sheet,
             Shadows.softWarm,
             Insets.cardBorder,
             {
               backgroundColor: Tokens.paper,
-              paddingBottom: Math.max(insets.bottom, 20),
-              marginBottom: keyboardHeight,
+              // With the keyboard up the home indicator / nav bar sits behind it.
+              paddingBottom: keyboardOffset > 0 ? 16 : Math.max(insets.bottom, 20),
+              transform: [{ translateY: keyboardShift }],
             },
           ]}
         >
@@ -402,7 +428,7 @@ export default function VoiceCaptureSheet({
               </Text>
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
