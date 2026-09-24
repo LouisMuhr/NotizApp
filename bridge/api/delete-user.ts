@@ -5,7 +5,7 @@
  * Loescht ausschliesslich den Aufrufer selbst (auth.users → Cascade auf alle
  * Tabellen). Kein Admin-Token, keine UID im Body (X1).
  */
-import { readEnv, setCors, bearerToken, verifyToken } from './_lib/supabaseAdmin';
+import { readEnv, setCors, bearerToken, verifyToken } from './_lib/supabaseAdmin.js';
 
 export default async function handler(req: any, res: any) {
   setCors(res);

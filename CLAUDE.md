@@ -165,7 +165,7 @@ Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** au
 → `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` nutzt stattdessen den persönlichen
 Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert, ab Tier `basic`).
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
-Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
+Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht

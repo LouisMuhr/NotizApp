@@ -10,7 +10,8 @@
  * (Default: basic, Entscheidung 7).
  */
 import { randomBytes } from 'node:crypto';
-import { readEnv, setCors, bearerToken, verifyToken, sbHeaders, sha256, fetchProfile, tierAtLeast, Tier } from './_lib/supabaseAdmin';
+import { readEnv, setCors, bearerToken, verifyToken, sbHeaders, sha256, fetchProfile, tierAtLeast } from './_lib/supabaseAdmin.js';
+import type { Tier } from './_lib/supabaseAdmin.js';
 
 export default async function handler(req: any, res: any) {
   setCors(res, 'POST, DELETE, OPTIONS');

@@ -10,8 +10,10 @@
  * gelesenen Zaehlerstand, damit parallele Requests nicht beide durchrutschen) und
  * bei Fehlern auf unserer Seite zurueckgegeben. Das Diktat wird nie geloggt.
  */
-import { readEnv, setCors, bearerToken, verifyToken, sbHeaders, tierAtLeast, Env, Tier } from './_lib/supabaseAdmin';
-import { structureWithClaude, sanitizeStructured, ParseNoteAiError, ParseNoteInput } from './_lib/parseNoteAi';
+import { readEnv, setCors, bearerToken, verifyToken, sbHeaders, tierAtLeast } from './_lib/supabaseAdmin.js';
+import type { Env, Tier } from './_lib/supabaseAdmin.js';
+import { structureWithClaude, sanitizeStructured, ParseNoteAiError } from './_lib/parseNoteAi.js';
+import type { ParseNoteInput } from './_lib/parseNoteAi.js';
 
 export const VOICE_AI_DAILY_LIMIT = 30;
 
