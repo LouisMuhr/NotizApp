@@ -27,7 +27,14 @@ export interface Note {
    * nicht als Loeschung auf den anderen ankommt.
    */
   archivedAt?: string | null;
+  /**
+   * Herkunft der Notiz (Spalte notes.source). Fehlt sie, gilt 'app'. Wird beim
+   * Pull mitgelesen, damit ein erneuter Voll-Upload sie nicht überschreibt.
+   */
+  source?: NoteSource;
 }
+
+export type NoteSource = 'app' | 'voice' | 'share' | 'bookmarklet';
 
 export type SortField = 'updatedAt' | 'createdAt' | 'title' | 'category';
 export type SortOrder = 'asc' | 'desc';

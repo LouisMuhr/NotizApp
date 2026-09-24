@@ -39,6 +39,7 @@ export default function ShareHandler() {
             reminderWeekday: null,
             reminderDayOfMonth: null,
             feedsThreads: false,
+            source: 'share',
           }).catch((e: unknown) => console.warn('[share] addNote failed', e));
         }
       }

@@ -1,4 +1,4 @@
-import { Note, ChecklistItem, ReminderRecurrence } from '../models/Note';
+import { Note, ChecklistItem, ReminderRecurrence, NoteSource } from '../models/Note';
 import { getSupabase } from './supabaseClient';
 
 interface RemoteRow {
@@ -40,6 +40,7 @@ function rowToNote(row: RemoteRow): Note {
     notificationId: null,
     feedsThreads: row.feeds_threads ?? false,
     archivedAt: row.archived_at ?? null,
+    source: (row.source as NoteSource | null | undefined) ?? 'app',
   };
 }
 
@@ -58,7 +59,7 @@ function noteToRow(userId: string, note: Note) {
     reminder_recurrence: note.reminderRecurrence,
     reminder_weekday: note.reminderWeekday,
     reminder_day_of_month: note.reminderDayOfMonth,
-    source: 'app',
+    source: note.source ?? 'app',
     feeds_threads: note.feedsThreads,
     archived_at: note.archivedAt ?? null,
   };

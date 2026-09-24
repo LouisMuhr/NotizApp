@@ -56,8 +56,7 @@ npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
 
-Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`.
-Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
+Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
@@ -80,6 +79,7 @@ Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDe
   `@notizapp_tier_cache` (zuletzt bestätigter Tier, an die UID gebunden).
 - Jede Mutation: pending markieren → `commit()` (State sofort, Writes serialisiert; bei Write-Fehler Reload
   von Platte) → `pushRemote()`. Updates gehen als **PATCH nur geänderter Felder** (`upsertRemote(uid, note, patch)`).
+  `Note.source` (`app|voice|share|bookmarklet`, Default `app`) wird gepullt und beim Voll-Upload zurückgeschrieben.
 - Start/Vordergrund/Resync: `pullRemote()` (paginiert) → `mergeWithRemote()` in `src/sync/mergeNotes.ts`
   (LWW auf `updatedAt`; lokale Notizen werden **nie** stillschweigend verworfen: pending oder UID-Wechsel →
   hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
@@ -196,5 +196,4 @@ CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
-- **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
-             Arbeite nie am main branch, außer ich bitte darum
+- **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben. Arbeite nie am main branch, außer ich bitte darum

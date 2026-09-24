@@ -64,6 +64,9 @@ export default function VoiceCaptureSheet({
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
+  // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
+  // (switching to "Lieber tippen" and typing everything is not a voice note).
+  const [dictated, setDictated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -139,6 +142,7 @@ export default function VoiceCaptureSheet({
   useSpeechRecognitionEvent('end', () => setIsListening(false));
   useSpeechRecognitionEvent('result', (event) => {
     const text = event.results[0]?.transcript ?? '';
+    if (text.trim()) setDictated(true);
     if (event.isFinal) {
       setTranscript((prev) => (prev ? `${prev} ${text}` : text).trim());
       setPartialTranscript('');
@@ -161,6 +165,7 @@ export default function VoiceCaptureSheet({
       setKeyboardOffset(0);
       setTranscript('');
       setPartialTranscript('');
+      setDictated(false);
       setIsListening(false);
       setMode(initialMode);
     }
@@ -225,6 +230,7 @@ export default function VoiceCaptureSheet({
         reminderWeekday: null,
         reminderDayOfMonth: null,
         feedsThreads: false,
+        source: dictated ? 'voice' : 'app',
       });
       onClose();
     } catch (e) {
