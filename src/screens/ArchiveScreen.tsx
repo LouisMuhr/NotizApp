@@ -220,11 +220,19 @@ export default function ArchiveScreen() {
   const theme = useTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
-  const { archivedNotes, restoreNote, deleteNotePermanently } = useNotes();
+  const { archivedNotes, restoreNote, deleteNotePermanently, deleteAllArchivedNotes } = useNotes();
   const { threads, restoreThread, deleteThreadPermanently } = useThoughts();
 
   const archivedThreads = threads.filter((t) => t.status === 'archived');
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteAllVisible, setDeleteAllVisible] = useState(false);
+
+  const handleDeleteAll = useCallback(async () => {
+    setDeleteAllVisible(false);
+    haptics.medium();
+    await deleteAllArchivedNotes();
+    for (const thread of archivedThreads) deleteThreadPermanently(thread.id);
+  }, [archivedThreads, deleteAllArchivedNotes, deleteThreadPermanently]);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -252,11 +260,26 @@ export default function ArchiveScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <Text style={styles.headerEyebrow}>
-          {totalCount === 0 ? t('archive.empty') : t('archive.itemsCount', { count: totalCount })}
-        </Text>
-        <Text style={styles.headerTitle}>{t('archive.title')}</Text>
+      <View style={[styles.header, styles.headerRow]}>
+        <View style={styles.headerTitleCol}>
+          <Text style={styles.headerEyebrow}>
+            {totalCount === 0 ? t('archive.empty') : t('archive.itemsCount', { count: totalCount })}
+          </Text>
+          <Text style={styles.headerTitle}>{t('archive.title')}</Text>
+        </View>
+        {totalCount > 0 && (
+          <Pressable
+            onPress={() => { haptics.light(); setDeleteAllVisible(true); }}
+            style={({ pressed }) => [
+              styles.deleteAllBtn,
+              { backgroundColor: theme.colors.errorContainer },
+              pressed && { opacity: 0.75 },
+            ]}
+          >
+            <MaterialCommunityIcons name="trash-can-outline" size={16} color={theme.colors.error} style={{ marginRight: 6 }} />
+            <Text style={[styles.deleteAllText, { color: theme.colors.error }]}>{t('archive.deleteAll')}</Text>
+          </Pressable>
+        )}
       </View>
 
       {totalCount === 0 ? (
@@ -339,6 +362,32 @@ export default function ArchiveScreen() {
             </Button>
           </Dialog.Actions>
         </Dialog>
+        <Dialog
+          visible={deleteAllVisible}
+          onDismiss={() => setDeleteAllVisible(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('archive.deleteAllDialogTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              {t('archive.deleteAllBody', { count: totalCount })}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDeleteAllVisible(false)} textColor={theme.colors.onSurfaceVariant}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onPress={handleDeleteAll}
+              mode="contained"
+              buttonColor={theme.colors.errorContainer}
+              textColor={theme.colors.error}
+              style={{ borderRadius: 12 }}
+            >
+              {t('archive.deleteAll')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
     </View>
   );
@@ -346,6 +395,25 @@ export default function ArchiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  headerTitleCol: { flexShrink: 1 },
+  deleteAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  deleteAllText: {
+    fontFamily: Fonts.sansSemibold,
+    fontSize: 13,
+    lineHeight: 17,
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,

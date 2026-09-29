@@ -122,6 +122,12 @@ const en: typeof de = {
     deleteDialogTitle: 'Delete permanently?',
     deleteThreadBody: 'Thread "{{title}}" will be permanently deleted.',
     deleteNoteBody: '"{{title}}" will be permanently deleted.',
+    deleteAll: 'Delete all',
+    deleteAllDialogTitle: 'Empty archive?',
+    deleteAllBody: {
+      one: '{{count}} item will be permanently deleted.',
+      other: 'All {{count}} items will be permanently deleted.',
+    },
   },
   threads: {
     title: 'Threads',

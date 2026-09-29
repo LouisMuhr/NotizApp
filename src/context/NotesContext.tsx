@@ -47,6 +47,8 @@ interface NotesContextType {
   deleteNote: (id: string) => Promise<void>;
   restoreNote: (id: string) => Promise<void>;
   deleteNotePermanently: (id: string) => Promise<void>;
+  /** Löscht alle archivierten Notizen endgültig (ein Commit, Tombstones gebündelt). */
+  deleteAllArchivedNotes: () => Promise<void>;
   togglePin: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
@@ -583,6 +585,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await addTombstones([id]);
   }, [commit, addTombstones]);
 
+  const deleteAllArchivedNotes = useCallback(async () => {
+    const archived = allRef.current.filter((n) => n.archivedAt);
+    if (archived.length === 0) return;
+    for (const note of archived) {
+      if (note.notificationId) await cancelReminder(note.notificationId).catch(() => {});
+    }
+    await commit(allRef.current.filter((n) => !n.archivedAt));
+    await addTombstones(archived.map((n) => n.id));
+  }, [commit, addTombstones]);
+
   const togglePin = useCallback(async (id: string) => {
     const note = allRef.current.find((n) => n.id === id);
     if (!note) return;
@@ -741,6 +753,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteNote,
         restoreNote,
         deleteNotePermanently,
+        deleteAllArchivedNotes,
         togglePin,
         addCategory,
         deleteCategory,

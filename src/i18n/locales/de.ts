@@ -120,6 +120,12 @@ export default {
     deleteDialogTitle: 'Endgültig löschen?',
     deleteThreadBody: 'Thread „{{title}}" wird unwiderruflich gelöscht.',
     deleteNoteBody: '„{{title}}" wird unwiderruflich gelöscht.',
+    deleteAll: 'Alle löschen',
+    deleteAllDialogTitle: 'Archiv leeren?',
+    deleteAllBody: {
+      one: '{{count}} Element wird unwiderruflich gelöscht.',
+      other: 'Alle {{count}} Elemente werden unwiderruflich gelöscht.',
+    },
   },
   threads: {
     title: 'Threads',
