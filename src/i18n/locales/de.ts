@@ -88,6 +88,8 @@ export default {
     save: 'Speichern',
     savedToast: 'Gespeichert',
     saveFailedToast: 'Speichern fehlgeschlagen – zu wenig Speicherplatz?',
+    reminderIncompleteOnce: 'Bitte wähle für die Erinnerung Datum und Uhrzeit aus.',
+    reminderIncompleteRecurring: 'Bitte wähle für die Erinnerung eine Uhrzeit aus.',
     allDoneTitle: 'Alle erledigt!',
     resetChecklistBody: 'Checkliste zurücksetzen, um sie erneut zu verwenden?',
     recurrenceOnce: 'Einmalig',

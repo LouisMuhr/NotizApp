@@ -90,6 +90,8 @@ const en: typeof de = {
     save: 'Save',
     savedToast: 'Saved',
     saveFailedToast: 'Saving failed – out of storage?',
+    reminderIncompleteOnce: 'Please pick a date and time for the reminder.',
+    reminderIncompleteRecurring: 'Please pick a time for the reminder.',
     allDoneTitle: 'All done!',
     resetChecklistBody: 'Reset checklist to use it again?',
     recurrenceOnce: 'Once',
