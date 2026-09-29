@@ -6,6 +6,7 @@ import { useNotes } from '../context/NotesContext';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
+import { weekdayLabel } from '../models/Note';
 
 interface Props {
   navigation: any;
@@ -49,7 +50,7 @@ export default function NoteDetailScreen({ navigation, route }: Props) {
       case 'daily':
         return t('editor.reminderDaily', { time });
       case 'weekly':
-        return t('editor.reminderWeekly', { weekday: t('editor.weekdays')[note.reminderWeekday ?? 2], time });
+        return t('editor.reminderWeekly', { weekday: weekdayLabel(t('editor.weekdays'), note.reminderWeekday ?? 2), time });
       case 'monthly':
         return t('editor.reminderMonthly', { day: note.reminderDayOfMonth ?? 1, time });
       default:

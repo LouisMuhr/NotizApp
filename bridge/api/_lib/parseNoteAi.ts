@@ -64,13 +64,13 @@ const SYSTEM_PROMPT = `Du strukturierst eine diktierte Notiz fuer eine Notiz-App
 
 Felder:
 - title: kurze Ueberschrift (max. ca. 6 Woerter) in der Sprache des Diktats. Ist "fixed_title" gesetzt, gib ihn exakt so zurueck.
-- content: der eigentliche Text. Behalte den Wortlaut des Nutzers bei, korrigiere nur offensichtliche Erkennungsfehler und Satzzeichen. Erfinde nichts dazu. Saetze, die nur die Erinnerung festlegen ("erinner mich morgen um 9"), und Punkte, die in die Checkliste wandern, gehoeren NICHT mehr in content. Leerer String ist erlaubt.
+- content: der eigentliche Text. Behalte den Wortlaut des Nutzers bei, korrigiere nur offensichtliche Erkennungsfehler und Satzzeichen. Erfinde nichts dazu. Nur die reine Zeitangabe der Erinnerung ("erinner mich morgen um 9 Uhr") und Punkte, die in die Checkliste wandern, gehoeren NICHT mehr in content. Worum es bei der Erinnerung geht (WOFUER, WORAN, WAS mitzunehmen ist) bleibt IMMER in content: "Erinner mich morgen um 9 an den Zahnarzttermin, Versicherungskarte mitnehmen" → content "Zahnarzttermin, Versicherungskarte mitnehmen". Der Titel ersetzt den Inhalt nie. Leerer String ist nur erlaubt, wenn das Diktat ausser Zeitangabe wirklich nichts enthaelt.
 - checklist: nur wenn das Diktat eine Aufzaehlung von Dingen oder Aufgaben enthaelt (Einkaufsliste, To-dos, Packliste). Ein Eintrag pro Punkt, kurz. Sonst leeres Array.
 - category: exakt einer der Werte aus "categories". Passt keiner eindeutig, nimm "Allgemein".
 - reminder: nur wenn der Nutzer ausdruecklich erinnert werden will oder einen Termin mit Zeitpunkt nennt. Sonst null.
   - at: lokaler Zeitpunkt "YYYY-MM-DDTHH:mm". Datum IMMER aus der Kalendertabelle ablesen, nicht selbst rechnen. Ohne Uhrzeit: 09:00.
   - recurrence: "once" (einmalig), "daily" (taeglich), "weekly" (jede Woche an einem Wochentag), "monthly" (jeden Monat an einem Tag).
-  - weekday: nur bei "weekly": 1=Sonntag, 2=Montag, 3=Dienstag, 4=Mittwoch, 5=Donnerstag, 6=Freitag, 7=Samstag. Sonst null.
+  - weekday: nur bei "weekly": 1=Sonntag, 2=Montag, 3=Dienstag, 4=Mittwoch, 5=Donnerstag, 6=Freitag, 7=Samstag. Sonst null. "at" muss auf genau diesen Wochentag fallen.
   - day_of_month: nur bei "monthly": 1-31. Sonst null.
   - Bei "weekly"/"monthly"/"daily" ist "at" das naechste Vorkommen.
 
@@ -150,7 +150,7 @@ const clean = (s: unknown, max: number) => (typeof s === 'string' ? s.trim().sli
  */
 export function sanitizeStructured(raw: RawStructured, input: ParseNoteInput): StructuredNote | null {
   const title = input.title ? input.title.slice(0, 200) : clean(raw.title, 200);
-  const content = clean(raw.content, 20000);
+  let content = clean(raw.content, 20000);
   const checklist = (Array.isArray(raw.checklist) ? raw.checklist : [])
     .map((s) => clean(s, 300))
     .filter(Boolean)
@@ -167,17 +167,18 @@ export function sanitizeStructured(raw: RawStructured, input: ParseNoteInput): S
       reminder = {
         at: r.at,
         recurrence: r.recurrence,
-        weekday:
-          r.recurrence === 'weekly'
-            ? Number.isInteger(r.weekday) && r.weekday! >= 1 && r.weekday! <= 7 ? r.weekday : dateWeekday
-            : null,
-        dayOfMonth:
-          r.recurrence === 'monthly'
-            ? Number.isInteger(r.day_of_month) && r.day_of_month! >= 1 && r.day_of_month! <= 31 ? r.day_of_month : d
-            : null,
+        // Wochentag/Monatstag kommen aus `at` (per Kalendertabelle abgelesen), nicht aus den
+        // Zahlen des Modells: die verwechselt es (Montag → 3 = Dienstag). "at ist das naechste
+        // Vorkommen" macht beides eindeutig.
+        weekday: r.recurrence === 'weekly' ? dateWeekday : null,
+        dayOfMonth: r.recurrence === 'monthly' ? d : null,
       };
     }
   }
+
+  // Modell hat den ganzen Satz als Erinnerungssatz verworfen: lieber das rohe
+  // Diktat behalten als den Inhalt verlieren (Nutzer loescht Ueberfluessiges, nicht Fehlendes).
+  if (reminder && !content && checklist.length === 0) content = clean(input.transcript, 20000);
 
   if (!title && !content && checklist.length === 0) return null;
   return { title, content, checklist, category, reminder };

@@ -1,12 +1,28 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useTheme, Text } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { openExactAlarmSettings, openBatteryOptimizationSettings, scheduleTestNotification } from '../utils/notifications';
+import {
+  openExactAlarmSettings,
+  openBatteryOptimizationSettings,
+  scheduleTestNotification,
+  scheduleTestRecurring,
+  getScheduledReminders,
+  ScheduledReminderInfo,
+} from '../utils/notifications';
+import { ReminderRecurrence } from '../models/Note';
 import { withAlpha } from '../utils/categoryColors';
 import { useLanguage } from '../context/LanguageContext';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+const RECURRENCE_TESTS: { recurrence: ReminderRecurrence; icon: IconName; key: string }[] = [
+  { recurrence: 'once', icon: 'numeric-1-circle-outline', key: 'testOnce' },
+  { recurrence: 'daily', icon: 'calendar-today', key: 'testDaily' },
+  { recurrence: 'weekly', icon: 'calendar-week', key: 'testWeekly' },
+  { recurrence: 'monthly', icon: 'calendar-month-outline', key: 'testMonthly' },
+];
 
 function ActionRow({
   icon,
@@ -49,7 +65,14 @@ function ActionRow({
 
 export default function SettingsBenachrichtigungenScreen() {
   const theme = useTheme();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const [scheduled, setScheduled] = useState<ScheduledReminderInfo[]>([]);
+
+  const loadScheduled = useCallback(() => {
+    getScheduledReminders().then(setScheduled).catch(() => setScheduled([]));
+  }, []);
+
+  useFocusEffect(loadScheduled);
 
   return (
     <ScrollView
@@ -93,6 +116,66 @@ export default function SettingsBenachrichtigungenScreen() {
           sublabel={t('settingsBenachrichtigungen.triggersIn5Sec')}
           showDivider={false}
           onPress={() => scheduleTestNotification()}
+        />
+      </View>
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsBenachrichtigungen.testRecurrenceSection')}
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {RECURRENCE_TESTS.map(({ recurrence, icon, key }, i) => (
+          <ActionRow
+            key={recurrence}
+            icon={icon}
+            label={t(`settingsBenachrichtigungen.${key}`)}
+            showDivider={i < RECURRENCE_TESTS.length - 1}
+            onPress={async () => {
+              const now = new Date(Date.now() + 10_000);
+              await scheduleTestRecurring(recurrence, now.getDay() + 1, now.getDate(), 10);
+              loadScheduled();
+            }}
+          />
+        ))}
+      </View>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsBenachrichtigungen.testRecurrenceHint')}
+      </Text>
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsBenachrichtigungen.scheduledSection')}
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {scheduled.length === 0 ? (
+          <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant, margin: 16 }]}>
+            {t('settingsBenachrichtigungen.noneScheduled')}
+          </Text>
+        ) : (
+          scheduled.map((s) => (
+            <View key={s.id} style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={{ color: theme.colors.onSurface, fontSize: 14, fontWeight: '500' }} numberOfLines={1}>
+                  {s.title}
+                </Text>
+                <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 1 }}>
+                  {s.nextAt
+                    ? t('settingsBenachrichtigungen.nextAt', {
+                        date: s.nextAt.toLocaleString(locale === 'en' ? 'en-US' : 'de-DE', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }),
+                      })
+                    : t('settingsBenachrichtigungen.nextUnknown')}
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
+        <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />
+        <ActionRow
+          icon="refresh"
+          label={t('settingsBenachrichtigungen.refresh')}
+          showDivider={false}
+          onPress={loadScheduled}
         />
       </View>
     </ScrollView>

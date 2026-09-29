@@ -199,9 +199,30 @@ test('weekly ohne gueltigen Wochentag → Wochentag aus dem Datum (Expo 1=So)', 
   expect(r).toEqual({ at: '2026-09-28T08:00', recurrence: 'weekly', weekday: 2, dayOfMonth: null });
 });
 
+test('weekly: falscher Wochentag vom Modell (Montag → 3) wird durch das Datum korrigiert', () => {
+  const r = sanitizeStructured(aiRaw({ reminder: reminder({ at: '2026-09-28T08:00', recurrence: 'weekly', weekday: 3 }) }) as any, input)!.reminder;
+  expect(r!.weekday).toBe(2);
+});
+
+test('monthly: falscher Monatstag vom Modell wird durch das Datum korrigiert', () => {
+  const r = sanitizeStructured(aiRaw({ reminder: reminder({ at: '2026-10-15T09:00', recurrence: 'monthly', day_of_month: 16 }) }) as any, input)!.reminder;
+  expect(r!.dayOfMonth).toBe(15);
+});
+
 test('monthly: dayOfMonth bleibt, weekday wird verworfen', () => {
   const r = sanitizeStructured(aiRaw({ reminder: reminder({ at: '2026-10-01T09:00', recurrence: 'monthly', weekday: 3, day_of_month: 1 }) }) as any, input)!.reminder;
   expect(r).toEqual({ at: '2026-10-01T09:00', recurrence: 'monthly', weekday: null, dayOfMonth: 1 });
+});
+
+test('Reminder + leerer Inhalt + keine Checkliste → rohes Diktat bleibt als Inhalt', () => {
+  const transcript = 'erinner mich morgen um 9 an den Zahnarzttermin, Versicherungskarte mitnehmen';
+  const r = sanitizeStructured(aiRaw({ title: 'Zahnarzt', checklist: [], reminder: reminder({}) }) as any, { ...input, transcript })!;
+  expect(r.content).toBe(transcript);
+});
+
+test('Inhalt des Modells gewinnt gegenueber dem Diktat-Fallback', () => {
+  const r = sanitizeStructured(aiRaw({ title: 'Zahnarzt', content: 'Zahnarzttermin', checklist: [], reminder: reminder({}) }) as any, { ...input, transcript: 'lang' })!;
+  expect(r.content).toBe('Zahnarzttermin');
 });
 
 test('Kalender: 14 Tage ab heute mit Wochentag, auch ueber Monatsgrenzen', () => {

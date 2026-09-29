@@ -150,6 +150,37 @@ export async function scheduleTestRecurring(
   });
 }
 
+export interface ScheduledReminderInfo {
+  id: string;
+  title: string;
+  /** Nächster Auslösezeitpunkt laut OS; null wenn nicht ermittelbar. */
+  nextAt: Date | null;
+}
+
+// Was das OS tatsächlich eingeplant hat — prüft, ob eine Erinnerung (z. B. für
+// in 3 Tagen) wirklich registriert ist, ohne bis zum Auslösen zu warten.
+export async function getScheduledReminders(): Promise<ScheduledReminderInfo[]> {
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  const infos = await Promise.all(
+    all.map(async (n): Promise<ScheduledReminderInfo> => {
+      let nextAt: Date | null = null;
+      try {
+        const trigger = n.trigger as any;
+        if (trigger?.type === 'date' && typeof trigger.value === 'number') {
+          nextAt = new Date(trigger.value);
+        } else {
+          const ms = await Notifications.getNextTriggerDateAsync(trigger);
+          nextAt = ms ? new Date(ms) : null;
+        }
+      } catch {
+        nextAt = null;
+      }
+      return { id: n.identifier, title: n.content.title ?? '', nextAt };
+    }),
+  );
+  return infos.sort((a, b) => (a.nextAt?.getTime() ?? Infinity) - (b.nextAt?.getTime() ?? Infinity));
+}
+
 export async function openExactAlarmSettings(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {

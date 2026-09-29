@@ -65,3 +65,9 @@ export const WEEKDAY_LABELS: Record<number, string> = {
 };
 
 export const WEEKDAY_ORDER = [2, 3, 4, 5, 6, 7, 1];
+
+/** Label zu einem Expo-Wochentag (1=So … 7=Sa) aus einem Array, das bei Sonntag = Index 0 beginnt. */
+export function weekdayLabel(labels: string | string[], expoWeekday: number): string {
+  // i18n `t()` ist als string typisiert, liefert für Array-Einträge aber das Array.
+  return (labels as string[])[expoWeekday - 1];
+}

@@ -39,6 +39,7 @@ import {
   ChecklistItem,
   ReminderRecurrence,
   WEEKDAY_ORDER,
+  weekdayLabel,
 } from '../models/Note';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -295,7 +296,7 @@ export default function EditorScreen({ navigation, route }: Props) {
       case 'daily':
         return t('editor.reminderDaily', { time });
       case 'weekly':
-        return t('editor.reminderWeekly', { weekday: t('editor.weekdays')[weekday], time });
+        return t('editor.reminderWeekly', { weekday: weekdayLabel(t('editor.weekdays'), weekday), time });
       case 'monthly':
         return t('editor.reminderMonthly', { day: dayOfMonth, time });
       default:
@@ -608,7 +609,7 @@ export default function EditorScreen({ navigation, route }: Props) {
                   color: weekday === wd ? theme.colors.primary : theme.colors.onSurfaceVariant,
                 }}
               >
-                {t('editor.weekdaysShort')[wd]}
+                {weekdayLabel(t('editor.weekdaysShort'), wd)}
               </Chip>
             ))}
           </View>
