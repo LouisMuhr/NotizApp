@@ -17,7 +17,7 @@ const { t } = require('../src/i18n') as { t: (k: string, o?: Record<string, unkn
 
 function withProfile(profile: Record<string, unknown>) {
   getSupabase.mockReturnValue({
-    auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } }, error: null }) },
     from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id: 'u1', created_at: '', ...profile }, error: null }) }) }) }),
   });
 }
@@ -65,4 +65,21 @@ test('E7: Free-Limit endet zu einer Uhrzeit (14:32), Datum allein reicht als Anz
   // Umsetzung: SettingsAboScreen und Snackbar nutzen formatDateTime() (Datum + Uhrzeit).
   const shown = formatDateTime(nextAllowedAt!, 'de');
   expect(shown).toMatch(/\d{1,2}:\d{2}/); // Erwartung: Uhrzeit sichtbar (Entscheidung 13)
+});
+
+// Offline darf getStatus NICHT "free" melden: der Aufrufer behaelt sonst nicht den gemerkten Pro-Status.
+test('Offline: Netzfehler beim Profil wirft statt free zu melden', async () => {
+  getSupabase.mockReturnValue({
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } }, error: null }) },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: null, error: { code: '', message: 'Network request failed' } }) }) }) }),
+  });
+  await expect(subscriptionService.getStatus()).rejects.toBeTruthy();
+});
+
+test('Profilzeile fehlt (PGRST116): free', async () => {
+  getSupabase.mockReturnValue({
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } }, error: null }) },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: null, error: { code: 'PGRST116', message: 'no rows' } }) }) }) }),
+  });
+  expect((await subscriptionService.getStatus()).tier).toBe('free');
 });
