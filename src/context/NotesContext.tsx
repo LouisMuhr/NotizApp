@@ -23,7 +23,8 @@ import { loadVoiceAiPref, isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { resolveAccountState } from '../sync/accountState';
-import { loadPendingParses, removePendingParse, clearPendingParses, sameTimestamp, MAX_AGE_MS } from '../sync/pendingParse';
+import { isProbablyOnline } from '../utils/connectivity';
+import { loadPendingParses, removePendingParse, clearPendingParses, sameTimestamp, recordFailedAttempt, decideAfterError, MAX_AGE_MS } from '../sync/pendingParse';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
 
 export type ResyncMode = 'merge' | 'replace';
@@ -605,10 +606,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           now: new Date(item.recordedAt),
         });
         if ('error' in res) {
-          if (res.error === 'plan_required') await removePendingParse(item.noteId);
-          // Netz/Limit: bleibt liegen, naechster Versuch spaeter. Offline bricht der Rest ebenfalls ab.
-          if (res.error === 'unavailable') return;
-          continue;
+          let online = true;
+          let attempts = 0;
+          if (res.error === 'unavailable') {
+            online = await isProbablyOnline();
+            if (online) attempts = await recordFailedAttempt(item.noteId);
+          }
+          const next = decideAfterError(res.error, online, attempts);
+          if (next === 'remove') await removePendingParse(item.noteId);
+          if (next === 'abort') return; // Netz weg / Limit: alle warten, naechster Versuch spaeter
+          continue; // Eintrag selbst kaputt: die uebrigen duerfen trotzdem dran
         }
         const draft = structuredToNote(res.result);
         await updateNote(item.noteId, {

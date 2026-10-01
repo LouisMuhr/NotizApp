@@ -33,7 +33,10 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('../src/utils/haptics', () => ({ medium: jest.fn(), success: jest.fn(), tap: jest.fn() }));
 jest.mock('../src/sync/parseNote', () => ({ parseNoteRemote: jest.fn() }));
 jest.mock('../src/sync/accountState', () => ({ resolveAccountState: jest.fn() }));
-jest.mock('../src/sync/pendingParse', () => ({ enqueuePendingParse: jest.fn(async () => {}) }));
+jest.mock('../src/sync/pendingParse', () => ({
+  ...jest.requireActual('../src/sync/pendingParse'),
+  enqueuePendingParse: jest.fn(async () => {}),
+}));
 jest.mock('../src/sync/supabaseClient', () => ({ isSyncConfigured: () => true, getSupabase: () => null }));
 jest.mock('../src/utils/voiceAiPref', () => ({ isVoiceAiEnabled: jest.fn(() => true) }));
 
@@ -92,28 +95,8 @@ test('Pro + Diktat: strukturierte Notiz wird gespeichert', async () => {
   expect(onClose).toHaveBeenCalled();
 });
 
-test.each([
-  ['limit_reached', 'Das Tageslimit für KI-Sprachnotizen ist erreicht. Ab morgen strukturiert Claude wieder.'],
-])('KI-Fehler %s: Diktat wird unveraendert gespeichert + Hinweis', async (error, message) => {
-  parseNoteRemote.mockResolvedValue({ error });
-  render(<VoiceCaptureSheet visible onClose={onClose} />);
-  dictate(DICTATION);
-  await save();
-
-  const note = (addNote.mock.calls[0] as any[])[0];
-  expect(note.content).toBe(DICTATION);
-  expect(note.category).toBe('Allgemein');
-  expect(note.source).toBe('voice');
-  // Hinweis als App-Dialog (kein Alert); geschlossen wird erst nach OK.
-  expect(Alert.alert).not.toHaveBeenCalled();
-  expect(screen.getByText('Als normale Notiz gespeichert')).toBeTruthy();
-  expect(screen.getByText(message)).toBeTruthy();
-  expect(onClose).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByText('OK'));
-  expect(onClose).toHaveBeenCalled();
-  expect(enqueuePendingParse).not.toHaveBeenCalled();
-});
-
+const LIMIT_MESSAGE =
+  'Das Tageslimit für KI-Sprachnotizen ist erreicht. Deine Notiz ist gespeichert, Claude überarbeitet sie automatisch, sobald das Limit zurückgesetzt ist.';
 const QUEUED_MESSAGE =
   'Deine Notiz ist gespeichert. Sobald du wieder online bist, ergänzt Claude Checkliste, Kategorie und Erinnerung automatisch.';
 
@@ -224,4 +207,34 @@ test('Titel-Knopf: diktierter Titel landet im Titel, nicht im Inhalt', async () 
   expect((addNote.mock.calls[0] as any[])[0]).toEqual(
     expect.objectContaining({ title: 'Wochenendplan', content: 'Samstag wandern' }),
   );
+});
+
+// Tageslimit: Notiz wird roh gespeichert UND vorgemerkt, Claude holt es nach dem Reset nach.
+test('Tageslimit erreicht: Diktat gespeichert, vorgemerkt, Hinweis nennt die automatische Nachbearbeitung', async () => {
+  parseNoteRemote.mockResolvedValue({ error: 'limit_reached' });
+  render(<VoiceCaptureSheet visible onClose={onClose} />);
+  dictate(DICTATION);
+  await save();
+
+  const note = (addNote.mock.calls[0] as any[])[0];
+  expect(note.content).toBe(DICTATION);
+  expect(note.source).toBe('voice');
+  await waitFor(() => expect(enqueuePendingParse).toHaveBeenCalledTimes(1));
+  expect(enqueuePendingParse).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'n1', transcript: DICTATION }));
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(screen.getByText('Als normale Notiz gespeichert')).toBeTruthy();
+  expect(screen.getByText(LIMIT_MESSAGE)).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('OK'));
+  expect(onClose).toHaveBeenCalled();
+});
+
+test('Zu langes Diktat (> 4000 Zeichen): kein KI-Call, nicht vorgemerkt, Hinweis', async () => {
+  render(<VoiceCaptureSheet visible onClose={onClose} />);
+  dictate('a '.repeat(2001));
+  await save();
+
+  expect(parseNoteRemote).not.toHaveBeenCalled();
+  expect(enqueuePendingParse).not.toHaveBeenCalled();
+  expect(await screen.findByText('Dieses Diktat ist zu lang für die KI-Überarbeitung und wurde als normale Notiz gespeichert.')).toBeTruthy();
 });

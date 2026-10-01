@@ -49,7 +49,7 @@ import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
 import { isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { isProbablyOnline } from '../utils/connectivity';
-import { enqueuePendingParse } from '../sync/pendingParse';
+import { enqueuePendingParse, MAX_TRANSCRIPT_CHARS } from '../sync/pendingParse';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { isSyncConfigured } from '../sync/supabaseClient';
@@ -399,7 +399,11 @@ export default function VoiceCaptureSheet({
     const recordedAt = new Date();
     let note: Parameters<typeof addNote>[0] = plainNote;
 
-    const wantsAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
+    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
+    // Die Bridge lehnt lange Diktate ab: gar nicht erst senden oder vormerken.
+    const tooLong = content.length > MAX_TRANSCRIPT_CHARS;
+    if (canUseAi && tooLong) aiNotice = t('voiceCapture.aiTooLong');
+    const wantsAi = canUseAi && !tooLong;
     if (wantsAi) {
       setSaving('structuring');
       const account = await resolveAccountState().catch(() => null);
@@ -411,11 +415,9 @@ export default function VoiceCaptureSheet({
         const res = await parseNoteRemote({ transcript: content, title, categories, locale });
         if ('result' in res) {
           note = structuredToNote(res.result);
-        } else if (res.error === 'limit_reached') {
-          aiNotice = t('voiceCapture.aiLimit');
-        } else if (res.error === 'unavailable') {
+        } else if (res.error === 'limit_reached' || res.error === 'unavailable') {
           queueForLater = true;
-          aiNotice = t('voiceCapture.aiQueued');
+          aiNotice = t(res.error === 'limit_reached' ? 'voiceCapture.aiLimit' : 'voiceCapture.aiQueued');
         }
       }
     }
