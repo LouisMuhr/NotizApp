@@ -22,10 +22,8 @@ import {
   Keyboard,
   Animated,
   Easing,
-  Alert,
-  Switch,
 } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Text, Switch, Portal, Dialog, Button, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -79,6 +77,7 @@ export default function VoiceCaptureSheet({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const navigation = useNavigation<any>();
   const { addNote, tier, categories } = useNotes();
   const { t, locale } = useLanguage();
@@ -108,6 +107,10 @@ export default function VoiceCaptureSheet({
   // Pro Aufnahme: darf die KI diese Notiz (auch nachtraeglich) ueberarbeiten? Standard ja,
   // jede neue Aufnahme startet wieder mit ja.
   const [aiAllowed, setAiAllowed] = useState(true);
+  // Rueckfragen und Hinweise als Paper-Dialog im Sheet (kein Alert.alert, siehe CLAUDE.md).
+  const [aiOffDialog, setAiOffDialog] = useState(false);
+  const [offlineModelDialog, setOfflineModelDialog] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
   // (switching to "Lieber tippen" and typing everything is not a voice note).
   const [dictated, setDictated] = useState(false);
@@ -259,24 +262,17 @@ export default function VoiceCaptureSheet({
       setPermissionGranted(false);
     } else if (onDeviceRef.current && event.error === 'language-not-supported') {
       setVoiceError('offlineModelMissing');
-      if (Platform.OS === 'android') offerOfflineModelDownload();
+      if (Platform.OS === 'android') setOfflineModelDialog(true);
     } else {
       setVoiceError('generic');
     }
   });
 
-  const offerOfflineModelDownload = () => {
-    Alert.alert(t('voiceCapture.offlineModelTitle'), t('voiceCapture.offlineModelBody'), [
-      { text: t('voiceCapture.cancel'), style: 'cancel' },
-      {
-        text: t('voiceCapture.offlineModelDownload'),
-        onPress: () => {
-          ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload?.({
-            locale: locale === 'en' ? 'en-US' : 'de-DE',
-          })?.catch?.((e: unknown) => console.warn('[voice] Modell-Download fehlgeschlagen', e));
-        },
-      },
-    ]);
+  const downloadOfflineModel = () => {
+    setOfflineModelDialog(false);
+    ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload?.({
+      locale: locale === 'en' ? 'en-US' : 'de-DE',
+    })?.catch?.((e: unknown) => console.warn('[voice] Modell-Download fehlgeschlagen', e));
   };
 
   useEffect(() => {
@@ -287,6 +283,9 @@ export default function VoiceCaptureSheet({
       setVoiceError(null);
       setOnDevice(false);
       setAiAllowed(true);
+      setAiOffDialog(false);
+      setOfflineModelDialog(false);
+      setNotice(null);
       if (isListening) {
         ExpoSpeechRecognitionModule.stop();
       }
@@ -368,10 +367,12 @@ export default function VoiceCaptureSheet({
       setAiAllowed(true);
       return;
     }
-    Alert.alert(t('voiceCapture.aiOffTitle'), t('voiceCapture.aiOffBody'), [
-      { text: t('voiceCapture.cancel'), style: 'cancel' },
-      { text: t('voiceCapture.aiOffConfirm'), onPress: () => setAiAllowed(false) },
-    ]);
+    setAiOffDialog(true);
+  };
+
+  const closeNotice = () => {
+    setNotice(null);
+    onClose();
   };
 
   const handleSave = async () => {
@@ -433,8 +434,9 @@ export default function VoiceCaptureSheet({
           recordedAt: recordedAt.toISOString(),
         });
       }
-      onClose();
-      if (aiNotice) Alert.alert(t('voiceCapture.aiFallbackTitle'), aiNotice);
+      // Hinweis zuerst im Sheet bestaetigen lassen, geschlossen wird danach.
+      if (aiNotice) setNotice(aiNotice);
+      else onClose();
     } catch (e) {
       console.warn('[capture] addNote fehlgeschlagen', e);
     } finally {
@@ -456,6 +458,8 @@ export default function VoiceCaptureSheet({
         onClose();
       }}
     >
+      {/* Portal.Host: Paper-Dialoge rendern sonst hinter dem nativen Modal. */}
+      <Portal.Host>
       <View ref={overlayRef} style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={() => {
           if (isListening) stopListening();
@@ -607,7 +611,7 @@ export default function VoiceCaptureSheet({
                   <Switch
                     value={aiAllowed}
                     onValueChange={toggleAiAllowed}
-                    trackColor={{ false: Tokens.rule, true: Tokens.amber }}
+                    color={theme.colors.primary}
                     accessibilityLabel={t('voiceCapture.aiSwitchLabel')}
                   />
                 </View>
@@ -737,6 +741,67 @@ export default function VoiceCaptureSheet({
           </View>
         </Animated.View>
       </View>
+
+      <Portal>
+        <Dialog
+          visible={aiOffDialog}
+          onDismiss={() => setAiOffDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiOffTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.aiOffBody')}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setAiOffDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              {t('voiceCapture.cancel')}
+            </Button>
+            <Button
+              mode="contained"
+              onPress={() => { setAiAllowed(false); setAiOffDialog(false); }}
+              style={{ borderRadius: 12 }}
+            >
+              {t('voiceCapture.aiOffConfirm')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={offlineModelDialog}
+          onDismiss={() => setOfflineModelDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.offlineModelTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.offlineModelBody')}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setOfflineModelDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              {t('voiceCapture.cancel')}
+            </Button>
+            <Button mode="contained" onPress={downloadOfflineModel} style={{ borderRadius: 12 }}>
+              {t('voiceCapture.offlineModelDownload')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={notice !== null}
+          onDismiss={closeNotice}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiFallbackTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{notice}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button mode="contained" onPress={closeNotice} style={{ borderRadius: 12 }}>
+              {t('voiceCapture.aiOffConfirm')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+      </Portal.Host>
     </Modal>
   );
 }
@@ -840,6 +905,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     paddingVertical: 4,
   },
+  dialog: { borderRadius: 24 },
   aiSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -188,12 +188,12 @@ zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind 
 
 - **Language**: German UI strings; English code identifiers.
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
-- **Components**: functional + hooks only, no class components.
-- **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
+- **Components**: functional + hooks only; **context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
 - **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch. **IDs**: `uuidv4()` —
   always import `react-native-get-random-values` before uuid.
 - **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Tests beschreiben das
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
+- **KEINE `Alert.alert`** (nativer Dialog bricht den Papier-Look). Rückfragen/Hinweise = Paper `Portal`+`Dialog` im App-Design (Vorlage `ArchiveScreen`); in nativen `Modal`s (z. B. `VoiceCaptureSheet`) das Modal in `Portal.Host` wickeln. Schalter = Paper `Switch` mit `theme.colors.primary` (nie RN-`Switch`: Android-Türkis). Bestehende Alerts bei Gelegenheit migrieren.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben. Arbeite nie am main branch, außer ich bitte darum

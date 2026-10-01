@@ -88,6 +88,8 @@ test('Pro + Diktat: strukturierte Notiz wird gespeichert', async () => {
   expect(note.reminderAt).not.toBeNull();
   expect(note.feedsThreads).toBe(false);
   expect(Alert.alert).not.toHaveBeenCalled();
+  expect(screen.queryByText('Als normale Notiz gespeichert')).toBeNull();
+  expect(onClose).toHaveBeenCalled();
 });
 
 test.each([
@@ -102,8 +104,13 @@ test.each([
   expect(note.content).toBe(DICTATION);
   expect(note.category).toBe('Allgemein');
   expect(note.source).toBe('voice');
+  // Hinweis als App-Dialog (kein Alert); geschlossen wird erst nach OK.
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(screen.getByText('Als normale Notiz gespeichert')).toBeTruthy();
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('OK'));
   expect(onClose).toHaveBeenCalled();
-  expect(Alert.alert).toHaveBeenCalledWith('Als normale Notiz gespeichert', message);
   expect(enqueuePendingParse).not.toHaveBeenCalled();
 });
 
@@ -129,14 +136,15 @@ test.each([
       noteUpdatedAt: '2026-10-01T10:00:00.000Z',
     }),
   );
-  expect(Alert.alert).toHaveBeenCalledWith('Als normale Notiz gespeichert', QUEUED_MESSAGE);
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(screen.getByText(QUEUED_MESSAGE)).toBeTruthy();
 });
 
 const SWITCH_LABEL = 'KI darf diese Notiz überarbeiten';
 
-function pressAlertButton(label: string) {
-  const buttons = (Alert.alert as jest.Mock).mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
-  act(() => buttons.find((b) => b.text === label)!.onPress?.());
+// Dialog-Buttons: der Dialog liegt nach dem Sheet im Baum, also der letzte Treffer.
+function pressDialogButton(label: string) {
+  fireEvent.press(screen.getAllByText(label).at(-1)!);
 }
 
 test('Pro-Schalter pro Aufnahme: Standard an, Ausschalten fragt nach, OK → kein KI-Call, nichts vorgemerkt', async () => {
@@ -146,12 +154,10 @@ test('Pro-Schalter pro Aufnahme: Standard an, Ausschalten fragt nach, OK → kei
   expect(sw.props.value).toBe(true);
 
   fireEvent(sw, 'valueChange', false);
-  expect(Alert.alert).toHaveBeenCalledWith(
-    'KI-Überarbeitung ausschalten?', expect.any(String),
-    expect.arrayContaining([expect.objectContaining({ text: 'Abbrechen' }), expect.objectContaining({ text: 'OK' })]),
-  );
+  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(screen.getByText('KI-Überarbeitung ausschalten?')).toBeTruthy();
   expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(true); // erst nach OK aus
-  pressAlertButton('OK');
+  pressDialogButton('OK');
   expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(false);
 
   dictate(DICTATION);
@@ -167,7 +173,7 @@ test('Pro-Schalter: Abbrechen im Hinweis laesst die KI an', async () => {
   });
   render(<VoiceCaptureSheet visible onClose={onClose} />);
   fireEvent(screen.getByLabelText(SWITCH_LABEL), 'valueChange', false);
-  pressAlertButton('Abbrechen');
+  pressDialogButton('Abbrechen');
   expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(true);
 
   dictate(DICTATION);
