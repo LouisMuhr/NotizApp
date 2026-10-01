@@ -22,9 +22,8 @@ import {
   Keyboard,
   Animated,
   Easing,
-  Alert,
 } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Text, Switch, Portal, Dialog, Button, Checkbox, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -46,9 +45,13 @@ try {
 import { useNotes } from '../context/NotesContext';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
+import { Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
 import { isVoiceAiEnabled } from '../utils/voiceAiPref';
+import { isProbablyOnline } from '../utils/connectivity';
+import { isQueuedNoticeHidden, hideQueuedNotice } from '../utils/aiQueuedNoticePref';
+import { enqueuePendingParse, MAX_TRANSCRIPT_CHARS } from '../sync/pendingParse';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { isSyncConfigured } from '../sync/supabaseClient';
@@ -64,12 +67,25 @@ interface Props {
 
 const join = (a: string, b: string) => (a && b ? `${a} ${b}` : a || b);
 
+// Normale Ausgaenge einer Sitzung (Stille, Abbruch durch uns) — kein Fehler fuer den User.
+const QUIET_ERRORS = ['aborted', 'no-speech', 'speech-timeout', 'interrupted'];
+
+// Erkennung auf dem Geraet liefert im Dauer-Modus keinen Satzschluss wie der Netz-Dienst: nach so
+// langer Stille gilt der diktierte Titel als fertig.
+const TITLE_SILENCE_MS = 1800;
+// Kurze Pause vor dem Neustart: Android-Erkennung meldet sonst teils "busy".
+const RESTART_DELAY_MS = 250;
+
+const supportsOnDevice = (): boolean =>
+  !!ExpoSpeechRecognitionModule?.supportsOnDeviceRecognition?.();
+
 export default function VoiceCaptureSheet({
   visible,
   initialMode = 'voice',
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const navigation = useNavigation<any>();
   const { addNote, tier, categories } = useNotes();
   const { t, locale } = useLanguage();
@@ -92,6 +108,24 @@ export default function VoiceCaptureSheet({
   // Vom User (oder beim Schließen) gestoppt: das nachlaufende finale Ergebnis
   // darf die Erkennung nicht automatisch neu starten.
   const stoppedRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Letzte Zwischenstaende, damit 'end' sie retten kann, falls kein finales Ergebnis kam.
+  const partialRef = useRef({ title: '', content: '' });
+  // Erkennung laeuft auf dem Geraet statt ueber den Netz-Dienst (offline oder nach Online-Fehler).
+  const onDeviceRef = useRef(false);
+  const [onDevice, setOnDevice] = useState(false);
+  const [voiceError, setVoiceError] = useState<null | 'generic' | 'offlineModelMissing'>(null);
+  // Pro Aufnahme: darf die KI diese Notiz (auch nachtraeglich) ueberarbeiten? Standard ja,
+  // jede neue Aufnahme startet wieder mit ja.
+  const [aiAllowed, setAiAllowed] = useState(true);
+  // Rueckfragen und Hinweise als Paper-Dialog im Sheet (kein Alert.alert, siehe CLAUDE.md).
+  const [aiOffDialog, setAiOffDialog] = useState(false);
+  const [offlineModelDialog, setOfflineModelDialog] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Nur der "wird nachgeholt"-Hinweis ist ausblendbar.
+  const [noticeHideable, setNoticeHideable] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
   // (switching to "Lieber tippen" and typing everything is not a voice note).
   const [dictated, setDictated] = useState(false);
@@ -166,14 +200,24 @@ export default function VoiceCaptureSheet({
     }
   }, [isListening, pulseAnim]);
 
-  const startRecognition = useCallback((into: Target) => {
+  const startRecognition = useCallback(async (into: Target) => {
     sessionTargetRef.current = into;
     stoppedRef.current = false;
+    partialRef.current[into] = '';
     setTarget(into);
+    setVoiceError(null);
+    // Ohne Netz erkennt das Geraet selbst (bleibt fuer die Sheet-Laufzeit gesetzt). Der
+    // Online-Weg bleibt Standard — er ist genauer; schlaegt er fehl, greift der Error-Handler.
+    if (!onDeviceRef.current && supportsOnDevice() && !(await isProbablyOnline())) {
+      onDeviceRef.current = true;
+    }
+    if (stoppedRef.current) return; // waehrend des Checks gestoppt/geschlossen
+    setOnDevice(onDeviceRef.current);
     ExpoSpeechRecognitionModule.start({
       lang: locale === 'en' ? 'en-US' : 'de-DE',
       continuous: true,
       interimResults: true,
+      requiresOnDeviceRecognition: onDeviceRef.current,
       // Satzzeichen + Großschreibung durch die Erkennung (iOS 16+, Android 13+;
       // ältere Systeme ignorieren die Option).
       addsPunctuation: true,
@@ -185,18 +229,54 @@ export default function VoiceCaptureSheet({
     });
   }, [locale]);
 
+  const clearTimers = () => {
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    restartTimerRef.current = null;
+    titleSilenceTimerRef.current = null;
+  };
+
+  /** Nicht finalisierten Zwischenstand der beendeten Sitzung uebernehmen (sonst ginge er verloren). */
+  const flushPartial = () => {
+    const into = sessionTargetRef.current;
+    const text = partialRef.current[into].trim();
+    partialRef.current[into] = '';
+    if (!text) return;
+    if (into === 'title') {
+      setTitleText((prev) => join(prev, text).trim());
+      setTitlePartial('');
+    } else {
+      setTranscript((prev) => join(prev, text).trim());
+      setPartialTranscript('');
+    }
+  };
+
+  /** Neustart ins naechste Ziel; das Ziel gilt sofort, der Start folgt nach kurzer Pause. */
+  const scheduleRestart = (next: Target) => {
+    sessionTargetRef.current = next;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = setTimeout(() => {
+      restartTimerRef.current = null;
+      if (!stoppedRef.current) startRecognition(next);
+    }, RESTART_DELAY_MS);
+  };
+
   useSpeechRecognitionEvent('start', () => setIsListening(true));
   useSpeechRecognitionEvent('end', () => {
     setIsListening(false);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    titleSilenceTimerRef.current = null;
+    flushPartial();
     const next = pendingRestartRef.current;
     pendingRestartRef.current = null;
-    if (next) startRecognition(next);
+    if (next) scheduleRestart(next);
   });
   useSpeechRecognitionEvent('result', (event) => {
     const text = event.results[0]?.transcript ?? '';
     if (text.trim()) setDictated(true);
     const intoTitle = sessionTargetRef.current === 'title';
     if (event.isFinal) {
+      partialRef.current[intoTitle ? 'title' : 'content'] = '';
       if (intoTitle) {
         setTitleText((prev) => join(prev, text).trim());
         setTitlePartial('');
@@ -210,21 +290,78 @@ export default function VoiceCaptureSheet({
         setPartialTranscript('');
       }
     } else if (intoTitle) {
+      partialRef.current.title = text;
       setTitlePartial(text);
+      // Nur Geraete-Erkennung: kein Satzschluss vom Dienst → nach Stille selbst beenden.
+      // stop() liefert das finale Ergebnis (bzw. 'end' rettet den Zwischenstand) und startet den Inhalt.
+      if (onDeviceRef.current && text.trim()) {
+        if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+        titleSilenceTimerRef.current = setTimeout(() => {
+          titleSilenceTimerRef.current = null;
+          if (stoppedRef.current || pendingRestartRef.current) return;
+          pendingRestartRef.current = 'content';
+          setTarget('content');
+          ExpoSpeechRecognitionModule.stop();
+        }, TITLE_SILENCE_MS);
+      }
     } else {
+      partialRef.current.content = text;
       setPartialTranscript(text);
     }
   });
   useSpeechRecognitionEvent('error', (event) => {
     console.warn('[voice] Fehler:', event.error, event.message);
+    const pending = pendingRestartRef.current;
     pendingRestartRef.current = null;
     setIsListening(false);
+    if (stoppedRef.current) return;
+    if (pending && event.error !== 'not-allowed') {
+      // Wir haben die Sitzung selbst gestoppt (Titel ↔ Inhalt). Die Geraete-Erkennung meldet dabei
+      // je nach Stand "aborted", "no-speech", "client" …: kein echter Fehler, und der geplante
+      // Neustart darf daran nicht scheitern. 'end' folgt auf den Fehler und fuehrt ihn aus.
+      pendingRestartRef.current = pending;
+      return;
+    }
+    if (QUIET_ERRORS.includes(event.error)) return;
+
+    // Online-Erkennung fehlgeschlagen (kein Netz, Dienst gesperrt …): einmal auf dem Geraet
+    // versuchen. Der Neustart laeuft ueber 'end', das auf den Fehler folgt.
+    if (!onDeviceRef.current && supportsOnDevice() && event.error !== 'not-allowed') {
+      onDeviceRef.current = true;
+      pendingRestartRef.current = pending ?? sessionTargetRef.current;
+      return;
+    }
+
+    if (event.error === 'not-allowed') {
+      setPermissionGranted(false);
+    } else if (onDeviceRef.current && event.error === 'language-not-supported') {
+      setVoiceError('offlineModelMissing');
+      if (Platform.OS === 'android') setOfflineModelDialog(true);
+    } else {
+      setVoiceError('generic');
+    }
   });
+
+  const downloadOfflineModel = () => {
+    setOfflineModelDialog(false);
+    ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload?.({
+      locale: locale === 'en' ? 'en-US' : 'de-DE',
+    })?.catch?.((e: unknown) => console.warn('[voice] Modell-Download fehlgeschlagen', e));
+  };
 
   useEffect(() => {
     if (!visible) {
+      clearTimers();
+      partialRef.current = { title: '', content: '' };
       pendingRestartRef.current = null;
+      onDeviceRef.current = false;
       stoppedRef.current = true;
+      setVoiceError(null);
+      setOnDevice(false);
+      setAiAllowed(true);
+      setAiOffDialog(false);
+      setOfflineModelDialog(false);
+      setNotice(null);
       if (isListening) {
         ExpoSpeechRecognitionModule.stop();
       }
@@ -253,6 +390,10 @@ export default function VoiceCaptureSheet({
   }, [startRecognition]);
 
   const stopListening = useCallback(() => {
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    restartTimerRef.current = null;
+    titleSilenceTimerRef.current = null;
     pendingRestartRef.current = null;
     stoppedRef.current = true;
     if (speechAvailable && ExpoSpeechRecognitionModule) {
@@ -298,6 +439,22 @@ export default function VoiceCaptureSheet({
   const canSave = displayText.trim().length > 0 || displayTitle.trim().length > 0;
   const tierKnown = tier !== null;
   const showProHint = speechAvailable && tierKnown && tier !== 'pro';
+  const showAiSwitch = speechAvailable && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+
+  // Ausschalten braucht eine Bestaetigung (ohne KI bleibt das Diktat roh); Einschalten nicht.
+  const toggleAiAllowed = (next: boolean) => {
+    if (next) {
+      setAiAllowed(true);
+      return;
+    }
+    setAiOffDialog(true);
+  };
+
+  const closeNotice = () => {
+    if (noticeHideable && dontShowAgain) hideQueuedNotice();
+    setNotice(null);
+    onClose();
+  };
 
   const handleSave = async () => {
     if (!canSave || saving) return;
@@ -319,20 +476,29 @@ export default function VoiceCaptureSheet({
     };
 
     let aiNotice: string | null = null;
+    let queueForLater = false;
+    const recordedAt = new Date();
     let note: Parameters<typeof addNote>[0] = plainNote;
 
-    const wantsAi = dictated && !!content && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
+    // Die Bridge lehnt lange Diktate ab: gar nicht erst senden oder vormerken.
+    const tooLong = content.length > MAX_TRANSCRIPT_CHARS;
+    if (canUseAi && tooLong) aiNotice = t('voiceCapture.aiTooLong');
+    const wantsAi = canUseAi && !tooLong;
     if (wantsAi) {
       setSaving('structuring');
       const account = await resolveAccountState().catch(() => null);
-      if (account?.state === 'secured') {
+      if (!account) {
+        // Zustand nicht lesbar (z. B. offline): speichern, Strukturierung spaeter nachholen.
+        queueForLater = true;
+        aiNotice = t('voiceCapture.aiQueued');
+      } else if (account.state === 'secured') {
         const res = await parseNoteRemote({ transcript: content, title, categories, locale });
         if ('result' in res) {
           note = structuredToNote(res.result);
-        } else if (res.error === 'limit_reached') {
-          aiNotice = t('voiceCapture.aiLimit');
-        } else if (res.error === 'unavailable') {
-          aiNotice = t('voiceCapture.aiUnavailable');
+        } else if (res.error === 'limit_reached' || res.error === 'unavailable') {
+          queueForLater = true;
+          aiNotice = t(res.error === 'limit_reached' ? 'voiceCapture.aiLimit' : 'voiceCapture.aiQueued');
         }
       }
     }
@@ -340,9 +506,26 @@ export default function VoiceCaptureSheet({
     setSaving('saving');
     haptics.success();
     try {
-      await addNote(note);
-      onClose();
-      if (aiNotice) Alert.alert(t('voiceCapture.aiFallbackTitle'), aiNotice);
+      const saved = await addNote(note);
+      if (queueForLater) {
+        await enqueuePendingParse({
+          noteId: saved.id,
+          title,
+          transcript: content,
+          locale,
+          noteUpdatedAt: saved.updatedAt,
+          recordedAt: recordedAt.toISOString(),
+        });
+      }
+      // Hinweis zuerst im Sheet bestaetigen lassen, geschlossen wird danach.
+      const hideable = aiNotice !== null && aiNotice === t('voiceCapture.aiQueued');
+      if (hideable && (await isQueuedNoticeHidden())) aiNotice = null;
+      if (aiNotice) {
+        setNoticeHideable(hideable);
+        setDontShowAgain(false);
+        setNotice(aiNotice);
+      }
+      else onClose();
     } catch (e) {
       console.warn('[capture] addNote fehlgeschlagen', e);
     } finally {
@@ -364,6 +547,8 @@ export default function VoiceCaptureSheet({
         onClose();
       }}
     >
+      {/* Portal.Host: Paper-Dialoge rendern sonst hinter dem nativen Modal. */}
+      <Portal.Host>
       <View ref={overlayRef} style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={() => {
           if (isListening) stopListening();
@@ -478,6 +663,7 @@ export default function VoiceCaptureSheet({
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                   <Pressable
                     onPress={toggleListening}
+                    testID="voice-mic-button"
                     style={[
                       styles.micButton,
                       isListening
@@ -505,6 +691,29 @@ export default function VoiceCaptureSheet({
               {speechAvailable && permissionGranted === false && (
                 <Text style={[styles.hintText, { color: '#B14A3D' }]}>
                   {t('voiceCapture.micDenied')}
+                </Text>
+              )}
+              {showAiSwitch && (
+                <View style={styles.aiSwitchRow}>
+                  <Text style={[styles.switchText, { color: Tokens.inkDim, flex: 1 }]}>
+                    {t('voiceCapture.aiSwitchLabel')}
+                  </Text>
+                  <Switch
+                    value={aiAllowed}
+                    onValueChange={toggleAiAllowed}
+                    color={theme.colors.primary}
+                    accessibilityLabel={t('voiceCapture.aiSwitchLabel')}
+                  />
+                </View>
+              )}
+              {speechAvailable && voiceError && (
+                <Text style={[styles.hintText, { color: '#B14A3D' }]}>
+                  {t(voiceError === 'offlineModelMissing' ? 'voiceCapture.offlineModelMissing' : 'voiceCapture.voiceError')}
+                </Text>
+              )}
+              {speechAvailable && onDevice && !voiceError && (
+                <Text style={[styles.hintText, { color: Tokens.inkFaint }]}>
+                  {t('voiceCapture.offlineHint')}
                 </Text>
               )}
               {showProHint && (
@@ -622,6 +831,88 @@ export default function VoiceCaptureSheet({
           </View>
         </Animated.View>
       </View>
+
+      <Portal>
+        <Dialog
+          visible={aiOffDialog}
+          onDismiss={() => setAiOffDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiOffTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.aiOffBody')}</Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button onPress={() => setAiOffDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              {t('voiceCapture.cancel')}
+            </Button>
+            <Button
+              mode="contained"
+              onPress={() => { setAiAllowed(false); setAiOffDialog(false); }}
+              style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}
+            >
+              {t('voiceCapture.aiOffConfirm')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={offlineModelDialog}
+          onDismiss={() => setOfflineModelDialog(false)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.offlineModelTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.offlineModelBody')}</Text>
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button onPress={() => setOfflineModelDialog(false)} textColor={theme.colors.onSurfaceVariant}>
+              {t('voiceCapture.cancel')}
+            </Button>
+            <Button mode="contained" onPress={downloadOfflineModel} style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}>
+              {t('voiceCapture.offlineModelDownload')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog
+          visible={notice !== null}
+          onDismiss={closeNotice}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiFallbackTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{notice}</Text>
+            {noticeHideable && (
+              <Pressable
+                onPress={() => setDontShowAgain((v) => !v)}
+                style={styles.dontShowRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: dontShowAgain }}
+              >
+                <Checkbox
+                  status={dontShowAgain ? 'checked' : 'unchecked'}
+                  color={theme.colors.primary}
+                  uncheckedColor={theme.colors.onSurfaceVariant}
+                />
+                <Text style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiNoticeDontShowAgain')}</Text>
+              </Pressable>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button mode="contained" onPress={closeNotice} style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}>
+              {t('voiceCapture.aiOffConfirm')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+      </Portal.Host>
     </Modal>
   );
 }
@@ -724,6 +1015,19 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 20,
     paddingVertical: 4,
+  },
+  dialog: { borderRadius: 24 },
+  dialogActions: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 },
+  confirmBtn: { borderRadius: 12, minWidth: 96 },
+  confirmBtnContent: { height: 44, paddingHorizontal: 20 },
+  confirmBtnLabel: { fontFamily: Fonts.sansSemibold, fontSize: 15 },
+  dontShowRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginLeft: -8 },
+  aiSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   switchText: {
     fontSize: 13,

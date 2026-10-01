@@ -67,6 +67,7 @@ const CASES: Array<[string, Expect]> = [
   ['Übermorgen früh um sieben Mama anrufen', { recurrence: 'once', at: '2026-09-26T07:00' }],
   ['Morgen nachts um halb eins Sternschnuppen anschauen', { recurrence: 'once', at: '2026-09-25T00:30' }],
   ['Das Update ins Berglauf schreiben und den Call for checken, erinnere mich morgen um 9', { recurrence: 'once', at: '2026-09-25T09:00' }],
+  ['Erinner mich morgen um 10 Uhr an den Arzttermin, danach muss ich einkaufen: Milch, Eier und Brot', { recurrence: 'once', at: '2026-09-25T10:00', checklist: true }],
   ['Geburtstag von Lena am 12. Oktober, erinnere mich eine Woche vorher', { recurrence: 'once', at: '2026-10-05T09:00' }],
   ['Buy milk, eggs and bread', { checklist: true, category: 'Einkauf', recurrence: null }],
   ['Remind me tomorrow at 6 pm to call the dentist', { recurrence: 'once', at: '2026-09-25T18:00' }],

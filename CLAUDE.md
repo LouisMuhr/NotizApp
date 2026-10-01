@@ -157,8 +157,7 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
 ### Webapp (graph visualizer)
-`webapp/` ist ein eigenständiges Next.js-Projekt (eigene `node_modules`). Liest Notizen (ohne archivierte), Threads,
-Ähnlichkeiten aus Supabase → Force-Graph: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
+`webapp/`: eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
@@ -177,6 +176,7 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 **KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter (`voiceAiPref`) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
+**Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download); Geräte-Erkennung: leise Fehler (`aborted`) kippen den Titel↔Inhalt-Neustart nicht, Titel endet nach 1,8 s Stille (kein Satzschluss vom Dienst). Scheitert die KI beim Speichern (offline/Bridge/Tageslimit), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, alle 20 s + Vordergrund, erst nach dem Laden der Notizen), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen bzw. 5 Fehlversuchen (kaputter Eintrag blockiert die Rest nicht; Abbruch nur bei Offline/Limit, `decideAfterError`); Diktate > 4000 Zeichen gehen nie an die KI; Detach/Alles-löschen leeren sie.
 
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
@@ -188,12 +188,12 @@ zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind 
 
 - **Language**: German UI strings; English code identifiers.
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
-- **Components**: functional + hooks only, no class components.
-- **Context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
+- **Components**: functional + hooks only; **context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
 - **Async**: `async/await` throughout; fire-and-forget syncs wrapped in try/catch. **IDs**: `uuidv4()` —
   always import `react-native-get-random-values` before uuid.
 - **Tests**: Jest via `jest-expo` (`jest.config.js`, `jest.setup.js`, `__tests__/`). Tests beschreiben das
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
+- **KEINE `Alert.alert`** (nativer Dialog bricht den Papier-Look). Rückfragen/Hinweise = Paper `Portal`+`Dialog` im App-Design (Vorlage `ArchiveScreen`); in nativen `Modal`s (z. B. `VoiceCaptureSheet`) das Modal in `Portal.Host` wickeln. Schalter = Paper `Switch` mit `theme.colors.primary` (nie RN-`Switch`: Android-Türkis). Bestehende Alerts bei Gelegenheit migrieren.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben. Arbeite nie am main branch, außer ich bitte darum

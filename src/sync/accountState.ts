@@ -76,7 +76,15 @@ export async function resolveAccountState(): Promise<AccountSnapshot> {
   const supabase = getSupabase();
   if (!supabase) return { state: 'local', userId: null, email: null };
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user: serverUser }, error } = await supabase.auth.getUser();
+  let user = serverUser;
+  if (!user && error) {
+    // getUser fragt den Server: offline kommt "kein Nutzer" statt eines Wurfs.
+    // Dann zaehlt die lokal gespeicherte Session, sonst wird ein angemeldeter
+    // Nutzer offline zum lokalen (und bekaeme z.B. keine vorgemerkte KI-Nachbearbeitung).
+    const { data: { session } } = await supabase.auth.getSession();
+    user = session?.user ?? null;
+  }
 
   if (user && !isLegacyAnonymous(user)) {
     const state = deriveStateFromUser(user);

@@ -86,7 +86,11 @@ export class SupabaseOnlySubscription implements SubscriptionService {
     const supabase = getSupabase();
     if (!supabase) return null;
 
-    const { data: { user } } = await supabase.auth.getUser();
+    // getSession liest lokal; getUser wuerde offline "kein Nutzer" melden und
+    // einen Pro-Nutzer zum Free-Nutzer machen.
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    const user = session?.user;
     if (!user) return null;
 
     const { data, error } = await supabase
@@ -96,9 +100,11 @@ export class SupabaseOnlySubscription implements SubscriptionService {
       .single();
 
     if (error) {
-      // Row might not exist yet (Trigger not yet run) — treat as free
-      console.warn('[subscription] profile fetch error:', error.message);
-      return null;
+      // Nur "Zeile fehlt" (Trigger noch nicht gelaufen) gilt als free. Jeder andere
+      // Fehler (Netz, Server) heisst "unbekannt": werfen, damit der Aufrufer den
+      // zuletzt bestaetigten Tier behaelt.
+      if (error.code === 'PGRST116') return null;
+      throw error;
     }
 
     return data as ProfileRow;
