@@ -224,6 +224,7 @@ export default {
     aiOffTitle: 'KI-Überarbeitung ausschalten?',
     aiOffBody: 'Dann bleibt dein Diktat genau so, wie es erkannt wurde — ohne Korrektur, Checkliste, Kategorie oder Erinnerung. Das gilt nur für diese Notiz.',
     aiOffConfirm: 'OK',
+    aiNoticeDontShowAgain: 'Nicht mehr anzeigen',
     aiQueued: 'Deine Notiz ist gespeichert. Sobald du wieder online bist, ergänzt Claude Checkliste, Kategorie und Erinnerung automatisch.',
     switchToText: 'Lieber tippen',
     switchToVoice: 'Lieber sprechen',

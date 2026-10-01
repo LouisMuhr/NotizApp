@@ -238,3 +238,53 @@ test('Zu langes Diktat (> 4000 Zeichen): kein KI-Call, nicht vorgemerkt, Hinweis
   expect(enqueuePendingParse).not.toHaveBeenCalled();
   expect(await screen.findByText('Dieses Diktat ist zu lang für die KI-Überarbeitung und wurde als normale Notiz gespeichert.')).toBeTruthy();
 });
+
+// "Nicht mehr anzeigen" gilt nur fuer den Hinweis "wird nachgeholt", nie fuer Limit/Fehler.
+describe('Hinweis "wird nachgeholt": Nicht mehr anzeigen', () => {
+  const AsyncStorage = require('@react-native-async-storage/async-storage');
+  const HIDE_LABEL = 'Nicht mehr anzeigen';
+  beforeEach(async () => { await AsyncStorage.clear(); });
+
+  test('Haken gesetzt + OK: naechstes Mal kein Hinweis, Sheet schliesst direkt', async () => {
+    parseNoteRemote.mockResolvedValue({ error: 'unavailable' });
+    const first = render(<VoiceCaptureSheet visible onClose={onClose} />);
+    dictate(DICTATION);
+    await save();
+    expect(await screen.findByText(QUEUED_MESSAGE)).toBeTruthy();
+    fireEvent.press(screen.getByText(HIDE_LABEL));
+    fireEvent.press(screen.getByText('OK'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(async () => expect(await AsyncStorage.getItem('@notizapp/hide_ai_queued_notice')).toBe('1'));
+    first.unmount();
+
+    jest.clearAllMocks();
+    useNotes.mockReturnValue({ addNote, tier: 'pro', categories: ['Allgemein'] });
+    resolveAccountState.mockResolvedValue({ state: 'secured', userId: 'u1', email: 'a@b.c' });
+    parseNoteRemote.mockResolvedValue({ error: 'unavailable' });
+    render(<VoiceCaptureSheet visible onClose={onClose} />);
+    dictate(DICTATION);
+    await save();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(screen.queryByText(QUEUED_MESSAGE)).toBeNull();
+    expect(enqueuePendingParse).toHaveBeenCalledTimes(1); // trotzdem vorgemerkt
+  });
+
+  test('ohne Haken: Hinweis kommt weiter', async () => {
+    parseNoteRemote.mockResolvedValue({ error: 'unavailable' });
+    render(<VoiceCaptureSheet visible onClose={onClose} />);
+    dictate(DICTATION);
+    await save();
+    expect(await screen.findByText(QUEUED_MESSAGE)).toBeTruthy();
+    fireEvent.press(screen.getByText('OK'));
+    expect(await AsyncStorage.getItem('@notizapp/hide_ai_queued_notice')).toBeNull();
+  });
+
+  test('Limit-Hinweis hat keinen Haken', async () => {
+    parseNoteRemote.mockResolvedValue({ error: 'limit_reached' });
+    render(<VoiceCaptureSheet visible onClose={onClose} />);
+    dictate(DICTATION);
+    await save();
+    expect(await screen.findByText(LIMIT_MESSAGE)).toBeTruthy();
+    expect(screen.queryByText(HIDE_LABEL)).toBeNull();
+  });
+});

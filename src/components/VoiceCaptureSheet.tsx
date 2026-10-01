@@ -23,7 +23,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { Text, Switch, Portal, Dialog, Button, useTheme } from 'react-native-paper';
+import { Text, Switch, Portal, Dialog, Button, Checkbox, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -45,10 +45,12 @@ try {
 import { useNotes } from '../context/NotesContext';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
+import { Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
 import { isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { isProbablyOnline } from '../utils/connectivity';
+import { isQueuedNoticeHidden, hideQueuedNotice } from '../utils/aiQueuedNoticePref';
 import { enqueuePendingParse, MAX_TRANSCRIPT_CHARS } from '../sync/pendingParse';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
@@ -111,6 +113,9 @@ export default function VoiceCaptureSheet({
   const [aiOffDialog, setAiOffDialog] = useState(false);
   const [offlineModelDialog, setOfflineModelDialog] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Nur der "wird nachgeholt"-Hinweis ist ausblendbar.
+  const [noticeHideable, setNoticeHideable] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
   // (switching to "Lieber tippen" and typing everything is not a voice note).
   const [dictated, setDictated] = useState(false);
@@ -371,6 +376,7 @@ export default function VoiceCaptureSheet({
   };
 
   const closeNotice = () => {
+    if (noticeHideable && dontShowAgain) hideQueuedNotice();
     setNotice(null);
     onClose();
   };
@@ -437,7 +443,13 @@ export default function VoiceCaptureSheet({
         });
       }
       // Hinweis zuerst im Sheet bestaetigen lassen, geschlossen wird danach.
-      if (aiNotice) setNotice(aiNotice);
+      const hideable = aiNotice !== null && aiNotice === t('voiceCapture.aiQueued');
+      if (hideable && (await isQueuedNoticeHidden())) aiNotice = null;
+      if (aiNotice) {
+        setNoticeHideable(hideable);
+        setDontShowAgain(false);
+        setNotice(aiNotice);
+      }
       else onClose();
     } catch (e) {
       console.warn('[capture] addNote fehlgeschlagen', e);
@@ -754,14 +766,16 @@ export default function VoiceCaptureSheet({
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.aiOffBody')}</Text>
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={styles.dialogActions}>
             <Button onPress={() => setAiOffDialog(false)} textColor={theme.colors.onSurfaceVariant}>
               {t('voiceCapture.cancel')}
             </Button>
             <Button
               mode="contained"
               onPress={() => { setAiAllowed(false); setAiOffDialog(false); }}
-              style={{ borderRadius: 12 }}
+              style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}
             >
               {t('voiceCapture.aiOffConfirm')}
             </Button>
@@ -777,11 +791,13 @@ export default function VoiceCaptureSheet({
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{t('voiceCapture.offlineModelBody')}</Text>
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={styles.dialogActions}>
             <Button onPress={() => setOfflineModelDialog(false)} textColor={theme.colors.onSurfaceVariant}>
               {t('voiceCapture.cancel')}
             </Button>
-            <Button mode="contained" onPress={downloadOfflineModel} style={{ borderRadius: 12 }}>
+            <Button mode="contained" onPress={downloadOfflineModel} style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}>
               {t('voiceCapture.offlineModelDownload')}
             </Button>
           </Dialog.Actions>
@@ -795,9 +811,26 @@ export default function VoiceCaptureSheet({
           <Dialog.Title style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiFallbackTitle')}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{notice}</Text>
+            {noticeHideable && (
+              <Pressable
+                onPress={() => setDontShowAgain((v) => !v)}
+                style={styles.dontShowRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: dontShowAgain }}
+              >
+                <Checkbox
+                  status={dontShowAgain ? 'checked' : 'unchecked'}
+                  color={theme.colors.primary}
+                  uncheckedColor={theme.colors.onSurfaceVariant}
+                />
+                <Text style={{ color: theme.colors.onSurface }}>{t('voiceCapture.aiNoticeDontShowAgain')}</Text>
+              </Pressable>
+            )}
           </Dialog.Content>
-          <Dialog.Actions>
-            <Button mode="contained" onPress={closeNotice} style={{ borderRadius: 12 }}>
+          <Dialog.Actions style={styles.dialogActions}>
+            <Button mode="contained" onPress={closeNotice} style={styles.confirmBtn}
+              contentStyle={styles.confirmBtnContent}
+              labelStyle={styles.confirmBtnLabel}>
               {t('voiceCapture.aiOffConfirm')}
             </Button>
           </Dialog.Actions>
@@ -908,6 +941,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   dialog: { borderRadius: 24 },
+  dialogActions: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 },
+  confirmBtn: { borderRadius: 12, minWidth: 96 },
+  confirmBtnContent: { height: 44, paddingHorizontal: 20 },
+  confirmBtnLabel: { fontFamily: Fonts.sansSemibold, fontSize: 15 },
+  dontShowRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginLeft: -8 },
   aiSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',
