@@ -36,3 +36,13 @@ test('kaputter Speicherinhalt wird ignoriert', async () => {
   await AsyncStorage.setItem('@notizapp_pending_parse', '{kaputt');
   expect(await loadPendingParses()).toEqual([]);
 });
+
+describe('sameTimestamp', () => {
+  const { sameTimestamp } = require('../src/sync/pendingParse');
+  test('gleicher Zeitpunkt in Postgres-Schreibweise nach dem Sync-Roundtrip', () => {
+    expect(sameTimestamp('2026-10-01T09:23:00.123Z', '2026-10-01T09:23:00.123+00:00')).toBe(true);
+  });
+  test('anderer Zeitpunkt (Nutzer hat bearbeitet)', () => {
+    expect(sameTimestamp('2026-10-01T09:23:00.124Z', '2026-10-01T09:23:00.123Z')).toBe(false);
+  });
+});

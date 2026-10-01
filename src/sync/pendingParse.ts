@@ -24,6 +24,17 @@ export interface PendingParse {
   recordedAt: string;
 }
 
+/**
+ * Gleicher Zeitpunkt? Nach dem Sync-Roundtrip liefert Postgres denselben Zeitpunkt in
+ * anderer Schreibweise ("+00:00" statt "Z", andere Nachkommastellen) — ein String-Vergleich
+ * hielte die Notiz dann faelschlich fuer bearbeitet.
+ */
+export function sameTimestamp(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  return Number.isNaN(ta) || Number.isNaN(tb) ? a === b : ta === tb;
+}
+
 async function read(): Promise<PendingParse[]> {
   try {
     const raw = await AsyncStorage.getItem(KEY);

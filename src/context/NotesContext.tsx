@@ -23,7 +23,7 @@ import { loadVoiceAiPref, isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { resolveAccountState } from '../sync/accountState';
-import { loadPendingParses, removePendingParse, clearPendingParses, MAX_AGE_MS } from '../sync/pendingParse';
+import { loadPendingParses, removePendingParse, clearPendingParses, sameTimestamp, MAX_AGE_MS } from '../sync/pendingParse';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
 
 export type ResyncMode = 'merge' | 'replace';
@@ -570,9 +570,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const tierRef = useRef(tier);
   tierRef.current = tier;
   const processingParseRef = useRef(false);
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
 
   const processPendingParses = useCallback(async () => {
     if (processingParseRef.current) return;
+    // Vor dem Laden ist allRef leer: die Notiz waere "weg" und der Eintrag wuerde verworfen.
+    if (loadingRef.current) return;
     if (tierRef.current !== 'pro' || !isVoiceAiEnabled() || !isSyncConfigured()) return;
     processingParseRef.current = true;
     try {
@@ -586,7 +590,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const note = allRef.current.find((n) => n.id === item.noteId);
         const stale = Date.now() - new Date(item.recordedAt).getTime() > MAX_AGE_MS;
         // Notiz weg, archiviert oder vom User veraendert: nichts ueberschreiben.
-        if (!note || note.archivedAt || note.updatedAt !== item.noteUpdatedAt || stale) {
+        if (!note || note.archivedAt || !sameTimestamp(note.updatedAt, item.noteUpdatedAt) || stale) {
+          console.warn('[parse-note] vorgemerkte Notiz verworfen', {
+            missing: !note, archived: !!note?.archivedAt, edited: !!note && !sameTimestamp(note.updatedAt, item.noteUpdatedAt), stale,
+          });
           await removePendingParse(item.noteId);
           continue;
         }
@@ -625,11 +632,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [updateNote]);
 
   // Beim Start (sobald der Tier bekannt ist), bei Rueckkehr in den Vordergrund und im
-  // Minutentakt, solange die App offen ist — Netz kann auch waehrend der Nutzung zurueckkehren.
+  // 20-s-Takt, solange die App offen ist — Netz kann auch waehrend der Nutzung zurueckkehren.
   useEffect(() => {
-    if (tier !== 'pro') return;
+    if (tier !== 'pro' || loading) return;
     processPendingParses();
-    const interval = setInterval(processPendingParses, 60_000);
+    const interval = setInterval(processPendingParses, 20_000);
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') processPendingParses();
     });
@@ -637,7 +644,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
       sub.remove();
     };
-  }, [tier, processPendingParses]);
+  }, [tier, loading, processPendingParses]);
 
   /** Archivieren: bleibt remote erhalten, nur archived_at wird gesetzt (S9). */
   const deleteNote = useCallback(async (id: string) => {
