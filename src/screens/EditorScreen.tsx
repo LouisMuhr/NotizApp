@@ -39,6 +39,7 @@ import {
   ChecklistItem,
   ReminderRecurrence,
   WEEKDAY_ORDER,
+  weekdayLabel,
 } from '../models/Note';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -73,8 +74,9 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [reminderAt, setReminderAt] = useState<Date | null>(
     existingNote?.reminderAt ? new Date(existingNote.reminderAt) : null
   );
-  const [recurrence, setRecurrence] = useState<ReminderRecurrence>(
-    existingNote?.reminderRecurrence ?? 'once'
+  // null = keine Erinnerung (Startzustand). Gespeichert wird 'once' + reminderAt null als "keine".
+  const [recurrence, setRecurrence] = useState<ReminderRecurrence | null>(
+    existingNote?.reminderAt ? existingNote.reminderRecurrence : null
   );
   const [weekday, setWeekday] = useState<number>(
     existingNote?.reminderWeekday ?? 2
@@ -82,6 +84,14 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [dayOfMonth, setDayOfMonth] = useState<number>(
     existingNote?.reminderDayOfMonth ?? 1
   );
+  // Rohtext des Eingabefelds: darf beim Tippen leer sein; `dayOfMonth` bleibt immer gültig (1–31).
+  const [dayOfMonthText, setDayOfMonthText] = useState(String(dayOfMonth));
+  const handleDayOfMonthChange = useCallback((text: string) => {
+    const digits = text.replace(/\D/g, '').slice(0, 2);
+    setDayOfMonthText(digits);
+    const n = parseInt(digits, 10);
+    if (!Number.isNaN(n)) setDayOfMonth(Math.min(31, Math.max(1, n)));
+  }, []);
 
   const [feedsThreads, setFeedsThreads] = useState(existingNote?.feedsThreads ?? false);
   const [showResetDialog, setShowResetDialog] = useState(false);
@@ -93,6 +103,7 @@ export default function EditorScreen({ navigation, route }: Props) {
   const [pickerDate, setPickerDate] = useState(new Date());
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [saveErrorVisible, setSaveErrorVisible] = useState(false);
+  const [reminderIncompleteVisible, setReminderIncompleteVisible] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({
@@ -120,7 +131,7 @@ export default function EditorScreen({ navigation, route }: Props) {
       checklist,
       feedsThreads,
       reminderAt: reminderIso,
-      reminderRecurrence: reminderIso ? recurrence : 'once' as ReminderRecurrence,
+      reminderRecurrence: reminderIso ? (recurrence ?? 'once') : 'once' as ReminderRecurrence,
       reminderWeekday: reminderIso && recurrence === 'weekly' ? weekday : null,
       reminderDayOfMonth: reminderIso && recurrence === 'monthly' ? dayOfMonth : null,
     };
@@ -157,7 +168,21 @@ export default function EditorScreen({ navigation, route }: Props) {
     saveNoteRef.current = saveNote;
   }, [saveNote]);
 
+  /** Läuft nach erfolgreichem "Speichern" das 800-ms-Fenster bis zum Zurücknavigieren. */
+  const goBackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (goBackTimerRef.current) clearTimeout(goBackTimerRef.current); }, []);
+
   const handleSave = useCallback(async () => {
+    // Doppeltipp im Fenster bis zum Zurücknavigieren: ein zweites goBack träfe den Screen darunter.
+    if (goBackTimerRef.current) return;
+    // Erinnerungsart gewählt, aber kein Zeitpunkt: sonst entstünde stillschweigend eine Notiz
+    // ohne Erinnerung. Nicht speichern, dem Nutzer Bescheid geben.
+    if (recurrence !== null && !reminderAt) {
+      haptics.tap();
+      setReminderIncompleteVisible(true);
+      setTimeout(() => setReminderIncompleteVisible(false), 3000);
+      return;
+    }
     try {
       await saveNote();
     } catch (e) {
@@ -169,8 +194,11 @@ export default function EditorScreen({ navigation, route }: Props) {
     }
     haptics.medium();
     setSnackbarVisible(true);
-    setTimeout(() => navigation.goBack(), 800);
-  }, [saveNote, navigation]);
+    goBackTimerRef.current = setTimeout(() => {
+      goBackTimerRef.current = null;
+      if (navigation.canGoBack()) navigation.goBack();
+    }, 800);
+  }, [saveNote, navigation, reminderAt, recurrence]);
 
   // L1: Zurueck-Geste/-Button wartet auf den Save, statt ihn nur anzustossen.
   // L2: Eingaben nach "Speichern" (im 800-ms-Fenster) werden hier ebenfalls gesichert.
@@ -295,7 +323,7 @@ export default function EditorScreen({ navigation, route }: Props) {
       case 'daily':
         return t('editor.reminderDaily', { time });
       case 'weekly':
-        return t('editor.reminderWeekly', { weekday: t('editor.weekdays')[weekday], time });
+        return t('editor.reminderWeekly', { weekday: weekdayLabel(t('editor.weekdays'), weekday), time });
       case 'monthly':
         return t('editor.reminderMonthly', { day: dayOfMonth, time });
       default:
@@ -564,9 +592,10 @@ export default function EditorScreen({ navigation, route }: Props) {
         </Text>
 
         <SegmentedButtons
-          value={recurrence}
+          value={recurrence ?? ''}
           onValueChange={(val) => {
-            setRecurrence(val as ReminderRecurrence);
+            // Erneutes Antippen der gewählten Art wählt sie wieder ab → keine Erinnerung.
+            setRecurrence(val === recurrence ? null : (val as ReminderRecurrence));
             setReminderAt(null);
           }}
           buttons={RECURRENCE_OPTIONS.map((opt) => ({
@@ -608,7 +637,7 @@ export default function EditorScreen({ navigation, route }: Props) {
                   color: weekday === wd ? theme.colors.primary : theme.colors.onSurfaceVariant,
                 }}
               >
-                {t('editor.weekdaysShort')[wd]}
+                {weekdayLabel(t('editor.weekdaysShort'), wd)}
               </Chip>
             ))}
           </View>
@@ -620,25 +649,23 @@ export default function EditorScreen({ navigation, route }: Props) {
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
               {t('editor.onDay')}
             </Text>
-            <View style={styles.daySelector}>
-              <IconButton
-                icon="minus"
-                size={16}
-                iconColor={theme.colors.primary}
-                onPress={() => setDayOfMonth(Math.max(1, dayOfMonth - 1))}
-                style={[styles.dayBtn, { borderColor: theme.colors.outline }]}
-              />
-              <Text variant="titleMedium" style={[styles.dayNumber, { color: theme.colors.onSurface }]}>
-                {dayOfMonth}.
-              </Text>
-              <IconButton
-                icon="plus"
-                size={16}
-                iconColor={theme.colors.primary}
-                onPress={() => setDayOfMonth(Math.min(31, dayOfMonth + 1))}
-                style={[styles.dayBtn, { borderColor: theme.colors.outline }]}
-              />
-            </View>
+            <TextInput
+              value={dayOfMonthText}
+              onChangeText={handleDayOfMonthChange}
+              onBlur={() => setDayOfMonthText(String(dayOfMonth))}
+              keyboardType="number-pad"
+              maxLength={2}
+              selectTextOnFocus
+              mode="outlined"
+              dense
+              style={styles.dayInput}
+              contentStyle={styles.dayInputContent}
+              outlineStyle={{ borderRadius: 12, borderWidth: 1 }}
+              outlineColor={theme.colors.outline}
+              activeOutlineColor={theme.colors.primary}
+              textColor={theme.colors.onSurface}
+              theme={inputTheme}
+            />
             <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
               {t('editor.ofMonth')}
             </Text>
@@ -646,6 +673,7 @@ export default function EditorScreen({ navigation, route }: Props) {
         )}
 
         {/* Time / Date+Time button */}
+        {recurrence !== null && (
         <View style={styles.reminderRow}>
           <Button
             mode="text"
@@ -675,6 +703,7 @@ export default function EditorScreen({ navigation, route }: Props) {
             />
           )}
         </View>
+        )}
 
         {showDatePicker && (
           <DateTimePicker
@@ -774,6 +803,11 @@ export default function EditorScreen({ navigation, route }: Props) {
 
       <Toast visible={snackbarVisible} message={t('editor.savedToast')} />
       <Toast visible={saveErrorVisible} message={t('editor.saveFailedToast')} icon="alert-circle-outline" />
+      <Toast
+        visible={reminderIncompleteVisible}
+        message={t(recurrence === 'once' ? 'editor.reminderIncompleteOnce' : 'editor.reminderIncompleteRecurring')}
+        icon="alert-circle-outline"
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -963,17 +997,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 8,
   },
-  daySelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  dayInput: {
+    width: 64,
+    backgroundColor: 'transparent',
   },
-  dayBtn: {
-    borderWidth: 1,
-    borderRadius: 10,
-    margin: 0,
-  },
-  dayNumber: {
-    minWidth: 36,
+  dayInputContent: {
     textAlign: 'center',
     fontWeight: '700',
   },

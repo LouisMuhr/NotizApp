@@ -47,6 +47,27 @@ interface ScheduleOptions {
   dayOfMonth: number | null;
 }
 
+// Der native Monats-Trigger kennt keinen "letzten Tag": Android rollt Tag 31 im 30-Tage-Monat
+// auf den 1. des Folgemonats, iOS überspringt den Monat. Ab Tag 29 planen wir daher feste
+// Einzeltermine voraus (Tag auf den letzten Monatstag begrenzt). Aufgefrischt wird bei jedem
+// Kaltstart/Vordergrund (rescheduleAllReminders). Kleiner Horizont: iOS erlaubt nur 64 Einträge.
+const NATIVE_MONTHLY_MAX_DAY = 28;
+const CLAMPED_MONTHLY_HORIZON = 6;
+const ID_SEPARATOR = ',';
+
+/** Nächste `count` Monatstermine ab `now`; Tag wird auf die Monatslänge begrenzt (31. → 30./28./29.). */
+export function nextMonthlyOccurrences(
+  now: Date, day: number, hour: number, minute: number, count: number,
+): Date[] {
+  const result: Date[] = [];
+  for (let i = 0; result.length < count; i++) {
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + i + 1, 0).getDate();
+    const date = new Date(now.getFullYear(), now.getMonth() + i, Math.min(day, lastDay), hour, minute);
+    if (date.getTime() > now.getTime()) result.push(date);
+  }
+  return result;
+}
+
 export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
   const { noteId, title, body, triggerDate, recurrence, weekday, dayOfMonth } = opts;
 
@@ -81,6 +102,18 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       break;
 
     case 'monthly':
+      if ((dayOfMonth ?? 1) > NATIVE_MONTHLY_MAX_DAY) {
+        const dates = nextMonthlyOccurrences(new Date(), dayOfMonth!, hour, minute, CLAMPED_MONTHLY_HORIZON);
+        const ids: string[] = [];
+        for (const date of dates) {
+          ids.push(await Notifications.scheduleNotificationAsync({
+            content: notifContent,
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
+          }));
+        }
+        // Mehrere Einträge, eine notificationId an der Notiz → kommagetrennt, cancelReminder trennt wieder.
+        return ids.join(ID_SEPARATOR);
+      }
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.MONTHLY,
         day: dayOfMonth ?? 1,
@@ -109,7 +142,9 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
 }
 
 export async function cancelReminder(notificationId: string): Promise<void> {
-  await Notifications.cancelScheduledNotificationAsync(notificationId);
+  await Promise.all(
+    notificationId.split(ID_SEPARATOR).map((id) => Notifications.cancelScheduledNotificationAsync(id)),
+  );
 }
 
 export async function cancelAllReminders(): Promise<void> {
@@ -148,6 +183,37 @@ export async function scheduleTestRecurring(
     weekday,
     dayOfMonth,
   });
+}
+
+export interface ScheduledReminderInfo {
+  id: string;
+  title: string;
+  /** Nächster Auslösezeitpunkt laut OS; null wenn nicht ermittelbar. */
+  nextAt: Date | null;
+}
+
+// Was das OS tatsächlich eingeplant hat — prüft, ob eine Erinnerung (z. B. für
+// in 3 Tagen) wirklich registriert ist, ohne bis zum Auslösen zu warten.
+export async function getScheduledReminders(): Promise<ScheduledReminderInfo[]> {
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  const infos = await Promise.all(
+    all.map(async (n): Promise<ScheduledReminderInfo> => {
+      let nextAt: Date | null = null;
+      try {
+        const trigger = n.trigger as any;
+        if (trigger?.type === 'date' && typeof trigger.value === 'number') {
+          nextAt = new Date(trigger.value);
+        } else {
+          const ms = await Notifications.getNextTriggerDateAsync(trigger);
+          nextAt = ms ? new Date(ms) : null;
+        }
+      } catch {
+        nextAt = null;
+      }
+      return { id: n.identifier, title: n.content.title ?? '', nextAt };
+    }),
+  );
+  return infos.sort((a, b) => (a.nextAt?.getTime() ?? Infinity) - (b.nextAt?.getTime() ?? Infinity));
 }
 
 export async function openExactAlarmSettings(): Promise<void> {

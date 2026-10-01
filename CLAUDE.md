@@ -24,9 +24,8 @@ c:/NotizApp/
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
-│   │   └── utils/         # notifications, haptics, timeGrouping, …
-│   ├── bridge/            # Vercel serverless: api/ (synthesize, note, bookmarklet-token,
-│   │                      #   delete-user, _lib/), bookmarklet/, worker/ (CLI-Helfer)
+│   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, voiceAiPref, …
+│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), bookmarklet/, worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
@@ -56,8 +55,7 @@ npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
 
-Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`.
-Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
+Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
@@ -80,6 +78,7 @@ Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDe
   `@notizapp_tier_cache` (zuletzt bestätigter Tier, an die UID gebunden).
 - Jede Mutation: pending markieren → `commit()` (State sofort, Writes serialisiert; bei Write-Fehler Reload
   von Platte) → `pushRemote()`. Updates gehen als **PATCH nur geänderter Felder** (`upsertRemote(uid, note, patch)`).
+  `Note.source` (`app|voice|share|bookmarklet`, Default `app`) wird gepullt und beim Voll-Upload zurückgeschrieben.
 - Start/Vordergrund/Resync: `pullRemote()` (paginiert) → `mergeWithRemote()` in `src/sync/mergeNotes.ts`
   (LWW auf `updatedAt`; lokale Notizen werden **nie** stillschweigend verworfen: pending oder UID-Wechsel →
   hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
@@ -134,10 +133,9 @@ Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`
 Jede Zeile gehört einem `auth.users`-User via `user_id` (Ausnahme `thought_threads`:
 gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) — Queries
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
-Schema source: `supabase-schema.sql` (frisch) bzw. `supabase-migration-2026-09-17.sql` (Delta für bestehende
-Projekte: `notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`,
-`profiles.bookmarklet_token_hash`). Die RPC `migrate_user` ist funktionslos (Altlast des anonymen
-Modells) und kann gedroppt werden.
+Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projekte: `supabase-migration-2026-09-17.sql`
+(`notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`, `profiles.bookmarklet_token_hash`),
+`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte,
@@ -167,7 +165,7 @@ Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** au
 → `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` nutzt stattdessen den persönlichen
 Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert, ab Tier `basic`).
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
-Codes (`ai_unavailable`, `internal`, …), Details nur im Log.
+Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
@@ -176,13 +174,15 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
 (`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
 
-**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App ab `pro`.
-Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu
-`SettingsAbo`. `tier` ist `Tier | null` — **`null` heisst „noch nicht bekannt", nie „free"**: die UI
-behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in `SettingsAbo`, Synthese-Button
-gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf
-`free` zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*.mjs` sind lokale
-CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
+**KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
+in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter (`voiceAiPref`) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
+Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
+
+**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
+Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
+**`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
+`SettingsAbo`, Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf `free`
+zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
 
 ## Code Conventions
 
@@ -196,5 +196,4 @@ CLI-Helfer (Credentials aus `bridge/worker/.env`), nicht Teil der API.
   **Soll**; ein roter Test ist ein Bug, nie durch Abschwächen grün machen. Audit-Report + manuelle Skripte:
   `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
-- **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben.
-             Arbeite nie am main branch, außer ich bitte darum
+- **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben. Arbeite nie am main branch, außer ich bitte darum

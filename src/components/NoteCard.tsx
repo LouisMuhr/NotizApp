@@ -3,7 +3,7 @@ import { StyleSheet, View, Pressable, Animated, Easing, Text as RNText } from 'r
 import { useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
-import { Note } from '../models/Note';
+import { Note, weekdayLabel } from '../models/Note';
 import { getCategoryAccent } from '../theme/categoryAccents';
 import { Radii, Shadows, Insets } from '../theme/gradients';
 import { Tokens } from '../theme/theme';
@@ -63,7 +63,7 @@ function NoteCard({ note, onPress, onDelete, onTogglePin, index = 0 }: Props) {
     const time = formatTime(n.reminderAt);
     switch (n.reminderRecurrence) {
       case 'daily': return t('noteCard.reminderDaily', { time });
-      case 'weekly': return `${t('editor.weekdaysShort')[n.reminderWeekday ?? 2]} ${time}`;
+      case 'weekly': return `${weekdayLabel(t('editor.weekdaysShort'), n.reminderWeekday ?? 2)} ${time}`;
       case 'monthly': return t('noteCard.reminderMonthly', { day: n.reminderDayOfMonth ?? 1, time });
       default: return `${formatDate(n.reminderAt)} ${time}`;
     }

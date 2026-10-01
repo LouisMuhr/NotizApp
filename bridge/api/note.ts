@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast, Tier } from './_lib/supabaseAdmin';
+import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast } from './_lib/supabaseAdmin.js';
+import type { Tier } from './_lib/supabaseAdmin.js';
 
 /**
  * Bookmarklet-Endpunkt. Auth ueber den persoenlichen Bookmarklet-Schluessel

@@ -27,7 +27,14 @@ export interface Note {
    * nicht als Loeschung auf den anderen ankommt.
    */
   archivedAt?: string | null;
+  /**
+   * Herkunft der Notiz (Spalte notes.source). Fehlt sie, gilt 'app'. Wird beim
+   * Pull mitgelesen, damit ein erneuter Voll-Upload sie nicht überschreibt.
+   */
+  source?: NoteSource;
 }
+
+export type NoteSource = 'app' | 'voice' | 'share' | 'bookmarklet';
 
 export type SortField = 'updatedAt' | 'createdAt' | 'title' | 'category';
 export type SortOrder = 'asc' | 'desc';
@@ -58,3 +65,9 @@ export const WEEKDAY_LABELS: Record<number, string> = {
 };
 
 export const WEEKDAY_ORDER = [2, 3, 4, 5, 6, 7, 1];
+
+/** Label zu einem Expo-Wochentag (1=So … 7=Sa) aus einem Array, das bei Sonntag = Index 0 beginnt. */
+export function weekdayLabel(labels: string | string[], expoWeekday: number): string {
+  // i18n `t()` ist als string typisiert, liefert für Array-Einträge aber das Array.
+  return (labels as string[])[expoWeekday - 1];
+}

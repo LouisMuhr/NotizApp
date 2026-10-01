@@ -1,17 +1,5 @@
 import { getSupabase } from './supabaseClient';
-
-const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL;
-
-async function bridgePost(path: string, accessToken: string, body?: object): Promise<Response> {
-  return fetch(`${BRIDGE_URL}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
+import { BRIDGE_URL, bridgePost } from './bridge';
 
 /**
  * DSGVO-Komplettloeschung des aktuell angemeldeten Users (auth.users inkl.

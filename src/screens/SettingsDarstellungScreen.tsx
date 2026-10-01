@@ -5,6 +5,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isHapticsEnabled, setHapticsEnabled, light as hapticLight } from '../utils/haptics';
 import { withAlpha } from '../utils/categoryColors';
 import { useLanguage, LanguagePreference } from '../context/LanguageContext';
+import { useNavigation } from '@react-navigation/native';
+import { useNotes } from '../context/NotesContext';
+import { isVoiceAiEnabled, setVoiceAiEnabled } from '../utils/voiceAiPref';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -86,6 +89,16 @@ export default function SettingsDarstellungScreen() {
   const theme = useTheme();
   const { t, preference, setPreference } = useLanguage();
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
+  const navigation = useNavigation<any>();
+  const { tier } = useNotes();
+  const [voiceAiOn, setVoiceAiOn] = useState(isVoiceAiEnabled());
+  // tier === null heißt „noch unbekannt“: keine Sperre behaupten, Schalter nur deaktivieren.
+  const voiceAiLocked = tier !== null && tier !== 'pro';
+
+  const toggleVoiceAi = async (value: boolean) => {
+    setVoiceAiOn(value);
+    await setVoiceAiEnabled(value);
+  };
 
   const toggleHaptics = async (value: boolean) => {
     setHapticsOn(value);
@@ -117,6 +130,40 @@ export default function SettingsDarstellungScreen() {
             <Switch value={hapticsOn} onValueChange={toggleHaptics} color={theme.colors.primary} />
           }
         />
+      </View>
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsDarstellung.aiSection')}
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {voiceAiLocked ? (
+          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('SettingsAbo')}>
+            <SettingRow
+              icon="microphone-outline"
+              label={t('settingsDarstellung.voiceAi')}
+              sublabel={t('settings.lockedFromPlan', { plan: t('settings.tierPro') })}
+              showDivider={false}
+              trailing={
+                <MaterialCommunityIcons name="lock-outline" size={20} color={theme.colors.onSurfaceVariant} />
+              }
+            />
+          </TouchableOpacity>
+        ) : (
+          <SettingRow
+            icon="microphone-outline"
+            label={t('settingsDarstellung.voiceAi')}
+            sublabel={t('settingsDarstellung.voiceAiSub')}
+            showDivider={false}
+            trailing={
+              <Switch
+                value={voiceAiOn}
+                onValueChange={toggleVoiceAi}
+                disabled={tier === null}
+                color={theme.colors.primary}
+              />
+            }
+          />
+        )}
       </View>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
