@@ -23,6 +23,7 @@ import {
   Animated,
   Easing,
   Alert,
+  Switch,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -49,6 +50,8 @@ import { Tokens } from '../theme/theme';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
 import { isVoiceAiEnabled } from '../utils/voiceAiPref';
+import { isProbablyOnline } from '../utils/connectivity';
+import { enqueuePendingParse } from '../sync/pendingParse';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { isSyncConfigured } from '../sync/supabaseClient';
@@ -63,6 +66,12 @@ interface Props {
 }
 
 const join = (a: string, b: string) => (a && b ? `${a} ${b}` : a || b);
+
+// Normale Ausgaenge einer Sitzung (Stille, Abbruch durch uns) — kein Fehler fuer den User.
+const QUIET_ERRORS = ['aborted', 'no-speech', 'speech-timeout', 'interrupted'];
+
+const supportsOnDevice = (): boolean =>
+  !!ExpoSpeechRecognitionModule?.supportsOnDeviceRecognition?.();
 
 export default function VoiceCaptureSheet({
   visible,
@@ -92,6 +101,13 @@ export default function VoiceCaptureSheet({
   // Vom User (oder beim Schließen) gestoppt: das nachlaufende finale Ergebnis
   // darf die Erkennung nicht automatisch neu starten.
   const stoppedRef = useRef(false);
+  // Erkennung laeuft auf dem Geraet statt ueber den Netz-Dienst (offline oder nach Online-Fehler).
+  const onDeviceRef = useRef(false);
+  const [onDevice, setOnDevice] = useState(false);
+  const [voiceError, setVoiceError] = useState<null | 'generic' | 'offlineModelMissing'>(null);
+  // Pro Aufnahme: darf die KI diese Notiz (auch nachtraeglich) ueberarbeiten? Standard ja,
+  // jede neue Aufnahme startet wieder mit ja.
+  const [aiAllowed, setAiAllowed] = useState(true);
   // Whether speech recognition contributed any text — decides source 'voice' vs 'app'
   // (switching to "Lieber tippen" and typing everything is not a voice note).
   const [dictated, setDictated] = useState(false);
@@ -166,14 +182,23 @@ export default function VoiceCaptureSheet({
     }
   }, [isListening, pulseAnim]);
 
-  const startRecognition = useCallback((into: Target) => {
+  const startRecognition = useCallback(async (into: Target) => {
     sessionTargetRef.current = into;
     stoppedRef.current = false;
     setTarget(into);
+    setVoiceError(null);
+    // Ohne Netz erkennt das Geraet selbst (bleibt fuer die Sheet-Laufzeit gesetzt). Der
+    // Online-Weg bleibt Standard — er ist genauer; schlaegt er fehl, greift der Error-Handler.
+    if (!onDeviceRef.current && supportsOnDevice() && !(await isProbablyOnline())) {
+      onDeviceRef.current = true;
+    }
+    if (stoppedRef.current) return; // waehrend des Checks gestoppt/geschlossen
+    setOnDevice(onDeviceRef.current);
     ExpoSpeechRecognitionModule.start({
       lang: locale === 'en' ? 'en-US' : 'de-DE',
       continuous: true,
       interimResults: true,
+      requiresOnDeviceRecognition: onDeviceRef.current,
       // Satzzeichen + Großschreibung durch die Erkennung (iOS 16+, Android 13+;
       // ältere Systeme ignorieren die Option).
       addsPunctuation: true,
@@ -217,14 +242,51 @@ export default function VoiceCaptureSheet({
   });
   useSpeechRecognitionEvent('error', (event) => {
     console.warn('[voice] Fehler:', event.error, event.message);
+    const pending = pendingRestartRef.current;
     pendingRestartRef.current = null;
     setIsListening(false);
+    if (stoppedRef.current || QUIET_ERRORS.includes(event.error)) return;
+
+    // Online-Erkennung fehlgeschlagen (kein Netz, Dienst gesperrt …): einmal auf dem Geraet
+    // versuchen. Der Neustart laeuft ueber 'end', das auf den Fehler folgt.
+    if (!onDeviceRef.current && supportsOnDevice() && event.error !== 'not-allowed') {
+      onDeviceRef.current = true;
+      pendingRestartRef.current = pending ?? sessionTargetRef.current;
+      return;
+    }
+
+    if (event.error === 'not-allowed') {
+      setPermissionGranted(false);
+    } else if (onDeviceRef.current && event.error === 'language-not-supported') {
+      setVoiceError('offlineModelMissing');
+      if (Platform.OS === 'android') offerOfflineModelDownload();
+    } else {
+      setVoiceError('generic');
+    }
   });
+
+  const offerOfflineModelDownload = () => {
+    Alert.alert(t('voiceCapture.offlineModelTitle'), t('voiceCapture.offlineModelBody'), [
+      { text: t('voiceCapture.cancel'), style: 'cancel' },
+      {
+        text: t('voiceCapture.offlineModelDownload'),
+        onPress: () => {
+          ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload?.({
+            locale: locale === 'en' ? 'en-US' : 'de-DE',
+          })?.catch?.((e: unknown) => console.warn('[voice] Modell-Download fehlgeschlagen', e));
+        },
+      },
+    ]);
+  };
 
   useEffect(() => {
     if (!visible) {
       pendingRestartRef.current = null;
+      onDeviceRef.current = false;
       stoppedRef.current = true;
+      setVoiceError(null);
+      setOnDevice(false);
+      setAiAllowed(true);
       if (isListening) {
         ExpoSpeechRecognitionModule.stop();
       }
@@ -298,6 +360,19 @@ export default function VoiceCaptureSheet({
   const canSave = displayText.trim().length > 0 || displayTitle.trim().length > 0;
   const tierKnown = tier !== null;
   const showProHint = speechAvailable && tierKnown && tier !== 'pro';
+  const showAiSwitch = speechAvailable && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+
+  // Ausschalten braucht eine Bestaetigung (ohne KI bleibt das Diktat roh); Einschalten nicht.
+  const toggleAiAllowed = (next: boolean) => {
+    if (next) {
+      setAiAllowed(true);
+      return;
+    }
+    Alert.alert(t('voiceCapture.aiOffTitle'), t('voiceCapture.aiOffBody'), [
+      { text: t('voiceCapture.cancel'), style: 'cancel' },
+      { text: t('voiceCapture.aiOffConfirm'), onPress: () => setAiAllowed(false) },
+    ]);
+  };
 
   const handleSave = async () => {
     if (!canSave || saving) return;
@@ -319,20 +394,27 @@ export default function VoiceCaptureSheet({
     };
 
     let aiNotice: string | null = null;
+    let queueForLater = false;
+    const recordedAt = new Date();
     let note: Parameters<typeof addNote>[0] = plainNote;
 
-    const wantsAi = dictated && !!content && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+    const wantsAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
     if (wantsAi) {
       setSaving('structuring');
       const account = await resolveAccountState().catch(() => null);
-      if (account?.state === 'secured') {
+      if (!account) {
+        // Zustand nicht lesbar (z. B. offline): speichern, Strukturierung spaeter nachholen.
+        queueForLater = true;
+        aiNotice = t('voiceCapture.aiQueued');
+      } else if (account.state === 'secured') {
         const res = await parseNoteRemote({ transcript: content, title, categories, locale });
         if ('result' in res) {
           note = structuredToNote(res.result);
         } else if (res.error === 'limit_reached') {
           aiNotice = t('voiceCapture.aiLimit');
         } else if (res.error === 'unavailable') {
-          aiNotice = t('voiceCapture.aiUnavailable');
+          queueForLater = true;
+          aiNotice = t('voiceCapture.aiQueued');
         }
       }
     }
@@ -340,7 +422,17 @@ export default function VoiceCaptureSheet({
     setSaving('saving');
     haptics.success();
     try {
-      await addNote(note);
+      const saved = await addNote(note);
+      if (queueForLater) {
+        await enqueuePendingParse({
+          noteId: saved.id,
+          title,
+          transcript: content,
+          locale,
+          noteUpdatedAt: saved.updatedAt,
+          recordedAt: recordedAt.toISOString(),
+        });
+      }
       onClose();
       if (aiNotice) Alert.alert(t('voiceCapture.aiFallbackTitle'), aiNotice);
     } catch (e) {
@@ -505,6 +597,29 @@ export default function VoiceCaptureSheet({
               {speechAvailable && permissionGranted === false && (
                 <Text style={[styles.hintText, { color: '#B14A3D' }]}>
                   {t('voiceCapture.micDenied')}
+                </Text>
+              )}
+              {showAiSwitch && (
+                <View style={styles.aiSwitchRow}>
+                  <Text style={[styles.switchText, { color: Tokens.inkDim, flex: 1 }]}>
+                    {t('voiceCapture.aiSwitchLabel')}
+                  </Text>
+                  <Switch
+                    value={aiAllowed}
+                    onValueChange={toggleAiAllowed}
+                    trackColor={{ false: Tokens.rule, true: Tokens.amber }}
+                    accessibilityLabel={t('voiceCapture.aiSwitchLabel')}
+                  />
+                </View>
+              )}
+              {speechAvailable && voiceError && (
+                <Text style={[styles.hintText, { color: '#B14A3D' }]}>
+                  {t(voiceError === 'offlineModelMissing' ? 'voiceCapture.offlineModelMissing' : 'voiceCapture.voiceError')}
+                </Text>
+              )}
+              {speechAvailable && onDevice && !voiceError && (
+                <Text style={[styles.hintText, { color: Tokens.inkFaint }]}>
+                  {t('voiceCapture.offlineHint')}
                 </Text>
               )}
               {showProHint && (
@@ -724,6 +839,13 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 20,
     paddingVertical: 4,
+  },
+  aiSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   switchText: {
     fontSize: 13,

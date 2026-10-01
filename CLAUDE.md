@@ -157,8 +157,7 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
 ### Webapp (graph visualizer)
-`webapp/` ist ein eigenständiges Next.js-Projekt (eigene `node_modules`). Liest Notizen (ohne archivierte), Threads,
-Ähnlichkeiten aus Supabase → Force-Graph: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
+`webapp/`: eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
@@ -177,6 +176,7 @@ zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als 
 **KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter (`voiceAiPref`) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
+**Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download). Scheitert die KI beim Speichern (offline/Bridge), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, Minutentakt + Vordergrund), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen; Detach/Alles-löschen leeren sie.
 
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —

@@ -19,7 +19,11 @@ import {
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
-import { loadVoiceAiPref } from '../utils/voiceAiPref';
+import { loadVoiceAiPref, isVoiceAiEnabled } from '../utils/voiceAiPref';
+import { structuredToNote } from '../utils/structuredNote';
+import { parseNoteRemote } from '../sync/parseNote';
+import { resolveAccountState } from '../sync/accountState';
+import { loadPendingParses, removePendingParse, clearPendingParses, MAX_AGE_MS } from '../sync/pendingParse';
 import { subscriptionService, Tier } from '../sync/subscriptionService';
 
 export type ResyncMode = 'merge' | 'replace';
@@ -557,6 +561,84 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     haptics.light();
   }, [commit, markPending, pushRemote, scheduleNoteReminder]);
 
+  // ---------------------------------------------------------------------------
+  // Nachgeholte KI-Strukturierung offline diktierter Notizen (src/sync/pendingParse.ts)
+  // ---------------------------------------------------------------------------
+
+  const categoriesRef = useRef(categories);
+  categoriesRef.current = categories;
+  const tierRef = useRef(tier);
+  tierRef.current = tier;
+  const processingParseRef = useRef(false);
+
+  const processPendingParses = useCallback(async () => {
+    if (processingParseRef.current) return;
+    if (tierRef.current !== 'pro' || !isVoiceAiEnabled() || !isSyncConfigured()) return;
+    processingParseRef.current = true;
+    try {
+      const items = await loadPendingParses();
+      if (items.length === 0) return;
+      const account = await resolveAccountState().catch(() => null);
+      if (account?.state !== 'secured') return;
+
+      for (const item of items) {
+        if (!mountedRef.current) return;
+        const note = allRef.current.find((n) => n.id === item.noteId);
+        const stale = Date.now() - new Date(item.recordedAt).getTime() > MAX_AGE_MS;
+        // Notiz weg, archiviert oder vom User veraendert: nichts ueberschreiben.
+        if (!note || note.archivedAt || note.updatedAt !== item.noteUpdatedAt || stale) {
+          await removePendingParse(item.noteId);
+          continue;
+        }
+        const res = await parseNoteRemote({
+          transcript: item.transcript,
+          title: item.title,
+          categories: categoriesRef.current,
+          locale: item.locale,
+          now: new Date(item.recordedAt),
+        });
+        if ('error' in res) {
+          if (res.error === 'plan_required') await removePendingParse(item.noteId);
+          // Netz/Limit: bleibt liegen, naechster Versuch spaeter. Offline bricht der Rest ebenfalls ab.
+          if (res.error === 'unavailable') return;
+          continue;
+        }
+        const draft = structuredToNote(res.result);
+        await updateNote(item.noteId, {
+          title: draft.title,
+          content: draft.content,
+          category: draft.category,
+          checklist: draft.checklist,
+          reminderAt: draft.reminderAt,
+          reminderRecurrence: draft.reminderRecurrence,
+          reminderWeekday: draft.reminderWeekday,
+          reminderDayOfMonth: draft.reminderDayOfMonth,
+        });
+        await removePendingParse(item.noteId);
+      }
+    } catch (e) {
+      console.warn('[parse-note] nachholen fehlgeschlagen', e);
+    } finally {
+      processingParseRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateNote]);
+
+  // Beim Start (sobald der Tier bekannt ist), bei Rueckkehr in den Vordergrund und im
+  // Minutentakt, solange die App offen ist — Netz kann auch waehrend der Nutzung zurueckkehren.
+  useEffect(() => {
+    if (tier !== 'pro') return;
+    processPendingParses();
+    const interval = setInterval(processPendingParses, 60_000);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') processPendingParses();
+    });
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, [tier, processPendingParses]);
+
   /** Archivieren: bleibt remote erhalten, nur archived_at wird gesetzt (S9). */
   const deleteNote = useCallback(async (id: string) => {
     const note = allRef.current.find((n) => n.id === id);
@@ -629,6 +711,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       '@notizapp_pending_sync',
       '@notizapp_sync_uid',
       '@notizapp_tier_cache',
+      '@notizapp_pending_parse',
     ]);
     publish([]);
     setCategories(DEFAULT_CATEGORIES);
@@ -731,6 +814,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // Der Tier gehoert zum abgemeldeten Konto. Zurueck auf "unbekannt", damit
     // die UI nichts aus dem alten Konto behauptet.
     await clearTierCache().catch(() => {});
+    // Diktate der Warteschlange gehoeren zum abgemeldeten Konto.
+    await clearPendingParses();
     serverTierSeenRef.current = false;
     setTier(null);
     setNextAllowedAt(null);
