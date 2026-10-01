@@ -91,3 +91,16 @@ test('Titel: nach Stille beendet die App den Titel und diktiert den Inhalt weite
   expect(screen.getByText('Wochenendplan')).toBeTruthy();
   expect(mockStart).toHaveBeenCalledTimes(1); // Inhalt laeuft ohne weiteren Tipp
 });
+
+test('Beim eigenen Stoppen gilt jeder Fehler (z. B. "client") als Teil des Stopps: Neustart folgt, kein Fehlertext', async () => {
+  await startRecording();
+  mockStart.mockClear();
+
+  fireEvent.press(screen.getByText('Titel diktieren'));
+  act(() => mockHandlers.error({ error: 'client', message: 'Other client side errors.' }));
+  act(() => mockHandlers.end({}));
+  await act(async () => { jest.advanceTimersByTime(400); });
+
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/Spracherkennung|Fehler/i)).toBeNull();
+});

@@ -315,12 +315,14 @@ export default function VoiceCaptureSheet({
     pendingRestartRef.current = null;
     setIsListening(false);
     if (stoppedRef.current) return;
-    if (QUIET_ERRORS.includes(event.error)) {
-      // Geraete-Erkennung meldet beim Stoppen teils "aborted": der geplante Neustart (Titel ↔ Inhalt)
-      // darf daran nicht scheitern; 'end' folgt auf den Fehler und fuehrt ihn aus.
+    if (pending && event.error !== 'not-allowed') {
+      // Wir haben die Sitzung selbst gestoppt (Titel ↔ Inhalt). Die Geraete-Erkennung meldet dabei
+      // je nach Stand "aborted", "no-speech", "client" …: kein echter Fehler, und der geplante
+      // Neustart darf daran nicht scheitern. 'end' folgt auf den Fehler und fuehrt ihn aus.
       pendingRestartRef.current = pending;
       return;
     }
+    if (QUIET_ERRORS.includes(event.error)) return;
 
     // Online-Erkennung fehlgeschlagen (kein Netz, Dienst gesperrt …): einmal auf dem Geraet
     // versuchen. Der Neustart laeuft ueber 'end', das auf den Fehler folgt.
