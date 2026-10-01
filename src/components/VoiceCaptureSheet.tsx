@@ -70,6 +70,12 @@ const join = (a: string, b: string) => (a && b ? `${a} ${b}` : a || b);
 // Normale Ausgaenge einer Sitzung (Stille, Abbruch durch uns) — kein Fehler fuer den User.
 const QUIET_ERRORS = ['aborted', 'no-speech', 'speech-timeout', 'interrupted'];
 
+// Erkennung auf dem Geraet liefert im Dauer-Modus keinen Satzschluss wie der Netz-Dienst: nach so
+// langer Stille gilt der diktierte Titel als fertig.
+const TITLE_SILENCE_MS = 1800;
+// Kurze Pause vor dem Neustart: Android-Erkennung meldet sonst teils "busy".
+const RESTART_DELAY_MS = 250;
+
 const supportsOnDevice = (): boolean =>
   !!ExpoSpeechRecognitionModule?.supportsOnDeviceRecognition?.();
 
@@ -102,6 +108,10 @@ export default function VoiceCaptureSheet({
   // Vom User (oder beim Schließen) gestoppt: das nachlaufende finale Ergebnis
   // darf die Erkennung nicht automatisch neu starten.
   const stoppedRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Letzte Zwischenstaende, damit 'end' sie retten kann, falls kein finales Ergebnis kam.
+  const partialRef = useRef({ title: '', content: '' });
   // Erkennung laeuft auf dem Geraet statt ueber den Netz-Dienst (offline oder nach Online-Fehler).
   const onDeviceRef = useRef(false);
   const [onDevice, setOnDevice] = useState(false);
@@ -193,6 +203,7 @@ export default function VoiceCaptureSheet({
   const startRecognition = useCallback(async (into: Target) => {
     sessionTargetRef.current = into;
     stoppedRef.current = false;
+    partialRef.current[into] = '';
     setTarget(into);
     setVoiceError(null);
     // Ohne Netz erkennt das Geraet selbst (bleibt fuer die Sheet-Laufzeit gesetzt). Der
@@ -218,18 +229,54 @@ export default function VoiceCaptureSheet({
     });
   }, [locale]);
 
+  const clearTimers = () => {
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    restartTimerRef.current = null;
+    titleSilenceTimerRef.current = null;
+  };
+
+  /** Nicht finalisierten Zwischenstand der beendeten Sitzung uebernehmen (sonst ginge er verloren). */
+  const flushPartial = () => {
+    const into = sessionTargetRef.current;
+    const text = partialRef.current[into].trim();
+    partialRef.current[into] = '';
+    if (!text) return;
+    if (into === 'title') {
+      setTitleText((prev) => join(prev, text).trim());
+      setTitlePartial('');
+    } else {
+      setTranscript((prev) => join(prev, text).trim());
+      setPartialTranscript('');
+    }
+  };
+
+  /** Neustart ins naechste Ziel; das Ziel gilt sofort, der Start folgt nach kurzer Pause. */
+  const scheduleRestart = (next: Target) => {
+    sessionTargetRef.current = next;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = setTimeout(() => {
+      restartTimerRef.current = null;
+      if (!stoppedRef.current) startRecognition(next);
+    }, RESTART_DELAY_MS);
+  };
+
   useSpeechRecognitionEvent('start', () => setIsListening(true));
   useSpeechRecognitionEvent('end', () => {
     setIsListening(false);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    titleSilenceTimerRef.current = null;
+    flushPartial();
     const next = pendingRestartRef.current;
     pendingRestartRef.current = null;
-    if (next) startRecognition(next);
+    if (next) scheduleRestart(next);
   });
   useSpeechRecognitionEvent('result', (event) => {
     const text = event.results[0]?.transcript ?? '';
     if (text.trim()) setDictated(true);
     const intoTitle = sessionTargetRef.current === 'title';
     if (event.isFinal) {
+      partialRef.current[intoTitle ? 'title' : 'content'] = '';
       if (intoTitle) {
         setTitleText((prev) => join(prev, text).trim());
         setTitlePartial('');
@@ -243,8 +290,22 @@ export default function VoiceCaptureSheet({
         setPartialTranscript('');
       }
     } else if (intoTitle) {
+      partialRef.current.title = text;
       setTitlePartial(text);
+      // Nur Geraete-Erkennung: kein Satzschluss vom Dienst → nach Stille selbst beenden.
+      // stop() liefert das finale Ergebnis (bzw. 'end' rettet den Zwischenstand) und startet den Inhalt.
+      if (onDeviceRef.current && text.trim()) {
+        if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+        titleSilenceTimerRef.current = setTimeout(() => {
+          titleSilenceTimerRef.current = null;
+          if (stoppedRef.current || pendingRestartRef.current) return;
+          pendingRestartRef.current = 'content';
+          setTarget('content');
+          ExpoSpeechRecognitionModule.stop();
+        }, TITLE_SILENCE_MS);
+      }
     } else {
+      partialRef.current.content = text;
       setPartialTranscript(text);
     }
   });
@@ -253,7 +314,13 @@ export default function VoiceCaptureSheet({
     const pending = pendingRestartRef.current;
     pendingRestartRef.current = null;
     setIsListening(false);
-    if (stoppedRef.current || QUIET_ERRORS.includes(event.error)) return;
+    if (stoppedRef.current) return;
+    if (QUIET_ERRORS.includes(event.error)) {
+      // Geraete-Erkennung meldet beim Stoppen teils "aborted": der geplante Neustart (Titel ↔ Inhalt)
+      // darf daran nicht scheitern; 'end' folgt auf den Fehler und fuehrt ihn aus.
+      pendingRestartRef.current = pending;
+      return;
+    }
 
     // Online-Erkennung fehlgeschlagen (kein Netz, Dienst gesperrt …): einmal auf dem Geraet
     // versuchen. Der Neustart laeuft ueber 'end', das auf den Fehler folgt.
@@ -282,6 +349,8 @@ export default function VoiceCaptureSheet({
 
   useEffect(() => {
     if (!visible) {
+      clearTimers();
+      partialRef.current = { title: '', content: '' };
       pendingRestartRef.current = null;
       onDeviceRef.current = false;
       stoppedRef.current = true;
@@ -319,6 +388,10 @@ export default function VoiceCaptureSheet({
   }, [startRecognition]);
 
   const stopListening = useCallback(() => {
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
+    restartTimerRef.current = null;
+    titleSilenceTimerRef.current = null;
     pendingRestartRef.current = null;
     stoppedRef.current = true;
     if (speechAvailable && ExpoSpeechRecognitionModule) {
@@ -588,6 +661,7 @@ export default function VoiceCaptureSheet({
                 <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
                   <Pressable
                     onPress={toggleListening}
+                    testID="voice-mic-button"
                     style={[
                       styles.micButton,
                       isListening
