@@ -8,7 +8,6 @@ export const Fonts = {
   sans: 'Inter_400Regular',
   sansMedium: 'Inter_500Medium',
   sansSemibold: 'Inter_600SemiBold',
-  sansBold: 'Inter_700Bold',
 };
 
 // Typografie-Presets als StyleSheet-Snippets

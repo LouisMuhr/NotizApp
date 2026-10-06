@@ -2,12 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import {
   Inter_400Regular,
   Inter_500Medium,
   Inter_600SemiBold,
-  Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import {
   InstrumentSerif_400Regular,
@@ -31,6 +31,9 @@ import { useNotes } from './src/context/NotesContext';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 
+// Native Splash bleibt sichtbar, bis Fonts, Onboarding-Flag und Notizen bereit sind.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 const navTheme = {
   ...DefaultTheme,
   colors: {
@@ -44,6 +47,14 @@ const navTheme = {
 };
 
 const navigationRef = createNavigationContainerRef();
+
+function SplashGate() {
+  const { loading } = useNotes();
+  useEffect(() => {
+    if (!loading) SplashScreen.hideAsync().catch(() => {});
+  }, [loading]);
+  return null;
+}
 
 function NotificationBootstrap() {
   const { rescheduleAllReminders } = useNotes();
@@ -89,7 +100,6 @@ export default function App() {
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
-    Inter_700Bold,
     InstrumentSerif_400Regular,
     InstrumentSerif_400Regular_Italic,
   });
@@ -111,7 +121,10 @@ export default function App() {
 
   if (!onboardingDone) {
     return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView
+        style={{ flex: 1 }}
+        onLayout={() => { SplashScreen.hideAsync().catch(() => {}); }}
+      >
         <SafeAreaProvider>
           <LanguageProvider>
             <OnboardingScreen
@@ -143,6 +156,7 @@ export default function App() {
               >
                 <NotesProvider>
                   <ThoughtsProvider>
+                    <SplashGate />
                     <NotificationBootstrap />
                     <ShareHandler />
                     <AppNavigator />

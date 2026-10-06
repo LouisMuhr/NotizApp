@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, View, FlatList, Pressable, Animated, Easing, ListRenderItemInfo } from 'react-native';
-import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
@@ -126,9 +126,8 @@ export default function HomeScreen({ navigation }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
+      // Native Splash deckt die Ladezeit ab (siehe SplashGate in App.tsx)
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]} />
     );
   }
 

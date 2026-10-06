@@ -245,10 +245,12 @@ export default function ThreadsScreen({ navigation }: Props) {
   /**
    * Synthese laeuft serverseitig und braucht ein bestaetigtes Konto.
    *
-   * Startwert ist `true`, wenn Sync gar nicht konfiguriert ist: dann gibt es
+   * `null` = Konto-Zustand wird noch ermittelt (Server-Roundtrip) — der Button
+   * zeigt dann weder Schloss noch "Konto noetig". Startwert ist `true`, wenn Sync
+   * gar nicht konfiguriert ist: dann gibt es
    * keine Konto-Zustaende und der Button verhaelt sich wie vor der Umstellung.
    */
-  const [hasAccount, setHasAccount] = useState(!isSyncConfigured());
+  const [hasAccount, setHasAccount] = useState<boolean | null>(isSyncConfigured() ? null : true);
 
   useEffect(() => {
     if (!isSyncConfigured()) return;
@@ -257,7 +259,7 @@ export default function ThreadsScreen({ navigation }: Props) {
       .then((snapshot) => {
         if (!cancelled) setHasAccount(snapshot.state === 'secured');
       })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setHasAccount(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -270,12 +272,12 @@ export default function ThreadsScreen({ navigation }: Props) {
    * Nutzer gesperrt sein kann. Ein Tap endet dann garantiert in einer 429.
    * Alle drei sehen gleich aus (ausgegraut), nur das Label erklaert den Grund.
    */
-  const isLimited = rateLimited || !hasAccount || !tierKnown;
+  const isLimited = rateLimited || hasAccount !== true || !tierKnown;
 
   /** Zweiteiliges Label, damit der Button umbrechen kann statt in einer Zeile zu ueberlaufen. */
   function getSynthesizeLabel(): { lead: string; detail: string } {
     if (synthesizing) return { lead: t('threads.synthesizeRunning'), detail: '' };
-    if (!hasAccount) return { lead: t('threads.synthesize'), detail: t('threads.needsAccount') };
+    if (hasAccount === false) return { lead: t('threads.synthesize'), detail: t('threads.needsAccount') };
     if (rateLimited) return formatAvailabilityParts(nextAllowedAt!, new Date(), locale, t);
     // Status unbekannt: kein Versprechen im Detail-Text.
     return { lead: t('threads.synthesize'), detail: '' };
@@ -353,11 +355,11 @@ export default function ThreadsScreen({ navigation }: Props) {
               erkennbar, dass es die Funktion gibt. Ein Tap fuehrt dann zum
               Konto-Screen statt in eine Fehlermeldung. */}
           <Pressable
-            onPress={hasAccount ? handleSynthesize : () => navigation.navigate('SettingsKonto')}
+            onPress={hasAccount === false ? () => navigation.navigate('SettingsKonto') : handleSynthesize}
             // Ohne Konto bleibt der Tap erlaubt: er fuehrt zum Konto-Screen,
             // nicht in die Synthese. Gesperrt wird nur der Synthese-Pfad —
             // auch bei noch unbekanntem Abo-Status.
-            disabled={synthesizing || (hasAccount && (rateLimited || !tierKnown))}
+            disabled={synthesizing || (hasAccount !== false && (hasAccount === null || rateLimited || !tierKnown))}
             style={({ pressed }) => [
               styles.synthesizeBtn,
               isLimited && styles.synthesizeBtnDisabled,
@@ -368,7 +370,7 @@ export default function ThreadsScreen({ navigation }: Props) {
               <ActivityIndicator size={16} color={isLimited ? Tokens.inkFaint : Tokens.amberDeep} style={{ marginRight: 6 }} />
             ) : (
               <MaterialCommunityIcons
-                name={!hasAccount ? 'lock-outline' : (rateLimited || !tierKnown) ? 'clock-outline' : 'creation'}
+                name={hasAccount === false ? 'lock-outline' : rateLimited ? 'clock-outline' : 'creation'}
                 size={16}
                 color={isLimited ? Tokens.inkFaint : Tokens.amberDeep}
                 style={{ marginRight: 6 }}

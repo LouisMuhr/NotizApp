@@ -353,7 +353,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (loadedCategories.length > 0) {
         setCategories(loadedCategories);
       } else {
-        await saveCategories(DEFAULT_CATEGORIES);
+        // State startet schon mit DEFAULT_CATEGORIES — Schreiben muss den Start nicht blockieren
+        saveCategories(DEFAULT_CATEGORIES).catch(() => {});
       }
       setLoading(false);
 
