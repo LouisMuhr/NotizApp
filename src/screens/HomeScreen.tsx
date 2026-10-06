@@ -103,7 +103,13 @@ export default function HomeScreen({ navigation }: Props) {
 
   const fabPulse = useRef(new Animated.Value(1)).current;
   const fabScale = useRef(new Animated.Value(1)).current;
+  // Puls nur als Einladung bei leerer Liste, sonst Dauerbewegung ohne Nutzen (und Akku)
+  const pulseFab = notes.length === 0;
   useEffect(() => {
+    if (!pulseFab) {
+      fabPulse.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(fabPulse, {
@@ -122,7 +128,7 @@ export default function HomeScreen({ navigation }: Props) {
     );
     loop.start();
     return () => loop.stop();
-  }, [fabPulse]);
+  }, [fabPulse, pulseFab]);
 
   if (loading) {
     return (

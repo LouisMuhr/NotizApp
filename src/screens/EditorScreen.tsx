@@ -351,6 +351,7 @@ export default function EditorScreen({ navigation, route }: Props) {
             label={t('editor.titlePlaceholder')}
             value={title}
             onChangeText={setTitle}
+            autoFocus={!noteId}
             mode="outlined"
             style={[styles.input, { flex: 1 }]}
             outlineStyle={styles.outline}
