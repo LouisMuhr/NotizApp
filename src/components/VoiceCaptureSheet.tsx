@@ -114,6 +114,8 @@ export default function VoiceCaptureSheet({
   const partialRef = useRef({ title: '', content: '' });
   // Erkennung laeuft auf dem Geraet statt ueber den Netz-Dienst (offline oder nach Online-Fehler).
   const onDeviceRef = useRef(false);
+  // Netz-Check nur beim ersten Start pro Sheet: bei jedem Titel↔Inhalt-Wechsel kostete er bis zu 1,2 s Aufnahmepause.
+  const onlineCheckedRef = useRef(false);
   const [onDevice, setOnDevice] = useState(false);
   const [voiceError, setVoiceError] = useState<null | 'generic' | 'offlineModelMissing'>(null);
   // Pro Aufnahme: darf die KI diese Notiz (auch nachtraeglich) ueberarbeiten? Standard ja,
@@ -208,10 +210,15 @@ export default function VoiceCaptureSheet({
     setVoiceError(null);
     // Ohne Netz erkennt das Geraet selbst (bleibt fuer die Sheet-Laufzeit gesetzt). Der
     // Online-Weg bleibt Standard — er ist genauer; schlaegt er fehl, greift der Error-Handler.
-    if (!onDeviceRef.current && supportsOnDevice() && !(await isProbablyOnline())) {
-      onDeviceRef.current = true;
+    if (!onDeviceRef.current && !onlineCheckedRef.current && supportsOnDevice()) {
+      const online = await isProbablyOnline();
+      onlineCheckedRef.current = true;
+      if (!online) onDeviceRef.current = true;
     }
-    if (stoppedRef.current) return; // waehrend des Checks gestoppt/geschlossen
+    if (stoppedRef.current) { // waehrend des Checks gestoppt/geschlossen
+      setIsListening(false);
+      return;
+    }
     setOnDevice(onDeviceRef.current);
     ExpoSpeechRecognitionModule.start({
       lang: locale === 'en' ? 'en-US' : 'de-DE',
@@ -263,7 +270,9 @@ export default function VoiceCaptureSheet({
 
   useSpeechRecognitionEvent('start', () => setIsListening(true));
   useSpeechRecognitionEvent('end', () => {
-    setIsListening(false);
+    // Geplanter Neustart (Titel↔Inhalt): Anzeige bleibt auf "nimmt auf", sonst springt der Button kurz auf aus.
+    // Das nachfolgende 'start' bestaetigt, ein Abbruch/Fehler setzt sie zurueck.
+    if (!pendingRestartRef.current) setIsListening(false);
     if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
     titleSilenceTimerRef.current = null;
     flushPartial();
@@ -313,7 +322,7 @@ export default function VoiceCaptureSheet({
     console.warn('[voice] Fehler:', event.error, event.message);
     const pending = pendingRestartRef.current;
     pendingRestartRef.current = null;
-    setIsListening(false);
+    if (!pending || event.error === 'not-allowed') setIsListening(false);
     if (stoppedRef.current) return;
     if (pending && event.error !== 'not-allowed') {
       // Wir haben die Sitzung selbst gestoppt (Titel ↔ Inhalt). Die Geraete-Erkennung meldet dabei
@@ -355,6 +364,7 @@ export default function VoiceCaptureSheet({
       partialRef.current = { title: '', content: '' };
       pendingRestartRef.current = null;
       onDeviceRef.current = false;
+      onlineCheckedRef.current = false;
       stoppedRef.current = true;
       setVoiceError(null);
       setOnDevice(false);
