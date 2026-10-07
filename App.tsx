@@ -53,6 +53,11 @@ function SplashGate() {
   useEffect(() => {
     if (!loading) SplashScreen.hideAsync().catch(() => {});
   }, [loading]);
+  // Notbremse: der Splash darf nie dauerhaft haengen bleiben.
+  useEffect(() => {
+    const id = setTimeout(() => { SplashScreen.hideAsync().catch(() => {}); }, 8000);
+    return () => clearTimeout(id);
+  }, []);
   return null;
 }
 

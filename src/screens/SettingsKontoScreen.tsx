@@ -279,6 +279,7 @@ export default function SettingsKontoScreen() {
    */
   const [pwStep, setPwStep] = useState<'idle' | 'code' | 'password'>('idle');
   const [inputPwToken, setInputPwToken] = useState('');
+  const [pwDialogVisible, setPwDialogVisible] = useState(false);
   /**
    * Waehrend eine Aktion laeuft, sind alle Buttons gesperrt — den Spinner zeigt
    * aber nur der gedrueckte (`busyAction`).
@@ -319,6 +320,19 @@ export default function SettingsKontoScreen() {
     setInputResetCode('');
     setInputConfirmCode('');
     setInputPwToken('');
+  };
+
+  const openPwDialog = () => {
+    clearFields();
+    setPwStep('idle');
+    setPwDialogVisible(true);
+  };
+
+  const closePwDialog = () => {
+    if (loading) return;
+    clearFields();
+    setPwStep('idle');
+    setPwDialogVisible(false);
   };
 
   const switchTab = (tab: LocalTab) => {
@@ -953,6 +967,7 @@ export default function SettingsKontoScreen() {
       }
       clearFields();
       setPwStep('idle');
+      setPwDialogVisible(false);
       showToast(t('settingsKonto.toastPasswordChanged'), 'success');
       // Wie nach der Registrierung: der Konto-Screen hat seinen Zweck erfuellt.
       navigation.navigate('Home', { screen: 'Threads' });
@@ -973,7 +988,8 @@ export default function SettingsKontoScreen() {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Toast key={toastKey.current} message={toast.message} type={toast.type} />
+      {/* Bei offenem Passwort-Dialog zeigt nur dessen eigener Toast die Meldung. */}
+      {!pwDialogVisible && <Toast key={toastKey.current} message={toast.message} type={toast.type} />}
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -1246,11 +1262,52 @@ export default function SettingsKontoScreen() {
               </View>
             </View>
 
-            {/* Passwort ändern */}
+            {/* Passwort ändern: Ablauf (Code anfordern → Code → neues Passwort) im Dialog */}
             <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>
               {t('settingsKonto.changePassword')}
             </Text>
             <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              <Text style={styles.hintText}>{t('settingsKonto.changePasswordIntro')}</Text>
+              <PrimaryButton
+                label={t('settingsKonto.changePassword')}
+                onPress={openPwDialog}
+                disabled={loading}
+              />
+            </View>
+
+            {/* Sync beenden */}
+            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.sessionLabel')}</Text>
+            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+              {/* Erwartung vorher setzen: im Lokal-first-Modell bleibt der
+                  Notiz-Bestand auf dem Geraet. Wer alles loswerden will, nutzt
+                  Einstellungen → Datenschutz → Alle Daten loeschen. */}
+              <Text style={styles.hintText}>{t('settingsKonto.signOutHint')}</Text>
+              <PrimaryButton
+                label={t('settingsKonto.signOutButton')}
+                onPress={handleSignOut}
+                loading={busyAction === 'sign-out'}
+                disabled={loading}
+                danger
+              />
+            </View>
+          </>
+        )}
+
+      </ScrollView>
+
+      {/* Rueckfrage vor dem Abbruch — destruktiv, der Zugang wird geloescht. */}
+      <Portal>
+        {/* Passwort ändern — Schritte 1-3 in einem Dialog. */}
+        <Dialog
+          visible={pwDialogVisible}
+          onDismiss={closePwDialog}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>
+            {t('settingsKonto.changePassword')}
+          </Dialog.Title>
+          <Dialog.ScrollArea style={{ paddingHorizontal: 24 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 10, paddingVertical: 12 }}>
               {/* Schritt 1: Code anfordern. Eine Session allein reicht nicht —
                   sonst koennte jeder mit dem entsperrten Geraet uebernehmen. */}
               {pwStep === 'idle' && (
@@ -1329,30 +1386,16 @@ export default function SettingsKontoScreen() {
                   />
                 </>
               )}
-            </View>
-
-            {/* Sync beenden */}
-            <Text style={[styles.eyebrow, { color: theme.colors.onSurfaceVariant }]}>{t('settingsKonto.sessionLabel')}</Text>
-            <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-              {/* Erwartung vorher setzen: im Lokal-first-Modell bleibt der
-                  Notiz-Bestand auf dem Geraet. Wer alles loswerden will, nutzt
-                  Einstellungen → Datenschutz → Alle Daten loeschen. */}
-              <Text style={styles.hintText}>{t('settingsKonto.signOutHint')}</Text>
-              <PrimaryButton
-                label={t('settingsKonto.signOutButton')}
-                onPress={handleSignOut}
-                loading={busyAction === 'sign-out'}
-                disabled={loading}
-                danger
-              />
-            </View>
-          </>
-        )}
-
-      </ScrollView>
-
-      {/* Rueckfrage vor dem Abbruch — destruktiv, der Zugang wird geloescht. */}
-      <Portal>
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={closePwDialog} disabled={loading} textColor={theme.colors.onSurfaceVariant}>
+              {t('settingsKonto.changePasswordCancel')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+        {/* Der Screen-Toast liegt unter dem Dialog — im Portal erneut zeigen. */}
+        {pwDialogVisible && <Toast key={toastKey.current} message={toast.message} type={toast.type} />}
         <Dialog
           visible={cancelDialogVisible}
           onDismiss={() => setCancelDialogVisible(false)}

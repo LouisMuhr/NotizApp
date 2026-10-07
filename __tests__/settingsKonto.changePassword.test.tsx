@@ -59,6 +59,12 @@ jest.mock('../src/sync/supabaseClient', () => ({
 const SettingsKontoScreen = require('../src/screens/SettingsKontoScreen').default;
 const { t } = require('../src/i18n');
 
+// [0] ist die Abschnittsueberschrift, [1] der Knopf.
+const openDialog = async () => {
+  await screen.findAllByText(t('settingsKonto.changePassword'));
+  fireEvent.press(screen.getAllByText(t('settingsKonto.changePassword'))[1]);
+};
+
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.clearAllMocks();
@@ -66,6 +72,9 @@ beforeEach(async () => {
 
 test('ohne Code gibt es kein Passwortfeld — nur den Anforderungs-Button', async () => {
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  // Im Konto-Screen steht nur der "Passwort ändern"-Knopf; der Ablauf liegt im Dialog.
+  expect(screen.queryByText(t('settingsKonto.requestPasswordTokenButton'))).toBeNull();
+  await openDialog();
   await screen.findByText(t('settingsKonto.requestPasswordTokenButton'));
 
   // Genau das war die Luecke: hier stand frueher direkt das Formular.
@@ -74,6 +83,7 @@ test('ohne Code gibt es kein Passwortfeld — nur den Anforderungs-Button', asyn
 
 test('Schritt 1 fordert einen Code fuer das bestehende Konto an', async () => {
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  await openDialog();
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
 
   // resetPasswordForEmail zieht das Recovery-Template, das bereits im
@@ -89,6 +99,7 @@ test('erst nach eingeloestem Code erscheint das Passwortfeld', async () => {
   });
 
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  await openDialog();
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),
@@ -108,6 +119,7 @@ test('falscher Code fuehrt nicht zum Passwortfeld', async () => {
   mockVerifyOtp.mockResolvedValue({ data: { session: null }, error: { message: 'expired' } });
 
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  await openDialog();
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),
@@ -115,7 +127,10 @@ test('falscher Code fuehrt nicht zum Passwortfeld', async () => {
   );
   fireEvent.press(screen.getByText(t('settingsKonto.changePasswordCodeButton')));
 
-  await screen.findByText(t('settingsKonto.toastPasswordCodeInvalid'));
+  // Der Dialog (accessibilityViewIsModal) blendet Geschwister fuer die Abfrage aus — der Toast
+  // liegt als Geschwister im Portal. Es darf genau einer da sein (nicht zusaetzlich im Screen).
+  const toasts = await screen.findAllByText(t('settingsKonto.toastPasswordCodeInvalid'), { includeHiddenElements: true });
+  expect(toasts).toHaveLength(1);
   expect(screen.queryByPlaceholderText(t('settingsKonto.passwordPlaceholder'))).toBeNull();
   expect(mockUpdateUser).not.toHaveBeenCalled();
 });
@@ -127,6 +142,7 @@ test('nach dem Wechsel geht es zurueck in den Threads-Screen', async () => {
   });
 
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  await openDialog();
   fireEvent.press(await screen.findByText(t('settingsKonto.requestPasswordTokenButton')));
   fireEvent.changeText(
     await screen.findByPlaceholderText(t('settingsKonto.confirmCodePlaceholder')),

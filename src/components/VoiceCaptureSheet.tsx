@@ -48,7 +48,6 @@ import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
-import { isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { isProbablyOnline } from '../utils/connectivity';
 import { isQueuedNoticeHidden, hideQueuedNotice } from '../utils/aiQueuedNoticePref';
 import { enqueuePendingParse, MAX_TRANSCRIPT_CHARS } from '../sync/pendingParse';
@@ -449,7 +448,7 @@ export default function VoiceCaptureSheet({
   const canSave = displayText.trim().length > 0 || displayTitle.trim().length > 0;
   const tierKnown = tier !== null;
   const showProHint = speechAvailable && tierKnown && tier !== 'pro';
-  const showAiSwitch = speechAvailable && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+  const showAiSwitch = speechAvailable && tier === 'pro' && isSyncConfigured();
 
   // Ausschalten braucht eine Bestaetigung (ohne KI bleibt das Diktat roh); Einschalten nicht.
   const toggleAiAllowed = (next: boolean) => {
@@ -490,7 +489,7 @@ export default function VoiceCaptureSheet({
     const recordedAt = new Date();
     let note: Parameters<typeof addNote>[0] = plainNote;
 
-    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
+    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isSyncConfigured();
     // Die Bridge lehnt lange Diktate ab: gar nicht erst senden oder vormerken.
     const tooLong = content.length > MAX_TRANSCRIPT_CHARS;
     if (canUseAi && tooLong) aiNotice = t('voiceCapture.aiTooLong');
@@ -709,7 +708,7 @@ export default function VoiceCaptureSheet({
                     {t('voiceCapture.aiSwitchLabel')}
                   </Text>
                   <Switch
-                    value={aiAllowed}
+                    value={aiAllowed && !aiOffDialog}
                     onValueChange={toggleAiAllowed}
                     color={theme.colors.primary}
                     accessibilityLabel={t('voiceCapture.aiSwitchLabel')}

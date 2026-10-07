@@ -16,7 +16,7 @@ import ThreadDetailScreen from '../screens/ThreadDetailScreen';
 import SettingsDarstellungScreen from '../screens/SettingsDarstellungScreen';
 import SettingsKategorienScreen from '../screens/SettingsKategorienScreen';
 import SettingsBenachrichtigungenScreen from '../screens/SettingsBenachrichtigungenScreen';
-import SettingsSynchronisationScreen from '../screens/SettingsSynchronisationScreen';
+import SettingsTestBenachrichtigungenScreen from '../screens/SettingsTestBenachrichtigungenScreen';
 import SettingsKontoScreen from '../screens/SettingsKontoScreen';
 import SettingsDatenschutzScreen from '../screens/SettingsDatenschutzScreen';
 import SettingsBookmarkletScreen from '../screens/SettingsBookmarkletScreen';
@@ -167,9 +167,9 @@ export default function AppNavigator() {
         options={{ title: t('navigation.notifications') }}
       />
       <Stack.Screen
-        name="SettingsSynchronisation"
-        component={SettingsSynchronisationScreen}
-        options={{ title: t('navigation.sync') }}
+        name="SettingsTestBenachrichtigungen"
+        component={SettingsTestBenachrichtigungenScreen}
+        options={{ title: t('navigation.testNotifications') }}
       />
       <Stack.Screen
         name="SettingsKonto"
