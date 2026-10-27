@@ -1,64 +1,23 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<title>Velm Bookmarklet</title>
-<link rel="icon" type="image/png" href="/bookmarklet/favicon.png">
-<link rel="apple-touch-icon" href="/bookmarklet/favicon.png">
-<style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.5; color: #1a1a1a; }
-  h1 { color: #C8972B; }
-  code, pre { background: #f4f4f0; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
-  pre { padding: 12px; overflow-x: auto; }
-  .bm { display: inline-block; background: #C8972B; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 12px 0; }
-  .step { background: #faf9f5; border-left: 3px solid #C8972B; padding: 12px 16px; margin: 16px 0; border-radius: 6px; }
-  input { width: 100%; padding: 8px; font-family: monospace; box-sizing: border-box; }
-  button { padding: 10px 20px; background: #C8972B; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
-</style>
-</head>
-<body>
-<h1>📝 Velm Bookmarklet</h1>
-<p>Markiere Text auf einer beliebigen Webseite, klick das Bookmark, und der Text landet direkt als Notiz in deiner App — mit Kategorie, Pin-Option und optionaler Erinnerung.</p>
-
-<div class="step">
-  <strong>Schritt 1:</strong> Trage deinen persönlichen Bookmarklet-Schlüssel ein. Du erzeugst ihn in der App unter <strong>Einstellungen → Bookmarklet</strong>. Der Schlüssel ist geheim – er erlaubt, Notizen in dein Konto zu speichern.
-  <p><label>Dein Bookmarklet-Schlüssel:<br>
-  <input id="tok" placeholder="64 Zeichen, aus der App kopiert" autocomplete="off"></label></p>
-  <button onclick="build()">Bookmarklet generieren</button>
-</div>
-
-<div class="step" id="result" style="display:none">
-  <strong>Schritt 2:</strong> Zieh diesen Link in deine Lesezeichen-Leiste:<br>
-  <a id="bm" class="bm" href="#">📝Velm</a>
-  <p><strong>Schritt 3:</strong> Text auf einer Webseite markieren → Bookmarklet klicken → Panel ausfüllen → Speichern. Die Notiz erscheint sofort in der App.</p>
-</div>
-
-<h3>Wie es funktioniert</h3>
-<p>Das Bookmarklet injiziert ein schwebendes Panel (Shadow DOM) in die aktuelle Seite. Du kannst Titel, Inhalt, Kategorie, Pin und Erinnerung direkt im Panel einstellen — kein <code>prompt()</code>, kein <code>alert()</code>.</p>
-
-<script>
-var FIXED_URL = 'https://bridge-three-coral.vercel.app';
-
-function build() {
-  var tok = document.getElementById('tok').value.trim();
-  if (!tok) { alert('Bitte zuerst deinen Bookmarklet-Schlüssel eintragen.'); return; }
-  if (!/^[0-9a-f]{64}$/i.test(tok)) { alert('Der Schlüssel sieht nicht korrekt aus. Bitte kopiere ihn direkt aus der App.'); return; }
-
-  // The panel script is inlined as a self-contained IIFE.
-  var panelScript = `(function(){
-var API='${FIXED_URL}/api/note?token=`+encodeURIComponent(tok)+`';
-var CATS=['Allgemein','Arbeit','Privat','Ideen','Einkauf'];
+/**
+ * Baut den javascript:-Bookmarklet-Link. Injiziert ein schwebendes Panel (Shadow DOM)
+ * in die aktuelle Seite, vorausgefüllt mit der Textauswahl. Kein prompt()/alert().
+ */
+export function buildBookmarkletHref(webappUrl: string, bridgeUrl: string, token: string, categories: string[]): string {
+  const cats = categories.length > 0 ? categories : ['Allgemein'];
+  const panelScript = `(function(){
+var SAVE_URL='${webappUrl}/bookmarklet/save';
+var BRIDGE_URL='${bridgeUrl}';
+var TOKEN='${token}';
+var CATS=${JSON.stringify(cats)};
 var sel=window.getSelection().toString().trim();
 if(!sel){alert('Bitte zuerst Text markieren.');return;}
 
-// --- Shadow host ---
 if(document.getElementById('_nmb_host'))return;
 var host=document.createElement('div');
 host.id='_nmb_host';
 document.body.appendChild(host);
 var shadow=host.attachShadow({mode:'closed'});
 
-// --- Styles ---
 var style=document.createElement('style');
 style.textContent=[
   '*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,system-ui,sans-serif;}',
@@ -102,7 +61,6 @@ style.textContent=[
 ].join('');
 shadow.appendChild(style);
 
-// --- HTML ---
 var div=document.createElement('div');
 div.id='panel';
 div.innerHTML=[
@@ -141,7 +99,6 @@ div.innerHTML=[
 ].join('');
 shadow.appendChild(div);
 
-// --- Header icon ---
 var ico=document.createElement('img');
 ico.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAQAAAGKDAGaAAAFgUlEQVRYw7WXa2wUVRTH/20p7fZBW0p5iAplaUELCqEFlUCMYKwJKMYgaEwIUpQYNCIWRYgvQtTS6AeiKEqIQDBIAEFAEEm1DUVUoIqPVqhCC/IoammhC9vt/vywM7szu7NLLfHMl7n3nP/533vuPefMSHap8wNIoG57pxIYSErZDyCgB8qogTYUeKT+v2C+SlLanqA3v4EBwSdAasAI4CUUcA7wRsiBMbDIjQDQd4M0ogimtkrbMWSgAVzibUIouTIwfc4kJaVIkpT+PTxLiGplkHCo6Wq+uSOydlrYl3jD1xOSAQ5zdzcA1CJJK/ygOEk91kIhAMsQmeMDq9MRg7ojGExIINkrOAm8D4DHSg9QwiQApiDmeQzFWaDE2LUQ4DXjedimsAQaShgbqXj4NM4ISZpmVeTbdt6vGISrWtElfs76Fuig9+9hij7qFjbTs6GecEnxSdKa4DjbK0nFrzWFTI4yE/jVsvDsMaauP0JxX0ARviBgOg0A3GnZaVpO4N3llZRYYZrez8dhC/KRxrBVYSt37TPVgSh6GQN8FFxSQPLOqbsBSP3Wy2gLwJIRQcC91mPIOGyaTaTKARBxbllH7EtqZkJsgCRlvrTbF21JQiS3KN7pkFNH/BMOiJ+nq8vQTTNI8ChZnZabXJs7bxzf9zjAO/8kTLfNxynXwTpze6PlnG8/o16B+fzTfqCRgq1W62nXtYff1X1orjRiqzn2M8TgySlqAFjNuqDxFdIRKpWeag/Vo7zfJWXXei1ep3AaKDYDWypNvhLQnETk1+kWf/hC3iUrdGil0i3lAE8iRM/r1cpm3g0aNzAdgB8sACnvm8Bo0AuSLgLwKMeBQjosTEuCAJu0BSPgjsjo5WS0KyUM4Amqf6aO2cFRPUKU0cLAOhvgsgUAUM4u/PQz9lAGwC5/75eDgFlhAHuxKzNmynGtMwDtvMWOmIBahEjbYAACBWYCzY6A18kx3jI2WXolQJvRKMLqb6g5bbO0AnMPlbwSFdBrpwMA4FkOOwJ6mw08q/J8jChZnhtCR9HdfTo2IP6JyGQrfKbVGZBeETWdB723PwzQ/ZISr1IDchs9IcCtnasbWWMvCC3SNUhm2ophJ2raq9pyjycvjbju1yTje/604IzHllMXmH0256BGRBoPTipaO/jv4ktTPaNaC+rd02I5dqUsdTdUXiaGfOYbdKbPi2bnLkjLO3cszGJx+00fRLoemXlg1qkLVDOOxVyM6v4MM4kLlpQh6cObI22OIcatNh0nJj3X/8S2S3aTFhZwJ9/Z5raTZ71npZKUOWVxhPtDuBD5jZI7c+8DJ8/Giga7GcObzCMxMkFKJWlUYm6ztU0cYbihH7lccbv3cw9z+Tuq+yrG8gptNDGHBEcCSXGDjz7NDG6zWQyYLylhTyDSl1nK7VRYHLfxKmOpjCDcaH5dR5T1obPddekel9f95/BPs/ubwa+wB76acTzPRJ6hOWbYGnkEEb/wqlc96eu2CHAJ1cznLg5Fdf8lBQjxBqv87qbcx2MQJFd5HAjMyrSD0bxN6ABbWUiSQ9f4jQnNA7epjwNBSvWVGATmrX+M+xjjUGbLbHbtLLvU7w/dYf/0OrCV0ZTjjUEQ/WOxzJYh+QiRut5GkP6dz/jBms0kartA0ByWIekbbQQ9DnXYHG2gkIJOE7gc5jK32AgyavwOZ/A504N/AjG/px2entvtxf5Hoh5yByspZMN/JMjZbQ/RwRrf1W5RLZMY3Pkd7Ii8q5N71y9rae/CLbI/PY5qfKyk7ttvy13nj3aBIN6XslwZnW2TcX1KMlre8vk7RZB6QsVd7ccD3dUPXTwVhSCuI+lD80fi2iQhb1H+X5ssBEmn9KD+B7k54yut0XX/HfgvpUkmTvPggOsAAAAASUVORK5CYII=';
 ico.alt='';
@@ -149,23 +106,20 @@ ico.style.cssText='width:20px;height:20px;border-radius:5px;margin-right:8px;fle
 var hdSpan=shadow.getElementById('hd-title-span');
 hdSpan.insertBefore(ico,hdSpan.firstChild);
 
-// --- Prefill ---
 var ttl=shadow.getElementById('ttl');
 var cnt=shadow.getElementById('cnt');
 ttl.value=sel.split('\\n')[0].slice(0,80);
 cnt.value=sel;
 
-// Block host-page keyboard/input listeners from swallowing events inside the panel
 ['keydown','keyup','keypress','input','change'].forEach(function(evt){
   div.addEventListener(evt,function(e){e.stopPropagation();},{capture:true});
 });
 
-// --- Category chips ---
-var activeCat='Allgemein';
+var activeCat=CATS[0];
 var chipsEl=shadow.getElementById('chips');
 CATS.forEach(function(c){
   var ch=document.createElement('span');
-  ch.className='chip'+(c==='Allgemein'?' active':'');
+  ch.className='chip'+(c===activeCat?' active':'');
   ch.textContent=c;
   ch.onclick=function(){
     activeCat=c;
@@ -175,14 +129,12 @@ CATS.forEach(function(c){
   chipsEl.appendChild(ch);
 });
 
-// --- Reminder toggle ---
 shadow.getElementById('rem-toggle').onclick=function(){
   var s=shadow.getElementById('rem-section');
   s.classList.toggle('open');
   this.textContent=s.classList.contains('open')?'✕ Erinnerung entfernen':'⏰ Erinnerung hinzufügen';
 };
 
-// --- Close ---
 function close(){
   div.classList.remove('open');
   setTimeout(function(){host.remove();},300);
@@ -191,7 +143,10 @@ shadow.getElementById('cls').onclick=close;
 shadow.getElementById('can').onclick=close;
 shadow.addEventListener('keydown',function(e){if(e.key==='Escape'){close();}});
 
-// --- Save ---
+// Viele Seiten (X, Wikipedia, ...) blocken den direkten fetch() zur Bridge per
+// Content-Security-Policy (connect-src). Daher speichert nicht das Panel selbst,
+// sondern ein kurz geöffnetes Popup auf unserer eigenen Domain, das die CSP der
+// Zielseite nicht erbt. Daten gehen per URL-Fragment mit (nie an einen Server gesendet).
 shadow.getElementById('sav').onclick=function(){
   var btn=shadow.getElementById('sav');
   btn.disabled=true;
@@ -201,47 +156,46 @@ shadow.getElementById('sav').onclick=function(){
     title:ttl.value.trim()||'Notiz aus Bookmarklet',
     content:cnt.value,
     category:activeCat,
-    pinned:false,
     feeds_threads:shadow.getElementById('pin').checked,
+    bridgeUrl:BRIDGE_URL,
+    token:TOKEN,
   };
   if(remDt){
     payload.reminder_at=new Date(remDt).toISOString();
     payload.reminder_recurrence=shadow.getElementById('rem-rec').value;
   }
-  fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-    .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});})
-    .then(function(x){
-      if(x.ok){
-        shadow.getElementById('form-body').style.display='none';
-        shadow.querySelector('footer').style.display='none';
-        var s=shadow.getElementById('success');
-        s.style.display='flex';
-        setTimeout(close,1500);
-      } else {
-        btn.disabled=false;
-        btn.textContent='Speichern';
-        var code=x.j&&x.j.error;
-        var msg=code==='unauthorized'?'Schlüssel ungültig oder widerrufen. Bitte in der App einen neuen erzeugen und das Bookmarklet neu anlegen.'
-          :code==='tier_required'?'Das Bookmarklet ist ab dem Basic-Plan verfügbar.'
-          :'Speichern fehlgeschlagen ('+(code||x.status)+').';
-        alert(msg);
-      }
-    })
-    .catch(function(e){
+  var data=encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(payload)))));
+  var popup=window.open(SAVE_URL+'#data='+data,'_velm_bookmarklet_save','width=360,height=260');
+  if(!popup){
+    btn.disabled=false;
+    btn.textContent='Speichern';
+    alert('Popup wurde blockiert. Bitte Popups für diese Seite erlauben und erneut versuchen.');
+    return;
+  }
+  function onMsg(e){
+    if(e.source!==popup||!e.data||e.data.source!=='velm-bookmarklet')return;
+    window.removeEventListener('message',onMsg);
+    if(e.data.ok){
+      shadow.getElementById('form-body').style.display='none';
+      shadow.querySelector('footer').style.display='none';
+      var s=shadow.getElementById('success');
+      s.style.display='flex';
+      setTimeout(close,1500);
+    } else {
       btn.disabled=false;
       btn.textContent='Speichern';
-      alert('Netzwerkfehler: '+e.message);
-    });
+      var code=e.data.error;
+      var msg=code==='unauthorized'?'Schlüssel ungültig oder widerrufen. Bitte in der webapp ein neues Bookmarklet anlegen.'
+        :code==='tier_required'?'Das Bookmarklet ist ab dem Basic-Plan verfügbar.'
+        :'Speichern fehlgeschlagen ('+(code||'unknown')+').';
+      alert(msg);
+    }
+  }
+  window.addEventListener('message',onMsg);
 };
 
-// --- Animate in ---
 requestAnimationFrame(function(){div.classList.add('open');});
 })();`;
 
-  var a = document.getElementById('bm');
-  a.href = 'javascript:' + encodeURIComponent(panelScript);
-  document.getElementById('result').style.display = 'block';
+  return 'javascript:' + encodeURIComponent(panelScript);
 }
-</script>
-</body>
-</html>

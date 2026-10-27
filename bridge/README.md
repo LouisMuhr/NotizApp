@@ -22,7 +22,7 @@ Vercel serverless endpoint that lets you save text from any webpage (claude.ai, 
    - `BOOKMARKLET_MIN_TIER` — optional, Default `basic` (Freigabe des Bookmarklets)
    - (`MCP_BEARER_TOKEN`, `BRIDGE_USER_ID`, `DEVICE_ID` werden von den API-Endpunkten nicht mehr gelesen; nur noch der Worker unter `worker/` nutzt `BRIDGE_USER_ID`)
 3. **Deploy**: `npx vercel --prod`
-4. **Bookmarklet bauen**: In der App (Einstellungen → Bookmarklet, ab Basic) einen persönlichen Schlüssel erzeugen, `/bookmarklet` im Browser öffnen, Schlüssel eintragen, Link in Lesezeichen-Leiste ziehen.
+4. **Bookmarklet bauen**: Die webapp (`webapp/app/bookmarklet/page.tsx`, ab Basic) erzeugt den persönlichen Schlüssel automatisch für den eingeloggten User und zeigt den fertigen Bookmarklet-Link zum Ziehen in die Lesezeichen-Leiste — keine separate Setup-Seite in der Bridge mehr.
 
 ## Nutzung
 

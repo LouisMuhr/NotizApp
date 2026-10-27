@@ -1,5 +1,1 @@
-{
-  "rewrites": [
-    { "source": "/bookmarklet", "destination": "/bookmarklet/bookmarklet.html" }
-  ]
-}
+{}

@@ -55,6 +55,8 @@ body {
 ::-webkit-scrollbar-thumb     { background: rgba(244, 162, 97, 0.15); border-radius: 2px; }
 ::-webkit-scrollbar-track     { background: transparent; }
 
+@keyframes velm-spin { to { transform: rotate(360deg); } }
+
 /* ── panel slide-in animation ──────── */
 @keyframes slide-in {
   from { transform: translateX(100%); }
