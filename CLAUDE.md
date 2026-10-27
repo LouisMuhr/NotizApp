@@ -131,7 +131,7 @@ gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) �
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
 Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projekte: `supabase-migration-2026-09-17.sql`
 (`notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`, `profiles.bookmarklet_token_hash`),
-`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
+`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`), `supabase-migration-2026-10-27.sql` (offene `true`-Policies entfernt — **nie wieder `using (true)`**, permissive Policies sind ODER-verknüpft). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme, Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als einzige
