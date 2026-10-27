@@ -22,7 +22,7 @@ Vercel serverless endpoint that lets you save text from any webpage (claude.ai, 
    - `BOOKMARKLET_MIN_TIER` — optional, Default `basic` (Freigabe des Bookmarklets)
    - (`MCP_BEARER_TOKEN`, `BRIDGE_USER_ID`, `DEVICE_ID` werden von den API-Endpunkten nicht mehr gelesen; nur noch der Worker unter `worker/` nutzt `BRIDGE_USER_ID`)
 3. **Deploy**: `npx vercel --prod`
-4. **Bookmarklet**: lebt in der webapp (`/bookmarklet` zum Einrichten, `/bookmarklet/save` als Speichern-Tab). Der Tab ruft `/api/note` mit dem Login-Token des Users auf.
+4. **Bookmarklet**: lebt in der webapp (`/bookmarklet` zum Einrichten, `/bookmarklet/save` als Speichern-Fenster). Das Fenster ruft `/api/note` mit dem Login-Token des Users auf.
 
 ## Nutzung
 
