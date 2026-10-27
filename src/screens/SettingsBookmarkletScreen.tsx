@@ -1,128 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Linking,
-  Platform,
-} from 'react-native';
+import React, { useState } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useTheme, Text, Snackbar } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { getSupabase } from '../sync/supabaseClient';
-import { deriveStateFromUser } from '../sync/accountState';
-import { useNotes } from '../context/NotesContext';
 import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 
-const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? 'https://bridge-three-coral.vercel.app';
-
-function Step({
-  number,
-  title,
-  children,
-}: {
-  number: number;
-  title: string;
-  children: React.ReactNode;
-}) {
-  const theme = useTheme();
-  return (
-    <View style={styles.stepWrap}>
-      <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
-        <Text style={styles.stepNumber}>{number}</Text>
-      </View>
-      <View style={styles.stepBody}>
-        <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>{title}</Text>
-        {children}
-      </View>
-    </View>
-  );
-}
-
-function CopyBox({ label, value }: { label: string; value: string }) {
-  const theme = useTheme();
-  const { t } = useLanguage();
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    await Clipboard.setStringAsync(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <View>
-      <Text style={[styles.copyLabel, { color: theme.colors.onSurfaceVariant }]}>{label}</Text>
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={copy}
-        style={[styles.copyBox, { backgroundColor: theme.colors.background, borderColor: Tokens.paperEdge }]}
-      >
-        <Text
-          numberOfLines={1}
-          style={[styles.copyValue, { color: theme.colors.onSurface }]}
-        >
-          {value || '…'}
-        </Text>
-        <View style={[styles.copyBadge, { backgroundColor: copied ? Tokens.amberDeep : Tokens.amber }]}>
-          <MaterialCommunityIcons
-            name={copied ? 'check' : 'content-copy'}
-            size={14}
-            color={Tokens.paper}
-          />
-          <Text style={styles.copyBadgeText}>{copied ? t('settingsBookmarklet.copyValueCopied') : t('settingsBookmarklet.copyValueCopy')}</Text>
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}
+const WEBAPP_URL = 'https://www.velmnote.com';
 
 export default function SettingsBookmarkletScreen() {
   const theme = useTheme();
   const { t } = useLanguage();
-  const { tier } = useNotes();
-  const [token, setToken] = useState('');
-  const [tokenLoading, setTokenLoading] = useState(false);
-  /** Bookmarklet setzt ein bestaetigtes Konto voraus. */
-  const [hasAccount, setHasAccount] = useState(false);
   const [snack, setSnack] = useState('');
 
-  useEffect(() => {
-    getSupabase()?.auth.getUser().then(({ data }) => {
-      setHasAccount(deriveStateFromUser(data?.user ?? null) === 'secured');
-    });
-  }, []);
-
-  // Persoenlichen Schluessel erzeugen: nur der Hash liegt auf dem Server, der
-  // Klartext ist genau jetzt einmal sichtbar. Ein erneuter Klick widerruft den alten.
-  const generateToken = async () => {
-    const supabase = getSupabase();
-    if (!supabase) { setSnack(t('settingsBookmarklet.tokenErrorSync')); return; }
-    setTokenLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setSnack(t('settingsBookmarklet.tokenErrorSync')); return; }
-      const res = await fetch(`${BRIDGE_URL}/api/bookmarklet-token`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.status === 403 && json?.error === 'tier_required') { setSnack(t('settingsBookmarklet.tokenErrorTier')); return; }
-      if (res.status === 403 && json?.error === 'account_required') { setSnack(t('settingsBookmarklet.tokenErrorAccount')); return; }
-      if (!res.ok || typeof json?.token !== 'string') { setSnack(t('settingsBookmarklet.tokenErrorGeneric')); return; }
-      setToken(json.token);
-    } catch {
-      setSnack(t('settingsBookmarklet.tokenErrorGeneric'));
-    } finally {
-      setTokenLoading(false);
-    }
-  };
-
-  const openSetupPage = () => {
-    Linking.openURL(`${BRIDGE_URL}/bookmarklet`);
+  const copyLink = async () => {
+    await Clipboard.setStringAsync(`${WEBAPP_URL}/bookmarklet`);
+    setSnack(t('settingsBookmarklet.linkCopied'));
   };
 
   return (
@@ -130,7 +24,6 @@ export default function SettingsBookmarkletScreen() {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={styles.content}
     >
-      {/* Hero */}
       <View style={[styles.hero, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
         <MaterialCommunityIcons name="bookmark-plus-outline" size={36} color={Tokens.amberDeep} />
         <Text style={[styles.heroTitle, { color: theme.colors.onSurface }]}>
@@ -141,76 +34,51 @@ export default function SettingsBookmarkletScreen() {
         </Text>
       </View>
 
-      {/* Steps */}
-      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        {t('settingsBookmarklet.setupSection')}
-      </Text>
-
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
-        <Step number={1} title={t('settingsBookmarklet.step1Title')}>
-          <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            {t('settingsBookmarklet.step1Body')}
-          </Text>
-          {!hasAccount ? (
-            <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorAccount')}</Text>
-          ) : tier !== null && tier === 'free' ? (
-            <Text style={[styles.stepDesc, { color: Tokens.amberDeep }]}>{t('settingsBookmarklet.tokenErrorTier')}</Text>
-          ) : (
-            <>
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={generateToken}
-                disabled={tokenLoading}
-                style={[styles.linkBtn, { borderColor: Tokens.amberDeep, opacity: tokenLoading ? 0.5 : 1 }]}
-              >
-                <MaterialCommunityIcons name="key-variant" size={16} color={Tokens.amberDeep} />
-                <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
-                  {token ? t('settingsBookmarklet.tokenRegenerate') : t('settingsBookmarklet.tokenGenerate')}
-                </Text>
-              </TouchableOpacity>
-              {token ? (
-                <>
-                  <CopyBox label={t('settingsBookmarklet.step1CopyLabel')} value={token} />
-                  <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>{t('settingsBookmarklet.tokenOnceHint')}</Text>
-                </>
-              ) : null}
-            </>
-          )}
-        </Step>
-
-        <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />
-
-        <Step number={2} title={t('settingsBookmarklet.step2Title')}>
-          <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            {t('settingsBookmarklet.step2Body')}
-          </Text>
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={openSetupPage}
-            style={[styles.linkBtn, { borderColor: Tokens.amberDeep }]}
-          >
-            <MaterialCommunityIcons name="open-in-new" size={16} color={Tokens.amberDeep} />
-            <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
-              {t('settingsBookmarklet.step2Button')}
+        <View style={styles.stepWrap}>
+          <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
+            <MaterialCommunityIcons name="laptop" size={14} color={Tokens.paper} />
+          </View>
+          <View style={styles.stepBody}>
+            <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
+              {t('settingsBookmarklet.step1Title')}
             </Text>
-          </TouchableOpacity>
-          <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>
-            {BRIDGE_URL}/bookmarklet
-          </Text>
-        </Step>
+            <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
+              {t('settingsBookmarklet.step1Body')}
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={copyLink}
+              style={[styles.linkBtn, { borderColor: Tokens.amberDeep }]}
+            >
+              <MaterialCommunityIcons name="content-copy" size={16} color={Tokens.amberDeep} />
+              <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
+                {t('settingsBookmarklet.copyLink')}
+              </Text>
+            </TouchableOpacity>
+            <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>
+              {WEBAPP_URL}/bookmarklet
+            </Text>
+          </View>
+        </View>
 
         <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />
 
-        <Step number={3} title={t('settingsBookmarklet.step3Title')}>
-          <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-            {t('settingsBookmarklet.step3BodyPrefix')}
-            <Text style={{ fontFamily: Fonts.sansSemibold }}>{t('settingsBookmarklet.step3BodyBold')}</Text>
-            {t('settingsBookmarklet.step3BodySuffix')}
-          </Text>
-        </Step>
+        <View style={styles.stepWrap}>
+          <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
+            <MaterialCommunityIcons name="hand-pointing-up" size={14} color={Tokens.paper} />
+          </View>
+          <View style={styles.stepBody}>
+            <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
+              {t('settingsBookmarklet.step2Title')}
+            </Text>
+            <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
+              {t('settingsBookmarklet.step2Body')}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* How to use */}
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         {t('settingsBookmarklet.howSection')}
       </Text>
@@ -235,7 +103,6 @@ export default function SettingsBookmarkletScreen() {
         ))}
       </View>
 
-      {/* Tip */}
       <View style={[styles.tip, { backgroundColor: Tokens.amberDeep + '18', borderColor: Tokens.amberDeep + '40' }]}>
         <MaterialCommunityIcons name="lightbulb-outline" size={16} color={Tokens.amberDeep} style={{ marginTop: 1 }} />
         <Text style={[styles.tipText, { color: theme.colors.onSurface }]}>
@@ -301,11 +168,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
     flexShrink: 0,
   },
-  stepNumber: {
-    color: Tokens.paper,
-    fontSize: 13,
-    fontFamily: Fonts.sansSemibold,
-  },
   stepBody: { flex: 1, gap: 8 },
   stepTitle: {
     fontSize: 15,
@@ -315,40 +177,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontFamily: Fonts.sans,
-  },
-
-  copyLabel: {
-    fontSize: 11,
-    fontFamily: Fonts.sansSemibold,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  copyBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-  },
-  copyValue: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  copyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  copyBadgeText: {
-    color: Tokens.paper,
-    fontSize: 12,
-    fontFamily: Fonts.sansSemibold,
   },
 
   linkBtn: {
@@ -367,7 +195,7 @@ const styles = StyleSheet.create({
   },
   urlHint: {
     fontSize: 11,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: 'monospace',
     marginTop: 4,
   },
 

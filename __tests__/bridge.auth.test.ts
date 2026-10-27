@@ -114,6 +114,39 @@ describe('/api/note (Bookmarklet)', () => {
     expect(res.statusCode).toBe(403);
     expect(res.body.error).toBe('tier_required');
   });
+
+  describe('Login-Token (Speichern-Tab der Webapp)', () => {
+    test('gueltiges Login-Token → Notiz landet beim eingeloggten User, user_id im Body wird ignoriert', async () => {
+      const res = mockRes();
+      await noteHandler(req('acct-tok', { title: 'T', content: 'C', user_id: 'other-uid' }), res);
+      expect(res.statusCode).toBe(200);
+      const ins = calls.find((c) => c.url.includes('/rest/v1/notes') && c.method === 'POST')!;
+      expect(ins.body.user_id).toBe('acct-uid');
+      expect(ins.body.source).toBe('bookmarklet');
+    });
+
+    test('ungueltiges Login-Token → 401, faellt nicht auf ?token= zurueck', async () => {
+      const res = mockRes();
+      await noteHandler(req('nope', { title: 'T', content: 'C' }, { query: { token: KEY } }), res);
+      expect(res.statusCode).toBe(401);
+      expect(calls.some((c) => c.url.includes('/rest/v1/notes'))).toBe(false);
+    });
+
+    test('anonymer User → 403 account_required, nichts geschrieben', async () => {
+      const res = mockRes();
+      await noteHandler(req('anon-tok', { title: 'T', content: 'C' }), res);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.error).toBe('account_required');
+      expect(calls.some((c) => c.url.includes('/rest/v1/notes'))).toBe(false);
+    });
+
+    test('Free-Konto → 403 tier_required', async () => {
+      const res = mockRes();
+      await noteHandler(req('other-acct-tok', { title: 'T', content: 'C' }), res);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.error).toBe('tier_required');
+    });
+  });
 });
 
 describe('/api/bookmarklet-token', () => {

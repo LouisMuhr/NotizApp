@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { GraphData, Thread, Note, Similarity } from '@/types';
 import { GraphHandle } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
@@ -33,8 +34,7 @@ export default function Home() {
           initial: (u.user_metadata?.full_name ?? u.email!)[0].toUpperCase(),
         });
       }
-      setAuthLoading(false);
-    });
+    }).catch(() => {}).finally(() => setAuthLoading(false));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
@@ -207,8 +207,7 @@ export default function Home() {
 
   if (authLoading) return (
     <div style={{ position: 'fixed', inset: 0, background: '#0E0C09', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #F4A261', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #F4A261', borderTopColor: 'transparent', animation: 'velm-spin 0.8s linear infinite' }} />
     </div>
   );
 
@@ -244,7 +243,7 @@ export default function Home() {
       {loading && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--amber)', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+            <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--amber)', borderTopColor: 'transparent', animation: 'velm-spin 0.8s linear infinite', margin: '0 auto 12px' }} />
             <p style={{ color: 'var(--t3)', fontSize: 13 }}>Graph wird geladen…</p>
           </div>
         </div>
@@ -271,6 +270,15 @@ export default function Home() {
             >
               ＋ Notiz
             </button>
+          )}
+          {/* Bookmarklet */}
+          {!user.isDemo && (
+            <Link
+              href="/bookmarklet"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: 'var(--t2)', textDecoration: 'none', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
+            >
+              🔖 Bookmarklet
+            </Link>
           )}
           {/* User chip */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(244,162,97,0.08)', border: '1px solid rgba(244,162,97,0.15)', borderRadius: 20, padding: '4px 12px' }}>
@@ -336,10 +344,6 @@ export default function Home() {
           onClose={() => setSelectedSim(null)}
         />
       )}
-
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 }

@@ -24,7 +24,7 @@ c:/NotizApp/
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, …
-│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), bookmarklet/, worker/
+│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
@@ -58,13 +58,11 @@ Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `n
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
-`EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle).
+`EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle). Webapp-URL fest: `https://www.velmnote.com`.
 Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
-`webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+`webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_BRIDGE_URL`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
-
 ## Architecture Notes
-
 ### Provider tree (App.tsx) & Navigation
 GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer →
 NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator).
@@ -87,7 +85,6 @@ Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDe
   beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
   schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler bricht
   ab) — Details unten.
-
 ### Konto-Zustände (lokal-first)
 `src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
 `user.email_confirmed_at` abgeleitet, nie aus einem lokalen Flag. **Die App legt nie selbst einen
@@ -140,10 +137,8 @@ Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projek
 `src/theme/theme.ts` — MD3LightTheme, Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als einzige
 Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`. Kategorien: Hue-Rotation via
 `categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
-
 **App-Icon (Velm)**: „Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`), Spec `Velm Icon - Final.html`
 (gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`. Komponenten: `VelmLogo.tsx`, `webapp/components/VelmIcon.tsx`.
-
 **Admin**: Einstellungen → Abschnitt „Admin" (Onboarding zurücksetzen, `SettingsTestBenachrichtigungen`) nur für das **bestätigte** Konto
 `louismuhr8@gmail.com` (`src/sync/adminAccess.ts`: `isAdminUser`, `useIsAdmin()` → `null` beim Laden). Reines UI-Gating, nur lokale Werkzeuge.
 
@@ -155,15 +150,17 @@ Interpolation via `%{var}` oder `{{var}}`. `LanguageContext.tsx` → `useLanguag
 setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, Umschalter unter Darstellung.
 **Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
-
-**Webapp (graph visualizer)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
+**Webapp (graph visualizer)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR). Eigene Supabase-Login-UI (`components/LoginView.tsx`), auch von `/bookmarklet` genutzt.
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` nutzt stattdessen den persönlichen
-Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert, ab Tier `basic`).
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`) nimmt das Login-Token per
+Bearer; Altpfad `?token=` = persönlicher Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash) — wird entfernt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
+**Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet den Tab
+`webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Der Tab hat das Formular und speichert per Webapp-Login
+→ `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, einen eigenen Tab nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
@@ -178,12 +175,10 @@ Notiz-Titel, dazu die bestehenden Verbindungen (sonst vergisst das Modell sie be
 wird zurückgegeben. Antwort per Structured Outputs (`SYNTHESIS_SCHEMA`). Server erzwingt 1 Notiz = 1 Thread (bestehender gewinnt). Eval:
 `node --experimental-transform-types bridge/worker/eval-synthesize.ts seed|run <label> [--scenario incremental] [--prompt <datei>] [--thinking 2048] | compare <präfix> …` (Test-Account, Berichte in `bridge/worker/logs/`, Versionen + Messwerte in `bridge/worker/synthesis-prompts/README.md`).
 **Prompt ab v9 ist auf Haiku mit Thinking ausgelegt** — ohne Thinking erzeugt er viele falsche Verbindungen; Thinking ist im Handler noch nicht aktiv (offene Entscheidung, braucht `maxDuration`).
-
 **KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter pro Aufnahme im Sheet (nicht mehr global) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
 **Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download); Geräte-Erkennung: leise Fehler (`aborted`) kippen den Titel↔Inhalt-Neustart nicht, Titel endet nach 1,8 s Stille (kein Satzschluss vom Dienst). Scheitert die KI beim Speichern (offline/Bridge/Tageslimit), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, alle 20 s + Vordergrund, erst nach dem Laden der Notizen), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen bzw. 5 Fehlversuchen (kaputter Eintrag blockiert die Rest nicht; Abbruch nur bei Offline/Limit, `decideAfterError`); Diktate > 4000 Zeichen gehen nie an die KI; Detach/Alles-löschen leeren sie.
-
 **Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
 **`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
@@ -191,7 +186,6 @@ Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedF
 zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
 
 ## Code Conventions
-
 - **Language**: German UI strings; English code identifiers.
 - **TypeScript**: strict-ish; interfaces for models, no `any` in models layer.
 - **Components**: functional + hooks only; **context mutation**: all state changes via context functions (`addNote`, `updateNote`, …).
