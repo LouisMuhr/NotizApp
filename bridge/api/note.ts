@@ -1,21 +1,30 @@
 import { randomUUID } from 'node:crypto';
-import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast, verifyToken, fetchProfile } from './_lib/supabaseAdmin.js';
-import type { Tier } from './_lib/supabaseAdmin.js';
+import { readEnv, setCors, bearerToken, sbHeaders, tierAtLeast, verifyToken, fetchProfile } from './_lib/supabaseAdmin.js';
+import type { Env, Tier } from './_lib/supabaseAdmin.js';
 
 /**
- * Bookmarklet-Endpunkt. Auth:
- *   Authorization: Bearer <Supabase-Access-Token>  — Speichern-Fenster der Webapp (eingeloggt)
- *   ?token=<persoenlicher Bookmarklet-Schluessel>    — alte Bookmarklets, per SHA-256-Hash aufgeloest
+ * Bookmarklet-Endpunkt, aufgerufen vom Speichern-Fenster der Webapp.
+ *   POST /api/note   Authorization: Bearer <Supabase-Access-Token>
  * Die Ziel-User-ID ergibt sich ausschliesslich aus dem Token — ein user_id im Body wird ignoriert (X1).
  */
-async function resolveUserByToken(env: { SUPABASE_URL: string; SUPABASE_SERVICE_KEY: string }, token: string) {
+const DAILY_LIMIT = 50;
+const TITLE_MAX = 200;
+const CONTENT_MAX = 50_000;
+const CATEGORY_MAX = 50;
+const RECURRENCES = ['once', 'daily', 'weekly', 'monthly'];
+
+/** Heute (UTC) per Bookmarklet angelegte Notizen; null, wenn die Zaehlung fehlschlaegt. */
+async function countToday(env: Env, uid: string): Promise<number | null> {
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
   const r = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/profiles?bookmarklet_token_hash=eq.${sha256(token)}&select=id,tier`,
-    { headers: sbHeaders(env.SUPABASE_SERVICE_KEY) },
+    `${env.SUPABASE_URL}/rest/v1/notes?user_id=eq.${encodeURIComponent(uid)}&source=eq.bookmarklet` +
+      `&created_at=gte.${encodeURIComponent(dayStart.toISOString())}&select=id`,
+    { method: 'HEAD', headers: { ...sbHeaders(env.SUPABASE_SERVICE_KEY, 'count=exact'), Range: '0-0' } },
   );
   if (!r.ok) return null;
-  const rows: Array<{ id: string; tier: Tier }> = await r.json();
-  return rows[0] ?? null;
+  const total = Number(r.headers.get('content-range')?.split('/')[1]);
+  return Number.isFinite(total) ? total : null;
 }
 
 export default async function handler(req: any, res: any) {
@@ -35,37 +44,21 @@ export default async function handler(req: any, res: any) {
       res.status(500).json({ error: 'missing env' });
       return;
     }
-    const SUPABASE_URL = env.SUPABASE_URL;
-    const SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
 
-    let owner: { id: string; tier: Tier } | null = null;
-    const sessionToken = bearerToken(req);
-    const queryToken = req.query?.token;
-    if (sessionToken) {
-      const user = await verifyToken(env, sessionToken);
-      if (!user) {
-        res.status(401).json({ error: 'unauthorized' });
-        return;
-      }
-      if (user.is_anonymous) {
-        res.status(403).json({ error: 'account_required' });
-        return;
-      }
-      owner = await fetchProfile(env, user.id);
-      if (!owner) {
-        res.status(503).json({ error: 'profile_unavailable' });
-        return;
-      }
-    } else {
-      if (typeof queryToken !== 'string' || queryToken.length < 32) {
-        res.status(401).json({ error: 'unauthorized' });
-        return;
-      }
-      owner = await resolveUserByToken(env, queryToken);
-      if (!owner) {
-        res.status(401).json({ error: 'unauthorized' });
-        return;
-      }
+    const token = bearerToken(req);
+    const user = token ? await verifyToken(env, token) : null;
+    if (!user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    if (user.is_anonymous) {
+      res.status(403).json({ error: 'account_required' });
+      return;
+    }
+    const owner = await fetchProfile(env, user.id);
+    if (!owner) {
+      res.status(503).json({ error: 'profile_unavailable' });
+      return;
     }
     const minTier = (process.env.BOOKMARKLET_MIN_TIER ?? 'basic') as Tier;
     if (!tierAtLeast(owner.tier, minTier)) {
@@ -85,44 +78,49 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const title = String(body.title || '').slice(0, 200).trim();
-    const content = String(body.content || '');
+    const title = (typeof body.title === 'string' ? body.title : '').trim().slice(0, TITLE_MAX);
+    const content = typeof body.content === 'string' ? body.content : '';
     if (!title && !content) {
       res.status(400).json({ error: 'title or content required' });
       return;
     }
+    if (content.length > CONTENT_MAX) {
+      res.status(413).json({ error: 'content_too_long', max: CONTENT_MAX });
+      return;
+    }
+    const category = (typeof body.category === 'string' ? body.category : '').trim().slice(0, CATEGORY_MAX) || 'Allgemein';
 
-    // Ziel-User kommt ausschliesslich aus dem Token.
-    const userId = owner.id;
+    let reminderAt: string | null = null;
+    if (body.reminder_at !== undefined && body.reminder_at !== null && body.reminder_at !== '') {
+      const d = typeof body.reminder_at === 'string' ? new Date(body.reminder_at) : null;
+      if (!d || Number.isNaN(d.getTime())) {
+        res.status(400).json({ error: 'invalid_reminder' });
+        return;
+      }
+      reminderAt = d.toISOString();
+    }
+    const reminderRecurrence = reminderAt && RECURRENCES.includes(body.reminder_recurrence) ? body.reminder_recurrence : 'once';
 
-    const checklist =
-      Array.isArray(body.checklist) && body.checklist.length > 0
-        ? body.checklist.map((text: string) => ({
-            id: randomUUID(),
-            text: String(text),
-            checked: false,
-          }))
-        : [];
-
-    const reminderAt =
-      body.reminder_at && typeof body.reminder_at === 'string'
-        ? body.reminder_at
-        : null;
-    const reminderRecurrence =
-      reminderAt && ['once', 'daily', 'weekly', 'monthly'].includes(body.reminder_recurrence)
-        ? body.reminder_recurrence
-        : 'once';
+    const usedToday = await countToday(env, owner.id);
+    if (usedToday === null) {
+      res.status(500).json({ error: 'internal' });
+      return;
+    }
+    if (usedToday >= DAILY_LIMIT) {
+      res.status(429).json({ error: 'rate_limited', limit: DAILY_LIMIT });
+      return;
+    }
 
     const now = new Date().toISOString();
     const row = {
       id: randomUUID(),
-      user_id: userId,
-      title: title || 'Notiz aus Claude',
+      user_id: owner.id,
+      title: title || 'Notiz aus Bookmarklet',
       content,
-      category: body.category || 'Allgemein',
+      category,
       is_pinned: false,
       feeds_threads: Boolean(body.feeds_threads),
-      checklist,
+      checklist: [],
       created_at: now,
       updated_at: now,
       reminder_at: reminderAt,
@@ -132,17 +130,11 @@ export default async function handler(req: any, res: any) {
       source: 'bookmarklet',
     };
 
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/notes`, {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/notes`, {
       method: 'POST',
-      headers: {
-        apikey: SUPABASE_SERVICE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
+      headers: sbHeaders(env.SUPABASE_SERVICE_KEY, 'return=minimal'),
       body: JSON.stringify(row),
     });
-
     if (!r.ok) {
       console.error('[note] insert failed', r.status, await r.text().catch(() => ''));
       res.status(500).json({ error: 'internal' });

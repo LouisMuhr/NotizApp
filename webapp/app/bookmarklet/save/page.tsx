@@ -36,6 +36,9 @@ function errorMessage(code: string | undefined): string {
     case 'tier_required': return 'Das Bookmarklet ist ab dem Basic-Plan verfügbar.';
     case 'account_required': return 'Dafür brauchst du ein bestätigtes Velm-Konto.';
     case 'network': return 'Keine Verbindung. Bitte prüfe dein Internet und versuch es erneut.';
+    case 'rate_limited': return 'Du hast heute schon 50 Notizen per Bookmarklet gespeichert. Morgen geht es weiter.';
+    case 'content_too_long': return 'Der Text ist zu lang (höchstens 50.000 Zeichen). Bitte kürze ihn.';
+    case 'invalid_reminder': return 'Das Datum der Erinnerung ist ungültig.';
     default: return 'Speichern fehlgeschlagen. Bitte versuch es erneut.';
   }
 }
@@ -60,6 +63,7 @@ function BookmarkletSavePage() {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorCode, setErrorCode] = useState<string | undefined>();
   const [closeFailed, setCloseFailed] = useState(false);
+  const [tierBlocked, setTierBlocked] = useState(false);
 
   useEffect(() => {
     // Markierter Text soll nicht im Browser-Verlauf stehen bleiben.
@@ -75,7 +79,13 @@ function BookmarkletSavePage() {
 
   useEffect(() => {
     if (!user || user.isDemo) return;
-    supabase.from('notes').select('category').eq('user_id', user.id).then(({ data }) => {
+    // Nur zur Anzeige vorab; die verbindliche Tarifprüfung macht die Bridge beim Speichern.
+    supabase.from('profiles').select('tier').eq('id', user.id).maybeSingle().then(({ data }) => {
+      if (data?.tier === 'free') setTierBlocked(true);
+    });
+    // Die neuesten 1000 Notizen reichen für die Kategorienliste; mehr liefert PostgREST ohnehin nicht.
+    supabase.from('notes').select('category').eq('user_id', user.id)
+      .order('updated_at', { ascending: false }).limit(1000).then(({ data }) => {
       const used = (data ?? []).map((r: { category: string | null }) => r.category).filter((c): c is string => !!c);
       const extra = [...new Set(used)].filter((c) => !DEFAULT_CATEGORIES.includes(c)).sort((a, b) => a.localeCompare(b, 'de'));
       setCategories([...DEFAULT_CATEGORIES, ...extra]);
@@ -140,6 +150,15 @@ function BookmarkletSavePage() {
       <div style={s.page}><div style={s.card}>
         {header}
         <div style={s.warnBox}>Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.</div>
+      </div></div>
+    );
+  }
+
+  if (tierBlocked) {
+    return (
+      <div style={s.page}><div style={s.card}>
+        {header}
+        <div style={s.warnBox}>Das Bookmarklet ist ab dem Basic-Plan verfügbar. Upgraden kannst du in der Velm-App unter Einstellungen → Mein Abo.</div>
       </div></div>
     );
   }

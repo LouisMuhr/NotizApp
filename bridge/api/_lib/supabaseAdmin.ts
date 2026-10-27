@@ -2,7 +2,6 @@
  * Gemeinsame Helfer fuer die Bridge-Endpunkte.
  * Dateien unter api/_lib werden von Vercel nicht als Functions deployt.
  */
-import { createHash } from 'node:crypto';
 
 export interface Env {
   SUPABASE_URL: string;
@@ -60,10 +59,6 @@ export async function verifyToken(env: Env, token: string): Promise<VerifiedUser
   } catch {
     return null;
   }
-}
-
-export function sha256(input: string): string {
-  return createHash('sha256').update(input).digest('hex');
 }
 
 export type Tier = 'free' | 'basic' | 'pro';

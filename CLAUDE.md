@@ -24,7 +24,7 @@ c:/NotizApp/
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, …
-│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), worker/
+│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, delete-user, _lib/), worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
@@ -154,8 +154,8 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`) nimmt das Login-Token per
-Bearer; Altpfad `?token=` = persönlicher Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash) — wird entfernt.
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`): max. 50 Bookmarklet-Notizen pro
+UTC-Tag (gezählt über `notes.source`), Inhalt ≤ 50.000 Zeichen, keine Checkliste. `profiles.bookmarklet_token_hash` ist ungenutzt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
 **Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet ein kleines
