@@ -34,49 +34,57 @@ export default function SettingsBookmarkletScreen() {
         </Text>
       </View>
 
+      <View style={[styles.desktopNotice, { backgroundColor: theme.colors.surface, borderColor: Tokens.amberDeep }]}>
+        <MaterialCommunityIcons name="laptop" size={22} color={Tokens.amberDeep} />
+        <View style={styles.stepBody}>
+          <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
+            {t('settingsBookmarklet.laptopOnlyTitle')}
+          </Text>
+          <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
+            {t('settingsBookmarklet.laptopOnlyBody')}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsBookmarklet.setupSection')}
+      </Text>
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: Tokens.paperEdge }]}>
-        <View style={styles.stepWrap}>
-          <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
-            <MaterialCommunityIcons name="laptop" size={14} color={Tokens.paper} />
-          </View>
-          <View style={styles.stepBody}>
-            <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
-              {t('settingsBookmarklet.step1Title')}
-            </Text>
-            <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-              {t('settingsBookmarklet.step1Body')}
-            </Text>
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={copyLink}
-              style={[styles.linkBtn, { borderColor: Tokens.amberDeep }]}
-            >
-              <MaterialCommunityIcons name="content-copy" size={16} color={Tokens.amberDeep} />
-              <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
-                {t('settingsBookmarklet.copyLink')}
-              </Text>
-            </TouchableOpacity>
-            <Text style={[styles.urlHint, { color: theme.colors.onSurfaceVariant }]}>
-              {WEBAPP_URL}/bookmarklet
-            </Text>
-          </View>
-        </View>
-
-        <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />
-
-        <View style={styles.stepWrap}>
-          <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
-            <MaterialCommunityIcons name="hand-pointing-up" size={14} color={Tokens.paper} />
-          </View>
-          <View style={styles.stepBody}>
-            <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
-              {t('settingsBookmarklet.step2Title')}
-            </Text>
-            <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
-              {t('settingsBookmarklet.step2Body')}
-            </Text>
-          </View>
-        </View>
+        {(['step1', 'step2', 'step3'] as const).map((step, i, arr) => (
+          <React.Fragment key={step}>
+            <View style={styles.stepWrap}>
+              <View style={[styles.stepBadge, { backgroundColor: Tokens.amberDeep }]}>
+                <Text style={styles.stepNumber}>{i + 1}</Text>
+              </View>
+              <View style={styles.stepBody}>
+                <Text style={[styles.stepTitle, { color: theme.colors.onSurface }]}>
+                  {t(`settingsBookmarklet.${step}Title`)}
+                </Text>
+                <Text style={[styles.stepDesc, { color: theme.colors.onSurfaceVariant }]}>
+                  {t(`settingsBookmarklet.${step}Body`)}
+                </Text>
+                {step === 'step1' && (
+                  <>
+                    <Text selectable style={[styles.urlHint, { color: theme.colors.onSurface }]}>
+                      {WEBAPP_URL}/bookmarklet
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={copyLink}
+                      style={[styles.linkBtn, { borderColor: Tokens.amberDeep }]}
+                    >
+                      <MaterialCommunityIcons name="content-copy" size={16} color={Tokens.amberDeep} />
+                      <Text style={[styles.linkBtnText, { color: Tokens.amberDeep }]}>
+                        {t('settingsBookmarklet.copyLink')}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+            {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: Tokens.paperEdge }]} />}
+          </React.Fragment>
+        ))}
       </View>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
@@ -168,7 +176,19 @@ const styles = StyleSheet.create({
     marginTop: 1,
     flexShrink: 0,
   },
+  stepNumber: {
+    color: Tokens.paper,
+    fontSize: 13,
+    fontFamily: Fonts.sansSemibold,
+  },
   stepBody: { flex: 1, gap: 8 },
+  desktopNotice: {
+    flexDirection: 'row',
+    gap: 14,
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
   stepTitle: {
     fontSize: 15,
     fontFamily: Fonts.sansSemibold,
@@ -194,9 +214,8 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.sansSemibold,
   },
   urlHint: {
-    fontSize: 11,
-    fontFamily: 'monospace',
-    marginTop: 4,
+    fontSize: 13,
+    fontFamily: Fonts.sansSemibold,
   },
 
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },

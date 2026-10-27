@@ -12,6 +12,7 @@ import LoginView, { AppUser } from '@/components/LoginView';
 import VelmIcon from '@/components/VelmIcon';
 import { supabase } from '@/lib/supabase';
 import { DEMO_DATA } from '@/lib/demoData';
+import { fetchTier, hasBookmarklet } from '@/lib/tier';
 
 const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
@@ -105,6 +106,15 @@ export default function Home() {
   }, [getToken]);
 
   useEffect(() => { if (user) fetchGraph(user); }, [user, fetchGraph]);
+
+  // Bookmarklet-Button nur mit passendem Abo; an die User-ID gebunden, damit ein Kontowechsel nichts übernimmt.
+  const [tierCheck, setTierCheck] = useState<{ userId: string; allowed: boolean } | null>(null);
+  useEffect(() => {
+    if (!user || user.isDemo) return;
+    const userId = user.id;
+    fetchTier(userId).then((tier) => setTierCheck({ userId, allowed: hasBookmarklet(tier) }));
+  }, [user]);
+  const showBookmarklet = !!user && tierCheck?.userId === user.id && tierCheck.allowed;
 
   // ── selection state ───────────────────────────────────────────────────────
   const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
@@ -272,7 +282,7 @@ export default function Home() {
             </button>
           )}
           {/* Bookmarklet */}
-          {!user.isDemo && (
+          {showBookmarklet && (
             <Link
               href="/bookmarklet"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: 'var(--t2)', textDecoration: 'none', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}

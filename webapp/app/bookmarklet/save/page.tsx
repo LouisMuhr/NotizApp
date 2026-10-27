@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { fetchTier, hasBookmarklet } from '@/lib/tier';
 import VelmIcon from '@/components/VelmIcon';
 import LoginView, { AppUser } from '@/components/LoginView';
 
@@ -80,8 +81,8 @@ function BookmarkletSavePage() {
   useEffect(() => {
     if (!user || user.isDemo) return;
     // Nur zur Anzeige vorab; die verbindliche Tarifprüfung macht die Bridge beim Speichern.
-    supabase.from('profiles').select('tier').eq('id', user.id).maybeSingle().then(({ data }) => {
-      if (data?.tier === 'free') setTierBlocked(true);
+    fetchTier(user.id).then((tier) => {
+      if (tier !== null && !hasBookmarklet(tier)) setTierBlocked(true);
     });
     // Die neuesten 1000 Notizen reichen für die Kategorienliste; mehr liefert PostgREST ohnehin nicht.
     supabase.from('notes').select('category').eq('user_id', user.id)

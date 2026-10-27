@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { buildBookmarkletHref } from '@/lib/bookmarkletScript';
+import { fetchTier, hasBookmarklet, type Tier } from '@/lib/tier';
 import VelmIcon from '@/components/VelmIcon';
 import LoginView, { AppUser } from '@/components/LoginView';
 
 export default function BookmarkletPage() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  const [tierCheck, setTierCheck] = useState<{ userId: string; tier: Tier | null } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -20,6 +23,12 @@ export default function BookmarkletPage() {
     }).catch(() => {}).finally(() => setAuthLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!user || user.isDemo) return;
+    const userId = user.id;
+    fetchTier(userId).then((tier) => setTierCheck({ userId, tier }));
+  }, [user]);
+
   if (authLoading) {
     return (
       <div style={s.center}>
@@ -29,6 +38,8 @@ export default function BookmarkletPage() {
   }
 
   if (!user) return <LoginView onLogin={setUser} />;
+
+  const tier = tierCheck?.userId === user.id ? tierCheck.tier : undefined;
 
   return (
     <div style={s.page}>
@@ -44,6 +55,12 @@ export default function BookmarkletPage() {
 
         {user.isDemo ? (
           <div style={s.warnBox}>Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.</div>
+        ) : tier === undefined ? (
+          <div style={s.statusRow}><div style={s.spinner} /><span style={s.statusText}>Abo wird geprüft…</span></div>
+        ) : tier === null ? (
+          <div style={s.warnBox}>Dein Abo konnte nicht geprüft werden. Bitte lade die Seite neu.</div>
+        ) : !hasBookmarklet(tier) ? (
+          <div style={s.warnBox}>Das Bookmarklet ist ab dem Basic-Plan verfügbar. Upgraden kannst du in der Velm-App unter Einstellungen → Mein Abo.</div>
         ) : (
           <>
             <p style={s.body}>
@@ -62,6 +79,9 @@ export default function BookmarkletPage() {
               </a>
               <span style={s.dragHint}>← in die Lesezeichen-Leiste ziehen</span>
             </div>
+            <p style={s.footnote}>
+              Keine Lesezeichen-Leiste zu sehen? Einblenden mit Strg + Umschalt + B (Mac: ⌘ + Umschalt + B).
+            </p>
             <p style={s.footnote}>
               Gespeichert wird mit deinem Login in diesem Browser (angemeldet als {user.email}) — im Lesezeichen
               steckt kein Schlüssel. Hast du noch ein älteres Velm-Bookmarklet, ersetze es durch dieses.
@@ -123,5 +143,7 @@ const s: Record<string, React.CSSProperties> = {
   },
   dragHint: { fontSize: 12.5, color: 'rgba(160,144,128,0.7)' },
 
-  footnote: { fontSize: 11.5, color: 'rgba(160,144,128,0.55)', lineHeight: 1.5 },
+  footnote: { fontSize: 11.5, color: 'rgba(160,144,128,0.55)', lineHeight: 1.5, marginBottom: 8 },
+  statusRow: { display: 'flex', alignItems: 'center', gap: 12 },
+  statusText: { fontSize: 13, color: 'rgba(160,144,128,0.8)' },
 };
