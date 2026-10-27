@@ -8,8 +8,9 @@ export function buildBookmarkletHref(webappOrigin: string): string {
   const script =
     '(function(){' +
     'var d={t:document.title,u:location.href,s:String(window.getSelection()).trim()};' +
-    'var w=520,h=Math.min(760,screen.availHeight-40);' +
-    'var l=Math.round(window.screenX+(window.outerWidth-w)/2),tp=Math.round(window.screenY+(window.outerHeight-h)/2);' +
+    // Oben rechts im Browserfenster, direkt unter Tab- und Adressleiste.
+    'var w=600,h=Math.min(620,screen.availHeight-40);' +
+    'var l=Math.max(window.screenX,window.screenX+window.outerWidth-w-16),tp=window.screenY+Math.max(0,window.outerHeight-window.innerHeight);' +
     `window.open(${saveUrl}+'#'+encodeURIComponent(JSON.stringify(d)),'_blank','popup,noopener,width='+w+',height='+h+',left='+l+',top='+tp);` +
     '})();';
   return 'javascript:' + encodeURIComponent(script);

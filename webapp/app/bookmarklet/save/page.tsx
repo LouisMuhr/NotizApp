@@ -175,7 +175,7 @@ function BookmarkletSavePage() {
         <input style={s.input} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} autoFocus />
 
         <label style={s.label}>Inhalt</label>
-        <textarea style={{ ...s.input, resize: 'vertical' }} rows={6} value={content} onChange={(e) => setContent(e.target.value)} />
+        <textarea style={{ ...s.input, resize: 'vertical' }} rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
 
         <label style={s.label}>Kategorie</label>
         <div style={s.chips}>
