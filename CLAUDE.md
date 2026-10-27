@@ -58,7 +58,7 @@ Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `n
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
-`EXPO_PUBLIC_BRIDGE_URL`, `EXPO_PUBLIC_WEBAPP_URL` (für den Bookmarklet-Link; `EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle).
+`EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle). Webapp-URL fest: `https://www.velmnote.com`.
 Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_BRIDGE_URL`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.

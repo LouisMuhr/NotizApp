@@ -7,7 +7,7 @@ import { Tokens } from '../theme/theme';
 import { Type, Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
 
-const WEBAPP_URL = process.env.EXPO_PUBLIC_WEBAPP_URL ?? 'https://velm-webapp.vercel.app';
+const WEBAPP_URL = 'https://www.velmnote.com';
 
 export default function SettingsBookmarkletScreen() {
   const theme = useTheme();
