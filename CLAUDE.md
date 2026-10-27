@@ -154,13 +154,13 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` nutzt stattdessen den persönlichen
-Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash gespeichert, ab Tier `basic`).
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`) nimmt das Login-Token per
+Bearer; Altpfad `?token=` = persönlicher Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash) — wird entfernt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
-**Bookmarklet-Setup lebt in der webapp** (`webapp/app/bookmarklet/page.tsx`, `bridge/bookmarklet/` entfällt):
-nutzt den webapp-Login, holt den Schlüssel automatisch und baut den `javascript:`-Link direkt zum Ziehen
-(`webapp/lib/bookmarkletScript.ts`) — kein Token-Copy&Paste vom Handy mehr. `SettingsBookmarkletScreen` verlinkt nur noch dorthin.
+**Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet den Tab
+`webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Der Tab hat das Formular und speichert per Webapp-Login
+→ `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, einen eigenen Tab nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht

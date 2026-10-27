@@ -22,7 +22,7 @@ Vercel serverless endpoint that lets you save text from any webpage (claude.ai, 
    - `BOOKMARKLET_MIN_TIER` — optional, Default `basic` (Freigabe des Bookmarklets)
    - (`MCP_BEARER_TOKEN`, `BRIDGE_USER_ID`, `DEVICE_ID` werden von den API-Endpunkten nicht mehr gelesen; nur noch der Worker unter `worker/` nutzt `BRIDGE_USER_ID`)
 3. **Deploy**: `npx vercel --prod`
-4. **Bookmarklet bauen**: Die webapp (`webapp/app/bookmarklet/page.tsx`, ab Basic) erzeugt den persönlichen Schlüssel automatisch für den eingeloggten User und zeigt den fertigen Bookmarklet-Link zum Ziehen in die Lesezeichen-Leiste — keine separate Setup-Seite in der Bridge mehr.
+4. **Bookmarklet**: lebt in der webapp (`/bookmarklet` zum Einrichten, `/bookmarklet/save` als Speichern-Tab). Der Tab ruft `/api/note` mit dem Login-Token des Users auf.
 
 ## Nutzung
 
@@ -30,7 +30,7 @@ In claude.ai eine Antwort markieren (oder Strg+A für die ganze Seite) → Bookm
 
 ## API
 
-`POST /api/note?token=<persönlicher Bookmarklet-Schlüssel>` — der Ziel-User ergibt sich aus dem Schlüssel (SHA-256-Hash in `profiles.bookmarklet_token_hash`); ein `user_id` im Body wird ignoriert.
+`POST /api/note` mit `Authorization: Bearer <Supabase-Access-Token>` (ab Basic) — der Ziel-User ergibt sich aus dem Token; ein `user_id` im Body wird ignoriert. Altpfad `?token=<persönlicher Bookmarklet-Schlüssel>` (SHA-256-Hash in `profiles.bookmarklet_token_hash`) bleibt bis zur Ablösung alter Lesezeichen.
 
 Weitere Endpunkte (alle mit `Authorization: Bearer <Supabase-Access-Token des Users>`):
 - `POST /api/synthesize` — KI-Synthese, Rate-Limit nach Tier

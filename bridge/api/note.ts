@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast } from './_lib/supabaseAdmin.js';
+import { readEnv, setCors, bearerToken, sbHeaders, sha256, tierAtLeast, verifyToken, fetchProfile } from './_lib/supabaseAdmin.js';
 import type { Tier } from './_lib/supabaseAdmin.js';
 
 /**
- * Bookmarklet-Endpunkt. Auth ueber den persoenlichen Bookmarklet-Schluessel
- * (?token= oder Authorization: Bearer), der per SHA-256-Hash auf genau ein
- * profiles-Row zeigt. Die Ziel-User-ID ergibt sich aus dem Schluessel —
- * ein user_id im Body wird ignoriert (X1).
+ * Bookmarklet-Endpunkt. Auth:
+ *   Authorization: Bearer <Supabase-Access-Token>  — Speichern-Tab der Webapp (eingeloggt)
+ *   ?token=<persoenlicher Bookmarklet-Schluessel>    — alte Bookmarklets, per SHA-256-Hash aufgeloest
+ * Die Ziel-User-ID ergibt sich ausschliesslich aus dem Token — ein user_id im Body wird ignoriert (X1).
  */
 async function resolveUserByToken(env: { SUPABASE_URL: string; SUPABASE_SERVICE_KEY: string }, token: string) {
   const r = await fetch(
@@ -38,16 +38,34 @@ export default async function handler(req: any, res: any) {
     const SUPABASE_URL = env.SUPABASE_URL;
     const SUPABASE_SERVICE_KEY = env.SUPABASE_SERVICE_KEY;
 
+    let owner: { id: string; tier: Tier } | null = null;
+    const sessionToken = bearerToken(req);
     const queryToken = req.query?.token;
-    const token = bearerToken(req) ?? (typeof queryToken === 'string' ? queryToken : null);
-    if (!token || token.length < 32) {
-      res.status(401).json({ error: 'unauthorized' });
-      return;
-    }
-    const owner = await resolveUserByToken(env, token);
-    if (!owner) {
-      res.status(401).json({ error: 'unauthorized' });
-      return;
+    if (sessionToken) {
+      const user = await verifyToken(env, sessionToken);
+      if (!user) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      if (user.is_anonymous) {
+        res.status(403).json({ error: 'account_required' });
+        return;
+      }
+      owner = await fetchProfile(env, user.id);
+      if (!owner) {
+        res.status(503).json({ error: 'profile_unavailable' });
+        return;
+      }
+    } else {
+      if (typeof queryToken !== 'string' || queryToken.length < 32) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
+      owner = await resolveUserByToken(env, queryToken);
+      if (!owner) {
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+      }
     }
     const minTier = (process.env.BOOKMARKLET_MIN_TIER ?? 'basic') as Tier;
     if (!tierAtLeast(owner.tier, minTier)) {
@@ -74,7 +92,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // Ziel-User kommt ausschliesslich aus dem Schluessel.
+    // Ziel-User kommt ausschliesslich aus dem Token.
     const userId = owner.id;
 
     const checklist =

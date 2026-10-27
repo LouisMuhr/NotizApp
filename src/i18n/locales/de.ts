@@ -461,9 +461,9 @@ export default {
     howSection: 'So funktioniert es',
     how1: 'Text auf einer Webseite markieren',
     how2: 'Auf das Bookmarklet in der Lesezeichen-Leiste klicken',
-    how3: 'Titel, Kategorie und Erinnerung anpassen',
+    how3: 'Im neuen Tab Titel, Kategorie und Erinnerung anpassen',
     how4: 'Auf "Speichern" klicken — Notiz erscheint sofort in der App',
-    tip: 'Das Bookmarklet funktioniert auf jedem Computer — egal ob Windows, Mac oder Linux. Du brauchst nur einen modernen Browser.',
+    tip: 'Das Bookmarklet funktioniert auf jedem Computer mit einem modernen Browser. Gespeichert wird mit deinem Velm-Login in diesem Browser — im Lesezeichen steckt kein Passwort oder Schlüssel.',
   },
   subscription: {
     upgradeTitle: 'Upgrade auf {{tier}}',

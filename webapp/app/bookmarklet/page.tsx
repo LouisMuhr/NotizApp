@@ -1,22 +1,15 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { buildBookmarkletHref } from '@/lib/bookmarkletScript';
 import VelmIcon from '@/components/VelmIcon';
 import LoginView, { AppUser } from '@/components/LoginView';
 
-const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? 'https://bridge-three-coral.vercel.app';
-const CATEGORIES = ['Allgemein', 'Arbeit', 'Privat', 'Ideen', 'Einkauf'];
-
-type Status = 'loading' | 'ready' | 'account_required' | 'tier_required' | 'error';
-
 export default function BookmarkletPage() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [status, setStatus] = useState<Status>('loading');
-  const linkRef = useRef<HTMLAnchorElement | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -26,36 +19,6 @@ export default function BookmarkletPage() {
       }
     }).catch(() => {}).finally(() => setAuthLoading(false));
   }, []);
-
-  const fetchToken = useCallback(async () => {
-    if (!user) return;
-    if (user.isDemo) { setStatus('account_required'); return; }
-    setStatus('loading');
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setStatus('account_required'); return; }
-    try {
-      const res = await fetch(`${BRIDGE_URL}/api/bookmarklet-token`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.status === 403 && json?.error === 'tier_required') { setStatus('tier_required'); return; }
-      if (res.status === 403 && json?.error === 'account_required') { setStatus('account_required'); return; }
-      if (!res.ok || typeof json?.token !== 'string') { setStatus('error'); return; }
-      const bookmarkletHref = buildBookmarkletHref(window.location.origin, BRIDGE_URL, json.token, CATEGORIES);
-      setStatus('ready');
-      // React blocks javascript: URLs set via the href prop as an XSS precaution.
-      // Setting it directly on the DOM node after render bypasses that check safely,
-      // since we built this string ourselves from a token we just fetched.
-      requestAnimationFrame(() => {
-        if (linkRef.current) linkRef.current.href = bookmarkletHref;
-      });
-    } catch {
-      setStatus('error');
-    }
-  }, [user]);
-
-  useEffect(() => { if (user) fetchToken(); }, [user, fetchToken]);
 
   if (authLoading) {
     return (
@@ -79,41 +42,29 @@ export default function BookmarkletPage() {
           </div>
         </div>
 
-        {status === 'loading' && (
-          <div style={s.statusBox}>
-            <div style={s.spinner} />
-            <p style={s.statusText}>Bookmarklet wird vorbereitet…</p>
-          </div>
-        )}
-
-        {status === 'account_required' && (
-          <div style={s.warnBox}>Dafür brauchst du ein bestätigtes Konto. Melde dich in der App oder hier mit deinem Konto an.</div>
-        )}
-
-        {status === 'tier_required' && (
-          <div style={s.warnBox}>Das Bookmarklet ist ab dem Basic-Plan verfügbar.</div>
-        )}
-
-        {status === 'error' && (
-          <div style={s.warnBox}>
-            Bookmarklet konnte nicht vorbereitet werden.{' '}
-            <button onClick={fetchToken} style={s.retryLink}>Erneut versuchen</button>
-          </div>
-        )}
-
-        {status === 'ready' && (
+        {user.isDemo ? (
+          <div style={s.warnBox}>Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.</div>
+        ) : (
           <>
             <p style={s.body}>
-              Zieh diesen Link in deine Lesezeichen-Leiste. Markiere danach auf jeder Webseite Text und klick den Link —
-              ein Panel lässt dich Titel, Kategorie und optional eine Erinnerung setzen, bevor die Notiz sofort in Velm landet.
+              Zieh diesen Button in deine Lesezeichen-Leiste. Markiere danach auf einer Webseite Text und klick ihn —
+              es öffnet sich ein neuer Tab, in dem du Titel, Kategorie und optional eine Erinnerung festlegst.
             </p>
             <div style={s.dragRow}>
-              <a ref={linkRef} href="#" style={s.bm} onClick={(e) => e.preventDefault()}>📝 Velm</a>
+              {/* React blockt javascript:-URLs im href-Prop, daher direkt am DOM-Knoten setzen. */}
+              <a
+                ref={(el) => { if (el) el.href = buildBookmarkletHref(window.location.origin); }}
+                href="#"
+                style={s.bm}
+                onClick={(e) => e.preventDefault()}
+              >
+                📝 Velm
+              </a>
               <span style={s.dragHint}>← in die Lesezeichen-Leiste ziehen</span>
             </div>
-            <button onClick={fetchToken} style={s.regenBtn}>Neuen Schlüssel erzeugen</button>
             <p style={s.footnote}>
-              Ein neuer Schlüssel macht bereits installierte Bookmarklets (z. B. auf anderen Geräten) ungültig.
+              Gespeichert wird mit deinem Login in diesem Browser (angemeldet als {user.email}) — im Lesezeichen
+              steckt kein Schlüssel. Hast du noch ein älteres Velm-Bookmarklet, ersetze es durch dieses.
             </p>
           </>
         )}
@@ -140,7 +91,7 @@ const s: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(255,220,160,0.12)',
     borderRadius: 14,
     padding: '32px 36px',
-    width: 460,
+    width: 460, maxWidth: '100%',
     boxShadow: '0 8px 48px rgba(0,0,0,0.55)',
   },
   backLink: { display: 'inline-block', fontSize: 12, color: 'rgba(160,144,128,0.7)', textDecoration: 'none', marginBottom: 18 },
@@ -150,8 +101,6 @@ const s: Record<string, React.CSSProperties> = {
 
   body: { fontSize: 13.5, lineHeight: 1.55, color: 'rgba(210,198,184,0.9)', marginBottom: 20 },
 
-  statusBox: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' },
-  statusText: { fontSize: 13, color: 'rgba(160,144,128,0.8)' },
   spinner: {
     width: 22, height: 22, borderRadius: '50%',
     border: '2px solid #F4A261', borderTopColor: 'transparent',
@@ -174,17 +123,5 @@ const s: Record<string, React.CSSProperties> = {
   },
   dragHint: { fontSize: 12.5, color: 'rgba(160,144,128,0.7)' },
 
-  regenBtn: {
-    background: 'transparent', color: 'rgba(160,144,128,0.7)',
-    border: '1px solid rgba(255,220,160,0.1)', borderRadius: 8,
-    fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
-    fontFamily: "'Inter', sans-serif", padding: '8px 14px',
-  },
-  footnote: { fontSize: 11, color: 'rgba(160,144,128,0.45)', marginTop: 10, lineHeight: 1.4 },
-
-  retryLink: {
-    background: 'none', border: 'none', color: '#F4A261',
-    fontSize: 13, cursor: 'pointer', fontFamily: "'Inter', sans-serif",
-    fontWeight: 600, padding: 0, textDecoration: 'underline',
-  },
+  footnote: { fontSize: 11.5, color: 'rgba(160,144,128,0.55)', lineHeight: 1.5 },
 };
