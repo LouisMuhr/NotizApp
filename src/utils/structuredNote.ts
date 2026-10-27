@@ -21,7 +21,13 @@ function localToIso(at: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-export function structuredToNote(result: StructuredNoteResult, now: Date = new Date()): NoteDraft {
+export interface StructuredNoteDraft {
+  draft: NoteDraft;
+  /** true = KI konnte keinen Reminder setzen, weil das Diktat mehrere Zeitpunkte nannte. */
+  reminderAmbiguous: boolean;
+}
+
+export function structuredToNote(result: StructuredNoteResult, now: Date = new Date()): StructuredNoteDraft {
   let reminderAt: string | null = null;
   let recurrence: Note['reminderRecurrence'] = 'once';
   let weekday: number | null = null;
@@ -37,16 +43,19 @@ export function structuredToNote(result: StructuredNoteResult, now: Date = new D
   }
 
   return {
-    title: result.title,
-    content: result.content,
-    category: result.category || 'Allgemein',
-    isPinned: false,
-    checklist: result.checklist.map((text) => ({ id: uuidv4(), text, checked: false })),
-    reminderAt,
-    reminderRecurrence: recurrence,
-    reminderWeekday: weekday,
-    reminderDayOfMonth: dayOfMonth,
-    feedsThreads: false,
-    source: 'voice',
+    draft: {
+      title: result.title,
+      content: result.content,
+      category: result.category || 'Allgemein',
+      isPinned: false,
+      checklist: result.checklist.map((text) => ({ id: uuidv4(), text, checked: false })),
+      reminderAt,
+      reminderRecurrence: recurrence,
+      reminderWeekday: weekday,
+      reminderDayOfMonth: dayOfMonth,
+      feedsThreads: false,
+      source: 'voice',
+    },
+    reminderAmbiguous: result.reminderAmbiguous,
   };
 }

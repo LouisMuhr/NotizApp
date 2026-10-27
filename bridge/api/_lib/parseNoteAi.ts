@@ -22,6 +22,8 @@ export interface StructuredNote {
   category: string;
   /** `at` ist lokale Zeit des Geraets ("YYYY-MM-DDTHH:mm"), die App rechnet sie um. */
   reminder: { at: string; recurrence: Recurrence; weekday: number | null; dayOfMonth: number | null } | null;
+  /** true = Diktat nannte mehrere Zeitpunkte, Modell konnte sich nicht entscheiden (reminder ist null). */
+  reminderAmbiguous: boolean;
 }
 
 export interface ParseNoteInput {
@@ -31,7 +33,6 @@ export interface ParseNoteInput {
   categories: string[];
   /** Lokale Geraetezeit "YYYY-MM-DDTHH:mm". */
   localNow: string;
-  locale: 'de' | 'en';
 }
 
 export class ParseNoteAiError extends Error {
@@ -55,6 +56,18 @@ const RawSchema = z.object({
       day_of_month: z.number().nullable(),
     })
     .nullable(),
+  /**
+   * true = Nutzer wollte ausdruecklich erinnert werden ("erinnere mich", "nicht vergessen"),
+   * hat aber KEINE Zeit genannt (reminder ist dann null). Server setzt die Default-Zeit
+   * (24h nach Aufnahme) selbst — das Modell soll hier nur erkennen, nicht rechnen.
+   */
+  wants_reminder_no_time: z.boolean(),
+  /**
+   * true = das Diktat nennt MEHRERE unterschiedliche Zeitpunkte/Termine, sodass unklar ist,
+   * fuer welchen der Reminder gelten soll (reminder ist dann null). App zeigt das als Fehler
+   * an, statt eine Zeit zu raten.
+   */
+  reminder_ambiguous: z.boolean(),
 });
 type RawStructured = z.infer<typeof RawSchema>;
 
@@ -62,12 +75,16 @@ const WEEKDAYS_DE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 
 
 const SYSTEM_PROMPT = `Du strukturierst eine diktierte Notiz fuer eine Notiz-App. Das Diktat stammt aus einer Spracherkennung und kann Erkennungsfehler enthalten.
 
+WICHTIG: title und content bleiben IMMER in der Sprache, in der das Diktat gesprochen wurde — auch wenn das Diktat Englisch, oder eine andere Sprache als die App-Sprache ist. NIEMALS uebersetzen. Ein englisches Diktat ergibt englischen title/content, ein deutsches Diktat deutschen title/content. Korrigieren (einzelne falsch erkannte Woerter ersetzen) ist erlaubt und gewollt; den Text in eine andere Sprache uebertragen ist es nicht.
+
 Felder:
 - title: kurze Ueberschrift (max. ca. 6 Woerter) in der Sprache des Diktats. Ist "fixed_title" gesetzt, gib ihn exakt so zurueck.
-- content: der eigentliche Text. Behalte den Wortlaut des Nutzers bei, korrigiere nur offensichtliche Erkennungsfehler und Satzzeichen. Erfinde nichts dazu. Die Spracherkennung versteht englische Woerter und Anglizismen oft als aehnlich klingende deutsche Woerter ("Berglauf" statt "Backlog", "for" statt "vorher", "Mietung" statt "Meeting"). Ergibt ein Wort im Satzzusammenhang keinen Sinn, aber ein klangaehnliches englisches oder Fachwort schon, ersetze es. Bei Zweifel das Wort unveraendert lassen. Nur die reine Zeitangabe der Erinnerung ("erinner mich morgen um 9 Uhr") und Punkte, die in die Checkliste wandern, gehoeren NICHT mehr in content. Worum es bei der Erinnerung geht (WOFUER, WORAN, WAS mitzunehmen ist) bleibt IMMER in content: "Erinner mich morgen um 9 an den Zahnarzttermin, Versicherungskarte mitnehmen" → content "Zahnarzttermin, Versicherungskarte mitnehmen". Der Titel ersetzt den Inhalt nie. Leerer String ist nur erlaubt, wenn das Diktat ausser Zeitangabe wirklich nichts enthaelt.
+- content: der eigentliche Text, in der Sprache des Diktats. Behalte den Wortlaut des Nutzers bei, korrigiere nur offensichtliche Erkennungsfehler und Satzzeichen. Erfinde nichts dazu. Die Spracherkennung versteht englische Woerter und Anglizismen oft als aehnlich klingende deutsche Woerter ("Berglauf" statt "Backlog", "for" statt "vorher", "Mietung" statt "Meeting"). Ergibt ein Wort im Satzzusammenhang keinen Sinn, aber ein klangaehnliches englisches oder Fachwort schon, ersetze NUR dieses eine Wort — das ist eine Korrektur eines Erkennungsfehlers, keine Uebersetzung des restlichen Textes. Bei Zweifel das Wort unveraendert lassen. Nur die reine Zeitangabe der Erinnerung ("erinner mich morgen um 9 Uhr") und Punkte, die in die Checkliste wandern, gehoeren NICHT mehr in content. Worum es bei der Erinnerung geht (WOFUER, WORAN, WAS mitzunehmen ist) bleibt IMMER in content: "Erinner mich morgen um 9 an den Zahnarzttermin, Versicherungskarte mitnehmen" → content "Zahnarzttermin, Versicherungskarte mitnehmen". Der Titel ersetzt den Inhalt nie. Leerer String ist nur erlaubt, wenn das Diktat ausser Zeitangabe wirklich nichts enthaelt.
 - checklist: nur wenn das Diktat eine Aufzaehlung von Dingen oder Aufgaben enthaelt (Einkaufsliste, To-dos, Packliste). Ein Eintrag pro Punkt, kurz. Sonst leeres Array. Nennt das Diktat mehrere Dinge (z. B. Termin UND "danach einkaufen: Milch, Eier"), gehoeren die genannten Waren/Aufgaben IMMER in die Checkliste, auch wenn sie neben einer Erinnerung stehen. Die Erinnerung gilt nur fuer EINE Zeit; Teile mit "danach"/"anschliessend" bekommen keine eigene Erinnerung, bleiben aber als Checklisten-Eintraege oder im Text erhalten und werden NIE weggelassen.
 - category: exakt einer der Werte aus "categories". Passt keiner eindeutig, nimm "Allgemein".
 - reminder: nur wenn der Nutzer ausdruecklich erinnert werden will oder einen Termin mit Zeitpunkt nennt. Sonst null.
+  - Nennt das Diktat MEHRERE Termine mit unterschiedlichen Zeitpunkten (z. B. zwei verschiedene Verabredungen an zwei Tagen): reminder = null, aber reminder_ambiguous = true. Rate NIEMALS, welcher der gemeinte ist. Beide Termine bleiben trotzdem in content/title sichtbar. Das ist der einzige Fall fuer reminder_ambiguous; sonst immer false.
+  - Will der Nutzer ausdruecklich erinnert werden ("erinnere mich", "nicht vergessen" bezogen auf sich selbst), nennt aber KEINE Zeit/Datum dafuer: reminder = null, aber wants_reminder_no_time = true. Das ist der einzige Fall fuer wants_reminder_no_time; sonst immer false. (reminder_ambiguous und wants_reminder_no_time schliessen sich aus — hoechstens eines von beiden ist true.)
   - at: lokaler Zeitpunkt "YYYY-MM-DDTHH:mm". Datum IMMER aus der Kalendertabelle ablesen, nicht selbst rechnen. Ohne Uhrzeit: 09:00.
   - Uhrzeit immer im 24-Stunden-Format. Deutsche Zeitangaben sorgfaeltig lesen: "halb drei" = 2:30 (NICHT 3:30), "viertel vor drei" = 2:45, "viertel nach drei" = 3:15, "dreiviertel drei" = 2:45. Fehlt "frueh/morgens/vormittags/abends/nachts/nachmittags", waehle die Tageszeit, die als Termin plausibel ist: Stunden 1-6 → Nachmittag/Abend (halb drei = 14:30), 7-11 → Vormittag (sieben = 07:00), 12 = Mittag. "frueh"/"morgens" = vor 12 Uhr, "abends" = nach 17 Uhr, "nachts" = 00:00-04:59. Zeiten zwischen 0 und 5 Uhr nachts nur, wenn der Nutzer "nachts" sagt oder 24-Stunden-Zeit nennt ("zwei Uhr dreissig", "0:30").
   - recurrence: "once" (einmalig), "daily" (taeglich), "weekly" (jede Woche an einem Wochentag), "monthly" (jeden Monat an einem Tag).
@@ -145,6 +162,15 @@ function isValidLocal(at: string): boolean {
 
 const clean = (s: unknown, max: number) => (typeof s === 'string' ? s.trim().slice(0, max) : '');
 
+/** `localNow` + 24h als "YYYY-MM-DDTHH:mm" (reine lokale Arithmetik, keine Zeitzonen). */
+function plus24h(localNow: string): string {
+  const [, y, mo, d, h, mi] = LOCAL_DT.exec(localNow)!.map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d, h, mi));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`;
+}
+
 /**
  * Prueft die Modellantwort gegen die Eingabe. Liefert null, wenn nichts
  * Brauchbares uebrig bleibt (dann speichert die App das Diktat unveraendert).
@@ -175,6 +201,11 @@ export function sanitizeStructured(raw: RawStructured, input: ParseNoteInput): S
         dayOfMonth: r.recurrence === 'monthly' ? d : null,
       };
     }
+  } else if (raw.wants_reminder_no_time) {
+    // Nutzer wollte ausdruecklich erinnert werden, hat aber keine Zeit genannt. Das Modell soll
+    // hier nur den Wunsch erkennen, nicht rechnen (zuverlaessiger als eine erfundene Uhrzeit vom
+    // Modell) — Default: 24h nach Aufnahme, einmalig.
+    reminder = { at: plus24h(input.localNow), recurrence: 'once', weekday: null, dayOfMonth: null };
   }
 
   // Modell hat den ganzen Satz als Erinnerungssatz verworfen: lieber das rohe
@@ -182,5 +213,5 @@ export function sanitizeStructured(raw: RawStructured, input: ParseNoteInput): S
   if (reminder && !content && checklist.length === 0) content = clean(input.transcript, 20000);
 
   if (!title && !content && checklist.length === 0) return null;
-  return { title, content, checklist, category, reminder };
+  return { title, content, checklist, category, reminder, reminderAmbiguous: !reminder && !!raw.reminder_ambiguous };
 }

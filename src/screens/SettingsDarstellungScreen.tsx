@@ -5,9 +5,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isHapticsEnabled, setHapticsEnabled, light as hapticLight } from '../utils/haptics';
 import { withAlpha } from '../utils/categoryColors';
 import { useLanguage, LanguagePreference } from '../context/LanguageContext';
-import { useNavigation } from '@react-navigation/native';
-import { useNotes } from '../context/NotesContext';
-import { isVoiceAiEnabled, setVoiceAiEnabled } from '../utils/voiceAiPref';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -52,36 +49,49 @@ function SettingRow({
 
 function LanguageOption({
   label,
+  flag,
   active,
+  showDivider,
   onPress,
 }: {
   label: string;
+  flag?: string;
   active: boolean;
+  showDivider: boolean;
   onPress: () => void;
 }) {
   const theme = useTheme();
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={onPress}
-      style={[
-        styles.langOption,
-        {
-          backgroundColor: active ? theme.colors.primary : 'transparent',
-          borderColor: theme.colors.outline,
-        },
-      ]}
-    >
-      <Text
-        style={{
-          color: active ? theme.colors.onPrimary : theme.colors.onSurface,
-          fontSize: 13,
-          fontWeight: '600',
-        }}
+    <>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={onPress}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={label}
+        style={styles.row}
       >
-        {label}
-      </Text>
-    </TouchableOpacity>
+        <View style={[styles.rowIcon, { backgroundColor: withAlpha(theme.colors.primary, 0.12) }]}>
+          {flag ? (
+            <Text style={styles.flag}>{flag}</Text>
+          ) : (
+            <MaterialCommunityIcons name="cellphone" size={18} color={theme.colors.primary} />
+          )}
+        </View>
+        <Text
+          style={{
+            flex: 1,
+            color: theme.colors.onSurface,
+            fontSize: 15,
+            fontWeight: active ? '600' : '500',
+          }}
+        >
+          {label}
+        </Text>
+        {active && <MaterialCommunityIcons name="check" size={20} color={theme.colors.primary} />}
+      </TouchableOpacity>
+      {showDivider && <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />}
+    </>
   );
 }
 
@@ -89,16 +99,6 @@ export default function SettingsDarstellungScreen() {
   const theme = useTheme();
   const { t, preference, setPreference } = useLanguage();
   const [hapticsOn, setHapticsOn] = useState(isHapticsEnabled());
-  const navigation = useNavigation<any>();
-  const { tier } = useNotes();
-  const [voiceAiOn, setVoiceAiOn] = useState(isVoiceAiEnabled());
-  // tier === null heißt „noch unbekannt“: keine Sperre behaupten, Schalter nur deaktivieren.
-  const voiceAiLocked = tier !== null && tier !== 'pro';
-
-  const toggleVoiceAi = async (value: boolean) => {
-    setVoiceAiOn(value);
-    await setVoiceAiEnabled(value);
-  };
 
   const toggleHaptics = async (value: boolean) => {
     setHapticsOn(value);
@@ -106,10 +106,10 @@ export default function SettingsDarstellungScreen() {
     if (value) hapticLight();
   };
 
-  const languageOptions: { value: LanguagePreference; label: string }[] = [
+  const languageOptions: { value: LanguagePreference; label: string; flag?: string }[] = [
     { value: 'system', label: t('settingsDarstellung.languageSystem') },
-    { value: 'de', label: t('settingsDarstellung.languageGerman') },
-    { value: 'en', label: t('settingsDarstellung.languageEnglish') },
+    { value: 'de', label: t('settingsDarstellung.languageGerman'), flag: '🇩🇪' },
+    { value: 'en', label: t('settingsDarstellung.languageEnglish'), flag: '🇬🇧' },
   ];
 
   return (
@@ -133,53 +133,19 @@ export default function SettingsDarstellungScreen() {
       </View>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-        {t('settingsDarstellung.aiSection')}
-      </Text>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
-        {voiceAiLocked ? (
-          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('SettingsAbo')}>
-            <SettingRow
-              icon="microphone-outline"
-              label={t('settingsDarstellung.voiceAi')}
-              sublabel={t('settings.lockedFromPlan', { plan: t('settings.tierPro') })}
-              showDivider={false}
-              trailing={
-                <MaterialCommunityIcons name="lock-outline" size={20} color={theme.colors.onSurfaceVariant} />
-              }
-            />
-          </TouchableOpacity>
-        ) : (
-          <SettingRow
-            icon="microphone-outline"
-            label={t('settingsDarstellung.voiceAi')}
-            sublabel={t('settingsDarstellung.voiceAiSub')}
-            showDivider={false}
-            trailing={
-              <Switch
-                value={voiceAiOn}
-                onValueChange={toggleVoiceAi}
-                disabled={tier === null}
-                color={theme.colors.primary}
-              />
-            }
-          />
-        )}
-      </View>
-
-      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         {t('settingsDarstellung.language')}
       </Text>
-      <View style={[styles.card, { backgroundColor: theme.colors.surface, padding: 12 }]}>
-        <View style={styles.langRow}>
-          {languageOptions.map((opt) => (
-            <LanguageOption
-              key={opt.value}
-              label={opt.label}
-              active={preference === opt.value}
-              onPress={() => setPreference(opt.value)}
-            />
-          ))}
-        </View>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        {languageOptions.map((opt, i) => (
+          <LanguageOption
+            key={opt.value}
+            label={opt.label}
+            flag={opt.flag}
+            active={preference === opt.value}
+            showDivider={i < languageOptions.length - 1}
+            onPress={() => setPreference(opt.value)}
+          />
+        ))}
       </View>
     </ScrollView>
   );
@@ -212,16 +178,5 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1 },
   divider: { height: 1, marginLeft: 60, opacity: 0.35 },
-  langRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  langOption: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  flag: { fontSize: 18 },
 });

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, View, FlatList, Pressable, Animated, Easing, ListRenderItemInfo } from 'react-native';
-import { Text, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '../context/NotesContext';
@@ -103,7 +103,13 @@ export default function HomeScreen({ navigation }: Props) {
 
   const fabPulse = useRef(new Animated.Value(1)).current;
   const fabScale = useRef(new Animated.Value(1)).current;
+  // Puls nur als Einladung bei leerer Liste, sonst Dauerbewegung ohne Nutzen (und Akku)
+  const pulseFab = notes.length === 0;
   useEffect(() => {
+    if (!pulseFab) {
+      fabPulse.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(fabPulse, {
@@ -122,13 +128,12 @@ export default function HomeScreen({ navigation }: Props) {
     );
     loop.start();
     return () => loop.stop();
-  }, [fabPulse]);
+  }, [fabPulse, pulseFab]);
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
+      // Native Splash deckt die Ladezeit ab (siehe SplashGate in App.tsx)
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]} />
     );
   }
 

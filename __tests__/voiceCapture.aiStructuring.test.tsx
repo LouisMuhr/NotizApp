@@ -38,13 +38,11 @@ jest.mock('../src/sync/pendingParse', () => ({
   enqueuePendingParse: jest.fn(async () => {}),
 }));
 jest.mock('../src/sync/supabaseClient', () => ({ isSyncConfigured: () => true, getSupabase: () => null }));
-jest.mock('../src/utils/voiceAiPref', () => ({ isVoiceAiEnabled: jest.fn(() => true) }));
 
 const { useNotes } = require('../src/context/NotesContext') as { useNotes: jest.Mock };
 const { parseNoteRemote } = require('../src/sync/parseNote') as { parseNoteRemote: jest.Mock };
 const { resolveAccountState } = require('../src/sync/accountState') as { resolveAccountState: jest.Mock };
 const { enqueuePendingParse } = require('../src/sync/pendingParse') as { enqueuePendingParse: jest.Mock };
-const { isVoiceAiEnabled } = require('../src/utils/voiceAiPref') as { isVoiceAiEnabled: jest.Mock };
 const VoiceCaptureSheet = require('../src/components/VoiceCaptureSheet').default;
 
 const addNote = jest.fn(async () => ({ id: 'n1', updatedAt: '2026-10-01T10:00:00.000Z' }));
@@ -55,7 +53,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   useNotes.mockReturnValue({ addNote, tier: 'pro', categories: ['Allgemein', 'Einkauf'] });
   resolveAccountState.mockResolvedValue({ state: 'secured', userId: 'u1', email: 'a@b.c' });
-  isVoiceAiEnabled.mockReturnValue(true);
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 });
 
@@ -139,7 +136,7 @@ test('Pro-Schalter pro Aufnahme: Standard an, Ausschalten fragt nach, OK → kei
   fireEvent(sw, 'valueChange', false);
   expect(Alert.alert).not.toHaveBeenCalled();
   expect(screen.getByText('KI-Überarbeitung ausschalten?')).toBeTruthy();
-  expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(true); // erst nach OK aus
+  expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(false); // steht schon waehrend der Rueckfrage auf aus
   pressDialogButton('OK');
   expect(screen.getByLabelText(SWITCH_LABEL).props.value).toBe(false);
 
@@ -172,7 +169,6 @@ test('Pro-Schalter ist ohne Pro nicht sichtbar', () => {
 
 test.each([
   ['Basic', () => useNotes.mockReturnValue({ addNote, tier: 'basic', categories: ['Allgemein'] })],
-  ['Schalter aus', () => isVoiceAiEnabled.mockReturnValue(false)],
   ['Konto unbestaetigt', () => resolveAccountState.mockResolvedValue({ state: 'pending-confirmation', userId: null, email: 'a@b.c' })],
 ])('%s: kein KI-Call, normale Notiz', async (_label, setup) => {
   setup();

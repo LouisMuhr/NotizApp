@@ -6,7 +6,7 @@ import {
 } from '../src/sync/pendingParse';
 
 const item = (noteId: string): PendingParse => ({
-  noteId, title: '', transcript: 'Milch kaufen', locale: 'de',
+  noteId, title: '', transcript: 'Milch kaufen',
   noteUpdatedAt: '2026-10-01T10:00:00.000Z', recordedAt: '2026-10-01T10:00:00.000Z',
 });
 

@@ -1,7 +1,6 @@
 # NotizApp – CLAUDE.md
 
-> **Meta:** After every significant code change, update this file to reflect the new state.
-> Keep it under 200 lines — compress or merge sections if it grows beyond that.
+> **Meta:** After every significant code change, update this file; keep it under 200 lines (compress/merge).
 
 ## Project Overview
 NotizApp (Velm) is a German-language note-taking app in React Native / Expo: Notizen mit Checklisten,
@@ -24,7 +23,7 @@ c:/NotizApp/
 │   │   ├── storage/       # noteStorage.ts, thoughtStorage.ts (AsyncStorage)
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
-│   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, voiceAiPref, …
+│   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, …
 │   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), bookmarklet/, worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
@@ -138,14 +137,15 @@ Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projek
 `supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
 
 ### Theme
-`src/theme/theme.ts` — MD3LightTheme. Editorial Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte,
-Amber als einzige Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font` in
-App.tsx. Kategorien: Hue-Rotation via `categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
+`src/theme/theme.ts` — MD3LightTheme, Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als einzige
+Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`. Kategorien: Hue-Rotation via
+`categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
 
-### App-Icon (Velm)
-„Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`). Spec: `Velm Icon - Final.html`
-(gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`. Komponenten:
-`src/components/VelmLogo.tsx`, `webapp/components/VelmIcon.tsx`, Favicon `webapp/app/icon.svg`.
+**App-Icon (Velm)**: „Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`), Spec `Velm Icon - Final.html`
+(gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`. Komponenten: `VelmLogo.tsx`, `webapp/components/VelmIcon.tsx`.
+
+**Admin**: Einstellungen → Abschnitt „Admin" (Onboarding zurücksetzen, `SettingsTestBenachrichtigungen`) nur für das **bestätigte** Konto
+`louismuhr8@gmail.com` (`src/sync/adminAccess.ts`: `isAdminUser`, `useIsAdmin()` → `null` beim Laden). Reines UI-Gating, nur lokale Werkzeuge.
 
 ### i18n (Deutsch/Englisch)
 `src/i18n/index.ts` — i18n-js `I18n` (`de`/`en`), `defaultLocale = 'de'`, `enableFallback = true`; exportiert
@@ -156,8 +156,7 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 **Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
 
-### Webapp (graph visualizer)
-`webapp/`: eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
+**Webapp (graph visualizer)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR).
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
@@ -171,10 +170,17 @@ rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf 
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
 zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
-(`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+(`computeNextAllowedAt`), 429-Wert des Servers gewinnt. Ergebnis-Schreiben: KI kann Threads Notizen nur **hinzufügen**
+(`note_ids` = Bestand ∪ KI-Liste), nie Status setzen; neuer Thread mit Titel/ID eines aktiven → Notizen dort einhängen. Kein Dormant-Pruning (Modell kennt kein Datum).
+Modell sieht nur Kurz-Referenzen (`n1`, `t1`, `neu-1`), Server übersetzt zurück und vergibt UUIDs selbst.
+An die KI gehen **nur Notizen, die in keinem Thread stecken** (auch keinem archivierten); bestehende Threads als Titel + Summary +
+Notiz-Titel, dazu die bestehenden Verbindungen (sonst vergisst das Modell sie beim Neuschreiben). Nichts Neues → `no_new_notes`, Lauf
+wird zurückgegeben. Antwort per Structured Outputs (`SYNTHESIS_SCHEMA`). Server erzwingt 1 Notiz = 1 Thread (bestehender gewinnt). Eval:
+`node --experimental-transform-types bridge/worker/eval-synthesize.ts seed|run <label> [--scenario incremental] [--prompt <datei>] [--thinking 2048] | compare <präfix> …` (Test-Account, Berichte in `bridge/worker/logs/`, Versionen + Messwerte in `bridge/worker/synthesis-prompts/README.md`).
+**Prompt ab v9 ist auf Haiku mit Thinking ausgelegt** — ohne Thinking erzeugt er viele falsche Verbindungen; Thinking ist im Handler noch nicht aktiv (offene Entscheidung, braucht `maxDuration`).
 
 **KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
-in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter (`voiceAiPref`) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
+in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter pro Aufnahme im Sheet (nicht mehr global) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
 **Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download); Geräte-Erkennung: leise Fehler (`aborted`) kippen den Titel↔Inhalt-Neustart nicht, Titel endet nach 1,8 s Stille (kein Satzschluss vom Dienst). Scheitert die KI beim Speichern (offline/Bridge/Tageslimit), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, alle 20 s + Vordergrund, erst nach dem Laden der Notizen), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen bzw. 5 Fehlversuchen (kaputter Eintrag blockiert die Rest nicht; Abbruch nur bei Offline/Limit, `decideAfterError`); Diktate > 4000 Zeichen gehen nie an die KI; Detach/Alles-löschen leeren sie.
 
@@ -196,4 +202,5 @@ zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind 
   `docs/audit/`.
 - **Kategorie-Farben**: immer `getCategoryAccent()` aus `categoryAccents.ts`.
 - **KEINE `Alert.alert`** (nativer Dialog bricht den Papier-Look). Rückfragen/Hinweise = Paper `Portal`+`Dialog` im App-Design (Vorlage `ArchiveScreen`); in nativen `Modal`s (z. B. `VoiceCaptureSheet`) das Modal in `Portal.Host` wickeln. Schalter = Paper `Switch` mit `theme.colors.primary` (nie RN-`Switch`: Android-Türkis). Bestehende Alerts bei Gelegenheit migrieren.
+- **Version**: einzige Quelle `package.json` (`app.config.js` zieht sie in die Expo-Config). Nach jeder abgeschlossenen Änderung hochzählen (`npm version <x> --no-git-tag-version`; Patch = Fix/Aufräumen, Minor = Feature). **Beim echten Launch zurück auf 1.0.0.** `runtimeVersion` = `appVersion`: jeder Bump trennt ältere Builds vom OTA-Kanal.
 - **Rules**: Update dich selber regelmäßig, aber diese Datei MUSS unter 200 Zeilen bleiben. Arbeite nie am main branch, außer ich bitte darum

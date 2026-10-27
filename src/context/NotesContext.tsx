@@ -19,7 +19,6 @@ import {
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
 import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
-import { loadVoiceAiPref, isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
 import { resolveAccountState } from '../sync/accountState';
@@ -337,9 +336,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       haptics.loadHapticsPref().catch(() => {});
-      loadVoiceAiPref().catch(() => {});
+      // Ein kaputter Speicher-Key darf den Start nie blockieren (sonst haengt der Splash ewig).
+      const safe = async <T,>(label: string, fn: () => Promise<T[]>): Promise<T[]> => {
+        try { return await fn(); } catch (e) { console.warn(`[start] ${label} unlesbar`, e); return []; }
+      };
       const [loadedNotes, loadedCategories, loadedArchive, loadedTombstones, loadedPending] = await Promise.all([
-        loadNotes(), loadCategories(), loadArchive(), loadTombstones(), loadPendingSync(),
+        safe('notes', loadNotes), safe('categories', loadCategories), safe('archive', loadArchive),
+        safe('tombstones', loadTombstones), safe('pending', loadPendingSync),
       ]);
       if (!mountedRef.current) return;
       tombstonesRef.current = new Set(loadedTombstones);
@@ -353,7 +356,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (loadedCategories.length > 0) {
         setCategories(loadedCategories);
       } else {
-        await saveCategories(DEFAULT_CATEGORIES);
+        // State startet schon mit DEFAULT_CATEGORIES — Schreiben muss den Start nicht blockieren
+        saveCategories(DEFAULT_CATEGORIES).catch(() => {});
       }
       setLoading(false);
 
@@ -578,7 +582,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     if (processingParseRef.current) return;
     // Vor dem Laden ist allRef leer: die Notiz waere "weg" und der Eintrag wuerde verworfen.
     if (loadingRef.current) return;
-    if (tierRef.current !== 'pro' || !isVoiceAiEnabled() || !isSyncConfigured()) return;
+    if (tierRef.current !== 'pro' || !isSyncConfigured()) return;
     processingParseRef.current = true;
     try {
       const items = await loadPendingParses();
@@ -602,7 +606,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           transcript: item.transcript,
           title: item.title,
           categories: categoriesRef.current,
-          locale: item.locale,
           now: new Date(item.recordedAt),
         });
         if ('error' in res) {
@@ -617,7 +620,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           if (next === 'abort') return; // Netz weg / Limit: alle warten, naechster Versuch spaeter
           continue; // Eintrag selbst kaputt: die uebrigen duerfen trotzdem dran
         }
-        const draft = structuredToNote(res.result);
+        const { draft } = structuredToNote(res.result);
         await updateNote(item.noteId, {
           title: draft.title,
           content: draft.content,

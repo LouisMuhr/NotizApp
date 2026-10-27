@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Platform, Alert } from 'react-native';
-import { useTheme, Text } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { useTheme, Text, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,6 +9,7 @@ import { Type, Fonts } from '../theme/typography';
 import { useNotes } from '../context/NotesContext';
 import { getSupabase } from '../sync/supabaseClient';
 import { deriveStateFromUser } from '../sync/accountState';
+import { useIsAdmin } from '../sync/adminAccess';
 import { ONBOARDING_KEY } from './onboarding/shared';
 import { useLanguage } from '../context/LanguageContext';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -101,6 +102,8 @@ export default function SettingsScreen() {
   const { tier } = useNotes();
   const { t } = useLanguage();
   const [isSignedIn, setIsSignedIn] = useState(false);
+  const [onboardingResetShown, setOnboardingResetShown] = useState(false);
+  const isAdmin = useIsAdmin();
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -116,13 +119,10 @@ export default function SettingsScreen() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // [DEV-HELPER] Onboarding zurücksetzen — nur in __DEV__ sichtbar. Vor Release entfernen.
+  // Admin-Werkzeug: Onboarding beim nächsten Start (bzw. Reload) erneut zeigen.
   const resetOnboarding = async () => {
     await AsyncStorage.removeItem(ONBOARDING_KEY);
-    Alert.alert(
-      t('settings.resetOnboardingAlertTitle'),
-      t('settings.resetOnboardingAlertBody')
-    );
+    setOnboardingResetShown(true);
   };
 
   const tierLabel =
@@ -223,13 +223,6 @@ export default function SettingsScreen() {
           />
         )}
         <NavRow
-          icon="cloud-sync-outline"
-          iconBg={colors.inkDim}
-          label={t('settings.sync')}
-          sublabel={t('settings.syncSub')}
-          onPress={() => navigation.navigate('SettingsSynchronisation')}
-        />
-        <NavRow
           icon="bookmark-plus-outline"
           iconBg={colors.amberMid}
           label={t('settings.bookmarklet')}
@@ -273,11 +266,11 @@ export default function SettingsScreen() {
         />
       </View>
 
-      {/* ── Entwicklung [DEV-HELPER] — nur in __DEV__, vor Release entfernen ── */}
-      {__DEV__ && (
+      {/* ── Admin — nur für das Admin-Konto (src/sync/adminAccess.ts) ── */}
+      {isAdmin === true && (
         <>
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
-            {t('settings.sectionDev')}
+            {t('settings.sectionAdmin')}
           </Text>
           <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
             <NavRow
@@ -286,9 +279,37 @@ export default function SettingsScreen() {
               label={t('settings.resetOnboarding')}
               sublabel={t('settings.resetOnboardingSub')}
               onPress={resetOnboarding}
+            />
+            <NavRow
+              icon="bell-ring-outline"
+              iconBg={colors.inkFaint}
+              label={t('settings.testNotifications')}
+              sublabel={t('settings.testNotificationsSub')}
+              onPress={() => navigation.navigate('SettingsTestBenachrichtigungen')}
               showDivider={false}
             />
           </View>
+          <Portal>
+            <Dialog
+              visible={onboardingResetShown}
+              onDismiss={() => setOnboardingResetShown(false)}
+              style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+            >
+              <Dialog.Title style={{ color: theme.colors.onSurface }}>
+                {t('settings.resetOnboardingAlertTitle')}
+              </Dialog.Title>
+              <Dialog.Content>
+                <Text style={{ color: theme.colors.onSurfaceVariant }}>
+                  {t('settings.resetOnboardingAlertBody')}
+                </Text>
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button onPress={() => setOnboardingResetShown(false)} textColor={theme.colors.primary}>
+                  {t('common.ok')}
+                </Button>
+              </Dialog.Actions>
+            </Dialog>
+          </Portal>
         </>
       )}
 
@@ -349,5 +370,6 @@ const styles = StyleSheet.create({
   },
   rowIconLocked: { opacity: 0.45 },
   rowText: { flex: 1 },
+  dialog: { borderRadius: 24 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 62 },
 });

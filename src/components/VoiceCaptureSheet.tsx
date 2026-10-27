@@ -48,7 +48,6 @@ import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import * as haptics from '../utils/haptics';
 import { useLanguage } from '../context/LanguageContext';
-import { isVoiceAiEnabled } from '../utils/voiceAiPref';
 import { isProbablyOnline } from '../utils/connectivity';
 import { isQueuedNoticeHidden, hideQueuedNotice } from '../utils/aiQueuedNoticePref';
 import { enqueuePendingParse, MAX_TRANSCRIPT_CHARS } from '../sync/pendingParse';
@@ -114,6 +113,8 @@ export default function VoiceCaptureSheet({
   const partialRef = useRef({ title: '', content: '' });
   // Erkennung laeuft auf dem Geraet statt ueber den Netz-Dienst (offline oder nach Online-Fehler).
   const onDeviceRef = useRef(false);
+  // Netz-Check nur beim ersten Start pro Sheet: bei jedem Titel↔Inhalt-Wechsel kostete er bis zu 1,2 s Aufnahmepause.
+  const onlineCheckedRef = useRef(false);
   const [onDevice, setOnDevice] = useState(false);
   const [voiceError, setVoiceError] = useState<null | 'generic' | 'offlineModelMissing'>(null);
   // Pro Aufnahme: darf die KI diese Notiz (auch nachtraeglich) ueberarbeiten? Standard ja,
@@ -208,10 +209,15 @@ export default function VoiceCaptureSheet({
     setVoiceError(null);
     // Ohne Netz erkennt das Geraet selbst (bleibt fuer die Sheet-Laufzeit gesetzt). Der
     // Online-Weg bleibt Standard — er ist genauer; schlaegt er fehl, greift der Error-Handler.
-    if (!onDeviceRef.current && supportsOnDevice() && !(await isProbablyOnline())) {
-      onDeviceRef.current = true;
+    if (!onDeviceRef.current && !onlineCheckedRef.current && supportsOnDevice()) {
+      const online = await isProbablyOnline();
+      onlineCheckedRef.current = true;
+      if (!online) onDeviceRef.current = true;
     }
-    if (stoppedRef.current) return; // waehrend des Checks gestoppt/geschlossen
+    if (stoppedRef.current) { // waehrend des Checks gestoppt/geschlossen
+      setIsListening(false);
+      return;
+    }
     setOnDevice(onDeviceRef.current);
     ExpoSpeechRecognitionModule.start({
       lang: locale === 'en' ? 'en-US' : 'de-DE',
@@ -263,7 +269,9 @@ export default function VoiceCaptureSheet({
 
   useSpeechRecognitionEvent('start', () => setIsListening(true));
   useSpeechRecognitionEvent('end', () => {
-    setIsListening(false);
+    // Geplanter Neustart (Titel↔Inhalt): Anzeige bleibt auf "nimmt auf", sonst springt der Button kurz auf aus.
+    // Das nachfolgende 'start' bestaetigt, ein Abbruch/Fehler setzt sie zurueck.
+    if (!pendingRestartRef.current) setIsListening(false);
     if (titleSilenceTimerRef.current) clearTimeout(titleSilenceTimerRef.current);
     titleSilenceTimerRef.current = null;
     flushPartial();
@@ -313,7 +321,7 @@ export default function VoiceCaptureSheet({
     console.warn('[voice] Fehler:', event.error, event.message);
     const pending = pendingRestartRef.current;
     pendingRestartRef.current = null;
-    setIsListening(false);
+    if (!pending || event.error === 'not-allowed') setIsListening(false);
     if (stoppedRef.current) return;
     if (pending && event.error !== 'not-allowed') {
       // Wir haben die Sitzung selbst gestoppt (Titel ↔ Inhalt). Die Geraete-Erkennung meldet dabei
@@ -355,6 +363,7 @@ export default function VoiceCaptureSheet({
       partialRef.current = { title: '', content: '' };
       pendingRestartRef.current = null;
       onDeviceRef.current = false;
+      onlineCheckedRef.current = false;
       stoppedRef.current = true;
       setVoiceError(null);
       setOnDevice(false);
@@ -439,7 +448,7 @@ export default function VoiceCaptureSheet({
   const canSave = displayText.trim().length > 0 || displayTitle.trim().length > 0;
   const tierKnown = tier !== null;
   const showProHint = speechAvailable && tierKnown && tier !== 'pro';
-  const showAiSwitch = speechAvailable && tier === 'pro' && isVoiceAiEnabled() && isSyncConfigured();
+  const showAiSwitch = speechAvailable && tier === 'pro' && isSyncConfigured();
 
   // Ausschalten braucht eine Bestaetigung (ohne KI bleibt das Diktat roh); Einschalten nicht.
   const toggleAiAllowed = (next: boolean) => {
@@ -480,7 +489,7 @@ export default function VoiceCaptureSheet({
     const recordedAt = new Date();
     let note: Parameters<typeof addNote>[0] = plainNote;
 
-    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isVoiceAiEnabled() && isSyncConfigured();
+    const canUseAi = dictated && !!content && tier === 'pro' && aiAllowed && isSyncConfigured();
     // Die Bridge lehnt lange Diktate ab: gar nicht erst senden oder vormerken.
     const tooLong = content.length > MAX_TRANSCRIPT_CHARS;
     if (canUseAi && tooLong) aiNotice = t('voiceCapture.aiTooLong');
@@ -493,9 +502,11 @@ export default function VoiceCaptureSheet({
         queueForLater = true;
         aiNotice = t('voiceCapture.aiQueued');
       } else if (account.state === 'secured') {
-        const res = await parseNoteRemote({ transcript: content, title, categories, locale });
+        const res = await parseNoteRemote({ transcript: content, title, categories });
         if ('result' in res) {
-          note = structuredToNote(res.result);
+          const { draft, reminderAmbiguous } = structuredToNote(res.result);
+          note = draft;
+          if (reminderAmbiguous) aiNotice = t('voiceCapture.reminderAmbiguous');
         } else if (res.error === 'limit_reached' || res.error === 'unavailable') {
           queueForLater = true;
           aiNotice = t(res.error === 'limit_reached' ? 'voiceCapture.aiLimit' : 'voiceCapture.aiQueued');
@@ -512,7 +523,6 @@ export default function VoiceCaptureSheet({
           noteId: saved.id,
           title,
           transcript: content,
-          locale,
           noteUpdatedAt: saved.updatedAt,
           recordedAt: recordedAt.toISOString(),
         });
@@ -699,7 +709,7 @@ export default function VoiceCaptureSheet({
                     {t('voiceCapture.aiSwitchLabel')}
                   </Text>
                   <Switch
-                    value={aiAllowed}
+                    value={aiAllowed && !aiOffDialog}
                     onValueChange={toggleAiAllowed}
                     color={theme.colors.primary}
                     accessibilityLabel={t('voiceCapture.aiSwitchLabel')}
