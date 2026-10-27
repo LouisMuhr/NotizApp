@@ -52,3 +52,6 @@ bridge/worker/.env
 /android
 
 .vercel
+
+# Lokale Claude-Code-Einstellungen (Berechtigungen dieses Rechners)
+.claude/settings.local.json
