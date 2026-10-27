@@ -82,7 +82,7 @@ function BookmarkletSavePage() {
     });
   }, [user]);
 
-  const closeTab = () => {
+  const closeWindow = () => {
     window.close();
     // Hat der Browser das Schließen verweigert, läuft dieser Code noch.
     setTimeout(() => setCloseFailed(true), 300);
@@ -112,7 +112,7 @@ function BookmarkletSavePage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) { setSaveState('error'); setErrorCode(json?.error); return; }
       setSaveState('saved');
-      setTimeout(closeTab, 900);
+      setTimeout(closeWindow, 900);
     } catch {
       setSaveState('error');
       setErrorCode('network');
@@ -159,7 +159,7 @@ function BookmarkletSavePage() {
       <div style={s.page}><div style={{ ...s.card, textAlign: 'center' }}>
         <div style={s.check}>✅</div>
         <p style={s.savedText}>Notiz gespeichert</p>
-        {closeFailed && <p style={s.text}>Du kannst diesen Tab jetzt schließen.</p>}
+        {closeFailed && <p style={s.text}>Du kannst dieses Fenster jetzt schließen.</p>}
       </div></div>
     );
   }
@@ -175,7 +175,7 @@ function BookmarkletSavePage() {
         <input style={s.input} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} autoFocus />
 
         <label style={s.label}>Inhalt</label>
-        <textarea style={{ ...s.input, resize: 'vertical' }} rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
+        <textarea style={{ ...s.input, resize: 'vertical' }} rows={6} value={content} onChange={(e) => setContent(e.target.value)} />
 
         <label style={s.label}>Kategorie</label>
         <div style={s.chips}>
@@ -209,12 +209,12 @@ function BookmarkletSavePage() {
         {saveState === 'error' && <div style={s.errorBox}>{errorMessage(errorCode)}</div>}
 
         <div style={s.footer}>
-          <button type="button" onClick={closeTab} style={s.ghostBtn} disabled={saving}>Abbrechen</button>
+          <button type="button" onClick={closeWindow} style={s.ghostBtn} disabled={saving}>Abbrechen</button>
           <button type="button" onClick={save} style={{ ...s.primaryBtn, opacity: saving ? 0.6 : 1 }} disabled={saving}>
             {saving ? 'Speichern…' : 'Speichern'}
           </button>
         </div>
-        {closeFailed && <p style={{ ...s.text, marginTop: 10 }}>Du kannst diesen Tab jetzt schließen.</p>}
+        {closeFailed && <p style={{ ...s.text, marginTop: 10 }}>Du kannst dieses Fenster jetzt schließen.</p>}
       </div>
     </div>
   );
@@ -224,7 +224,7 @@ const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh', background: '#0E0C09',
     display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    fontFamily: "'Inter', sans-serif", padding: '48px 16px',
+    fontFamily: "'Inter', sans-serif", padding: 12,
   },
   center: {
     position: 'fixed', inset: 0, background: '#0E0C09',
@@ -233,7 +233,7 @@ const s: Record<string, React.CSSProperties> = {
   card: {
     background: 'rgba(22,18,14,0.98)',
     border: '1px solid rgba(255,220,160,0.12)',
-    borderRadius: 14, padding: '28px 32px',
+    borderRadius: 14, padding: '22px 24px',
     width: 560, maxWidth: '100%',
     boxShadow: '0 8px 48px rgba(0,0,0,0.55)',
   },

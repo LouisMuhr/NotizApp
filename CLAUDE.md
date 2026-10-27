@@ -158,9 +158,9 @@ Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** au
 Bearer; Altpfad `?token=` = persönlicher Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash) — wird entfernt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
-**Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet den Tab
-`webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Der Tab hat das Formular und speichert per Webapp-Login
-→ `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, einen eigenen Tab nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
+**Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet ein kleines
+Fenster `webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Es hat das Formular und speichert per Webapp-Login
+→ `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, ein eigenes Fenster nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
 
 Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht

@@ -115,7 +115,7 @@ describe('/api/note (Bookmarklet)', () => {
     expect(res.body.error).toBe('tier_required');
   });
 
-  describe('Login-Token (Speichern-Tab der Webapp)', () => {
+  describe('Login-Token (Speichern-Fenster der Webapp)', () => {
     test('gueltiges Login-Token → Notiz landet beim eingeloggten User, user_id im Body wird ignoriert', async () => {
       const res = mockRes();
       await noteHandler(req('acct-tok', { title: 'T', content: 'C', user_id: 'other-uid' }), res);

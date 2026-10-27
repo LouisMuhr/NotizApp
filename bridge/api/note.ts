@@ -4,7 +4,7 @@ import type { Tier } from './_lib/supabaseAdmin.js';
 
 /**
  * Bookmarklet-Endpunkt. Auth:
- *   Authorization: Bearer <Supabase-Access-Token>  — Speichern-Tab der Webapp (eingeloggt)
+ *   Authorization: Bearer <Supabase-Access-Token>  — Speichern-Fenster der Webapp (eingeloggt)
  *   ?token=<persoenlicher Bookmarklet-Schluessel>    — alte Bookmarklets, per SHA-256-Hash aufgeloest
  * Die Ziel-User-ID ergibt sich ausschliesslich aus dem Token — ein user_id im Body wird ignoriert (X1).
  */

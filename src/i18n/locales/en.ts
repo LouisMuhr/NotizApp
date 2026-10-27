@@ -462,7 +462,7 @@ const en: typeof de = {
     howSection: 'How it works',
     how1: 'Highlight text on a web page',
     how2: 'Click the bookmarklet in your bookmarks bar',
-    how3: 'Adjust title, category and reminder in the new tab',
+    how3: 'Adjust title, category and reminder in the small window',
     how4: 'Click "Save" — the note appears instantly in the app',
     tip: 'The bookmarklet works on any computer with a modern browser. It saves using your Velm login in that browser — the bookmark contains no password or key.',
   },

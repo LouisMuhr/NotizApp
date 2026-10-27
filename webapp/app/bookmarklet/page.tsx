@@ -48,7 +48,7 @@ export default function BookmarkletPage() {
           <>
             <p style={s.body}>
               Zieh diesen Button in deine Lesezeichen-Leiste. Markiere danach auf einer Webseite Text und klick ihn —
-              es öffnet sich ein neuer Tab, in dem du Titel, Kategorie und optional eine Erinnerung festlegst.
+              es öffnet sich ein kleines Fenster, in dem du Titel, Kategorie und optional eine Erinnerung festlegst.
             </p>
             <div style={s.dragRow}>
               {/* React blockt javascript:-URLs im href-Prop, daher direkt am DOM-Knoten setzen. */}
