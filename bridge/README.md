@@ -30,11 +30,10 @@ In claude.ai eine Antwort markieren (oder Strg+A für die ganze Seite) → Bookm
 
 ## API
 
-`POST /api/note` mit `Authorization: Bearer <Supabase-Access-Token>` (ab Basic) — der Ziel-User ergibt sich aus dem Token; ein `user_id` im Body wird ignoriert. Altpfad `?token=<persönlicher Bookmarklet-Schlüssel>` (SHA-256-Hash in `profiles.bookmarklet_token_hash`) bleibt bis zur Ablösung alter Lesezeichen.
+`POST /api/note` mit `Authorization: Bearer <Supabase-Access-Token>` (ab Basic) — der Ziel-User ergibt sich aus dem Token; ein `user_id` im Body wird ignoriert. Höchstens 50 Bookmarklet-Notizen pro User und UTC-Tag (`429 rate_limited`), Inhalt bis 50.000 Zeichen (`413 content_too_long`).
 
 Weitere Endpunkte (alle mit `Authorization: Bearer <Supabase-Access-Token des Users>`):
 - `POST /api/synthesize` — KI-Synthese, Rate-Limit nach Tier
-- `POST /api/bookmarklet-token` / `DELETE` — persönlichen Schlüssel erzeugen / widerrufen
 - `POST /api/delete-user` — löscht ausschließlich den Aufrufer selbst
 
 ```json

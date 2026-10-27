@@ -56,6 +56,24 @@ body {
 ::-webkit-scrollbar-track     { background: transparent; }
 
 @keyframes velm-spin { to { transform: rotate(360deg); } }
+@keyframes velm-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes velm-pop  { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes velm-draw { to { stroke-dashoffset: 0; } }
+
+/* ── Bookmarklet-Speicherfenster: Fokus/Hover, die per Inline-Style nicht gehen ── */
+.velm-field { transition: border-color 0.15s, background 0.15s; }
+.velm-field:focus { border-color: rgba(244, 162, 97, 0.55) !important; background: rgba(255, 255, 255, 0.055) !important; }
+.velm-field::placeholder { color: rgba(160, 144, 128, 0.45); }
+.velm-hover { transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s; }
+.velm-hover:hover:not(:disabled) { border-color: rgba(244, 162, 97, 0.4) !important; color: #F2EDE6 !important; }
+.velm-primary { transition: filter 0.15s, transform 0.1s; }
+.velm-primary:hover:not(:disabled) { filter: brightness(1.07); }
+.velm-primary:active:not(:disabled) { transform: translateY(1px); }
+.velm-scroll { scrollbar-width: thin; scrollbar-color: rgba(244, 162, 97, 0.15) transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .velm-rise, .velm-pop, .velm-draw { animation: none !important; }
+  .velm-draw { stroke-dashoffset: 0 !important; }
+}
 
 /* ── panel slide-in animation ──────── */
 @keyframes slide-in {

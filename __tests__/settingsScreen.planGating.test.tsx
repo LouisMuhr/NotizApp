@@ -2,7 +2,7 @@
  * Abo-Gating in den Settings: Bookmarklet und Web App sind immer sichtbar,
  * zeigen aber im nicht freigeschalteten Abo nur, ab welchem Plan sie nutzbar
  * sind — und fuehren dann zum Abo-Screen statt in die gesperrte Funktion.
- * Bookmarklet ab Basic (bridge/api/bookmarklet-token.ts), Web App ab Pro.
+ * Bookmarklet ab Basic (bridge/api/note.ts), Web App ab Pro.
  */
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';

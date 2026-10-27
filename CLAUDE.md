@@ -24,7 +24,7 @@ c:/NotizApp/
 │   │   ├── sync/          # supabaseClient, accountState, legacyAnon, remoteNotes, mergeNotes, userId, deleteAccount
 │   │   ├── theme/         # theme.ts, typography.ts, categoryAccents.ts, gradients.ts
 │   │   └── utils/         # notifications, haptics, timeGrouping, structuredNote, …
-│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, bookmarklet-token, delete-user, _lib/), worker/
+│   ├── bridge/            # Vercel: api/ (synthesize, parse-note, note, delete-user, _lib/), worker/
 │   └── webapp/            # Next.js 16 graph visualizer (standalone): app/, components/, lib/, types/
 └── README.md
 ```
@@ -131,7 +131,7 @@ gescoped über `thread_id`). **RLS ist user-scoped** (`auth.uid() = user_id`) �
 MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der Webapp).
 Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projekte: `supabase-migration-2026-09-17.sql`
 (`notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`, `profiles.bookmarklet_token_hash`),
-`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`). RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
+`supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`), 2026-10-27 offene `true`-Policies entfernt — **nie wieder `using (true)`**, permissive Policies sind ODER-verknüpft. RPC `migrate_user` ist funktionslos (Altlast), kann gedroppt werden.
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme, Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als einzige
@@ -154,8 +154,8 @@ setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, U
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`) nimmt das Login-Token per
-Bearer; Altpfad `?token=` = persönlicher Bookmarklet-Schlüssel (`/api/bookmarklet-token`, nur SHA-256-Hash) — wird entfernt.
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`): max. 50 Bookmarklet-Notizen pro
+UTC-Tag (gezählt über `notes.source`), Inhalt ≤ 50.000 Zeichen, keine Checkliste. `profiles.bookmarklet_token_hash` ist ungenutzt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
 **Bookmarklet lebt in der webapp**: Es enthält kein Geheimnis, liest nur Auswahl/Titel/URL und öffnet ein kleines
@@ -179,7 +179,7 @@ wird zurückgegeben. Antwort per Structured Outputs (`SYNTHESIS_SCHEMA`). Server
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter pro Aufnahme im Sheet (nicht mehr global) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
 **Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download); Geräte-Erkennung: leise Fehler (`aborted`) kippen den Titel↔Inhalt-Neustart nicht, Titel endet nach 1,8 s Stille (kein Satzschluss vom Dienst). Scheitert die KI beim Speichern (offline/Bridge/Tageslimit), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, alle 20 s + Vordergrund, erst nach dem Laden der Notizen), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen bzw. 5 Fehlversuchen (kaputter Eintrag blockiert die Rest nicht; Abbruch nur bei Offline/Limit, `decideAfterError`); Diktate > 4000 Zeichen gehen nie an die KI; Detach/Alles-löschen leeren sie.
-**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig), Web App + KI-Sprachnotizen ab `pro`.
+**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig; Webapp zeigt Button/Link nur dann, `webapp/lib/tier.ts`), Web App + KI-Sprachnotizen ab `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
 **`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
 `SettingsAbo`, Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf `free`
