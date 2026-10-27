@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { buildBookmarkletHref } from '@/lib/bookmarkletScript';
 import { fetchTier, hasBookmarklet, type Tier } from '@/lib/tier';
 import VelmIcon from '@/components/VelmIcon';
+import BookmarkletDragDemo from '@/components/BookmarkletDragDemo';
 import LoginView, { AppUser } from '@/components/LoginView';
 
 export default function BookmarkletPage() {
@@ -13,6 +14,7 @@ export default function BookmarkletPage() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [tierCheck, setTierCheck] = useState<{ userId: string; tier: Tier | null } | null>(null);
+  const [showDemo, setShowDemo] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -78,6 +80,23 @@ export default function BookmarkletPage() {
                 📝 Velm
               </a>
               <span style={s.dragHint}>← in die Lesezeichen-Leiste ziehen</span>
+              <button
+                type="button"
+                aria-label="Zeigen, wie das Ziehen funktioniert"
+                style={s.help}
+                onMouseEnter={() => setShowDemo(true)}
+                onMouseLeave={() => setShowDemo(false)}
+                onFocus={() => setShowDemo(true)}
+                onBlur={() => setShowDemo(false)}
+              >
+                ?
+              </button>
+              {showDemo && (
+                <div style={s.demoPopover} role="tooltip">
+                  <BookmarkletDragDemo />
+                  <p style={s.demoCaption}>Button mit der Maus greifen und in die Lesezeichen-Leiste ziehen.</p>
+                </div>
+              )}
             </div>
             <p style={s.footnote}>
               Keine Lesezeichen-Leiste zu sehen? Einblenden mit Strg + Umschalt + B (Mac: ⌘ + Umschalt + B).
@@ -133,7 +152,18 @@ const s: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(244,199,126,0.2)', borderRadius: 8, lineHeight: 1.5,
   },
 
-  dragRow: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 },
+  dragRow: { position: 'relative', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 },
+  help: {
+    width: 22, height: 22, flexShrink: 0, marginLeft: -6, padding: 0, borderRadius: '50%', cursor: 'help',
+    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,220,160,0.25)',
+    color: 'rgba(210,198,184,0.9)', fontSize: 12, fontWeight: 700, fontFamily: "'Inter', sans-serif",
+  },
+  demoPopover: {
+    position: 'absolute', top: 'calc(100% + 10px)', left: 0, zIndex: 10,
+    padding: 12, background: '#16120E', border: '1px solid rgba(255,220,160,0.16)', borderRadius: 12,
+    boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+  },
+  demoCaption: { marginTop: 10, fontSize: 12, color: 'rgba(160,144,128,0.85)', textAlign: 'center' },
   bm: {
     display: 'inline-block',
     background: '#C8972B', color: 'white',
