@@ -170,7 +170,14 @@ rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf 
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
 zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
-(`computeNextAllowedAt`), 429-Wert des Servers gewinnt.
+(`computeNextAllowedAt`), 429-Wert des Servers gewinnt. Ergebnis-Schreiben: KI kann Threads Notizen nur **hinzufügen**
+(`note_ids` = Bestand ∪ KI-Liste), nie Status setzen; neuer Thread mit Titel/ID eines aktiven → Notizen dort einhängen. Kein Dormant-Pruning (Modell kennt kein Datum).
+Modell sieht nur Kurz-Referenzen (`n1`, `t1`, `neu-1`), Server übersetzt zurück und vergibt UUIDs selbst.
+An die KI gehen **nur Notizen, die in keinem Thread stecken** (auch keinem archivierten); bestehende Threads als Titel + Summary +
+Notiz-Titel, dazu die bestehenden Verbindungen (sonst vergisst das Modell sie beim Neuschreiben). Nichts Neues → `no_new_notes`, Lauf
+wird zurückgegeben. Antwort per Structured Outputs (`SYNTHESIS_SCHEMA`). Server erzwingt 1 Notiz = 1 Thread (bestehender gewinnt). Eval:
+`node --experimental-transform-types bridge/worker/eval-synthesize.ts seed|run <label> [--scenario incremental] [--prompt <datei>] [--thinking 2048] | compare <präfix> …` (Test-Account, Berichte in `bridge/worker/logs/`, Versionen + Messwerte in `bridge/worker/synthesis-prompts/README.md`).
+**Prompt ab v9 ist auf Haiku mit Thinking ausgelegt** — ohne Thinking erzeugt er viele falsche Verbindungen; Thinking ist im Handler noch nicht aktiv (offene Entscheidung, braucht `maxDuration`).
 
 **KI-Sprachnotizen (Pro)**: `VoiceCaptureSheet` → `parseNoteRemote()` → `POST /api/parse-note` (Haiku 4.5, Structured Outputs, Modell-Konstante
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter pro Aufnahme im Sheet (nicht mehr global) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).

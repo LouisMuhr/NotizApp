@@ -21,7 +21,6 @@ export interface PendingParse {
   /** Diktierter Titel (leer = KI darf einen vergeben). */
   title: string;
   transcript: string;
-  locale: 'de' | 'en';
   /**
    * `updatedAt` der Notiz direkt nach dem Speichern. Weicht er spaeter ab, hat der User
    * die Notiz bearbeitet — dann wird nichts ueberschrieben.

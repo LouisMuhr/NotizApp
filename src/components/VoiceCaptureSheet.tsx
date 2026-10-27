@@ -502,9 +502,11 @@ export default function VoiceCaptureSheet({
         queueForLater = true;
         aiNotice = t('voiceCapture.aiQueued');
       } else if (account.state === 'secured') {
-        const res = await parseNoteRemote({ transcript: content, title, categories, locale });
+        const res = await parseNoteRemote({ transcript: content, title, categories });
         if ('result' in res) {
-          note = structuredToNote(res.result);
+          const { draft, reminderAmbiguous } = structuredToNote(res.result);
+          note = draft;
+          if (reminderAmbiguous) aiNotice = t('voiceCapture.reminderAmbiguous');
         } else if (res.error === 'limit_reached' || res.error === 'unavailable') {
           queueForLater = true;
           aiNotice = t(res.error === 'limit_reached' ? 'voiceCapture.aiLimit' : 'voiceCapture.aiQueued');
@@ -521,7 +523,6 @@ export default function VoiceCaptureSheet({
           noteId: saved.id,
           title,
           transcript: content,
-          locale,
           noteUpdatedAt: saved.updatedAt,
           recordedAt: recordedAt.toISOString(),
         });

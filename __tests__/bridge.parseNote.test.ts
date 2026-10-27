@@ -33,6 +33,8 @@ const aiRaw = (over: Record<string, any> = {}) => ({
   checklist: ['Milch', 'Eier'],
   category: 'Einkauf',
   reminder: null,
+  wants_reminder_no_time: false,
+  reminder_ambiguous: false,
   ...over,
 });
 
@@ -92,7 +94,7 @@ const releaseCalls = () => calls.filter((c) => c.method === 'PATCH' && !c.url.in
 test('Pro: Lauf wird gebucht, strukturierte Notiz kommt zurueck', async () => {
   const res = await run();
   expect(res.statusCode).toBe(200);
-  expect(res.body).toEqual({ title: 'Einkauf', content: '', checklist: ['Milch', 'Eier'], category: 'Einkauf', reminder: null });
+  expect(res.body).toEqual({ title: 'Einkauf', content: '', checklist: ['Milch', 'Eier'], category: 'Einkauf', reminder: null, reminderAmbiguous: false });
   expect(claimCalls()).toHaveLength(1);
   expect(claimCalls()[0].body).toEqual({ voice_ai_runs_today: 1, voice_ai_day_reset: TODAY });
   expect(releaseCalls()).toHaveLength(0);

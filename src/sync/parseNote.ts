@@ -17,6 +17,8 @@ export interface StructuredNoteResult {
     weekday: number | null;
     dayOfMonth: number | null;
   } | null;
+  /** true = Diktat nannte mehrere Zeitpunkte, KI konnte sich nicht entscheiden (reminder ist null). */
+  reminderAmbiguous: boolean;
 }
 
 export type ParseNoteError =
@@ -28,7 +30,6 @@ export interface ParseNoteRequest {
   transcript: string;
   title: string;
   categories: string[];
-  locale: 'de' | 'en';
   /** Fuer Tests injizierbar. */
   now?: Date;
 }
@@ -61,7 +62,6 @@ export async function parseNoteRemote(
         title: req.title,
         categories: req.categories,
         localNow: toLocalNow(req.now ?? new Date()),
-        locale: req.locale,
       },
       controller.signal,
     );

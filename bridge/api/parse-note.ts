@@ -2,7 +2,7 @@
  * KI-Strukturierung diktierter Notizen (nur Pro).
  *
  *   POST /api/parse-note   Authorization: Bearer <User-JWT>
- *   Body: { transcript, title?, categories, localNow: "YYYY-MM-DDTHH:mm", locale }
+ *   Body: { transcript, title?, categories, localNow: "YYYY-MM-DDTHH:mm" }
  *   → 200 StructuredNote | 4xx/5xx { error }
  *
  * Limit: VOICE_AI_DAILY_LIMIT Laeufe pro UTC-Tag (profiles.voice_ai_runs_today /
@@ -92,7 +92,6 @@ function readInput(body: any): ParseNoteInput | null {
     title: typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '',
     categories,
     localNow: body.localNow,
-    locale: body.locale === 'en' ? 'en' : 'de',
   };
 }
 

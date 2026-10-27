@@ -201,7 +201,7 @@ const BRIDGE_URL = process.env.EXPO_PUBLIC_BRIDGE_URL ?? '';
 
 type SynthesisResult = { message: string; next_allowed_at?: string; error?: string };
 
-async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<SynthesisResult> {
+async function runSynthesis(t: ReturnType<typeof useLanguage>['t'], locale: string): Promise<SynthesisResult> {
   const supabase = getSupabase();
   if (!supabase) throw new Error(t('threads.syncNotConfigured'));
   const { data: { session } } = await supabase.auth.getSession();
@@ -210,6 +210,7 @@ async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<Syn
   const res = await fetch(`${BRIDGE_URL}/api/synthesize`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locale }),
   });
 
   const json = await res.json().catch(() => ({}));
@@ -224,7 +225,7 @@ async function runSynthesis(t: ReturnType<typeof useLanguage>['t']): Promise<Syn
     const known = ['ai_unavailable', 'ai_response_invalid', 'synthesis_failed', 'profile_unavailable', 'internal'];
     throw new Error(t(known.includes(code) ? `threads.serverError.${code}` : 'threads.serverError.internal'));
   }
-  if (json.message === 'no_feed_notes') return { message: t('threads.noNewNotes') };
+  if (json.message === 'no_feed_notes' || json.message === 'no_new_notes') return { message: t('threads.noNewNotes') };
   const created = json.threads_created ?? 0;
   const updated = json.threads_updated ?? 0;
   const parts: string[] = [];
@@ -290,7 +291,7 @@ export default function ThreadsScreen({ navigation }: Props) {
     haptics.medium();
     setSynthesizing(true);
     try {
-      const result = await runSynthesis(t);
+      const result = await runSynthesis(t, locale);
       if (result.message === 'limit_reached') {
         if (result.error === 'busy') {
           // Zwei Anfragen haben sich ueberlappt — kein echtes Limit

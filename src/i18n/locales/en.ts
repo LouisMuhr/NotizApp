@@ -228,6 +228,7 @@ const en: typeof de = {
     aiOffConfirm: 'OK',
     aiNoticeDontShowAgain: 'Don’t show again',
     aiQueued: 'Your note is saved. As soon as you’re back online, Claude will add the checklist, category and reminder automatically.',
+    reminderAmbiguous: 'Your dictation mentions multiple times. Claude couldn’t confidently pick one, so no reminder was set — please add it yourself.',
     switchToText: 'Type instead',
     switchToVoice: 'Speak instead',
     textPlaceholder: 'Enter note…',

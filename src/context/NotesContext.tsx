@@ -606,7 +606,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           transcript: item.transcript,
           title: item.title,
           categories: categoriesRef.current,
-          locale: item.locale,
           now: new Date(item.recordedAt),
         });
         if ('error' in res) {
@@ -621,7 +620,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           if (next === 'abort') return; // Netz weg / Limit: alle warten, naechster Versuch spaeter
           continue; // Eintrag selbst kaputt: die uebrigen duerfen trotzdem dran
         }
-        const draft = structuredToNote(res.result);
+        const { draft } = structuredToNote(res.result);
         await updateNote(item.noteId, {
           title: draft.title,
           content: draft.content,

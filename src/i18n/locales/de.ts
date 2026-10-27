@@ -226,6 +226,7 @@ export default {
     aiOffConfirm: 'OK',
     aiNoticeDontShowAgain: 'Nicht mehr anzeigen',
     aiQueued: 'Deine Notiz ist gespeichert. Sobald du wieder online bist, ergänzt Claude Checkliste, Kategorie und Erinnerung automatisch.',
+    reminderAmbiguous: 'Dein Diktat nennt mehrere Zeitpunkte. Claude konnte sich nicht sicher für einen entscheiden, deshalb wurde keine Erinnerung gesetzt — trag sie bitte selbst ein.',
     switchToText: 'Lieber tippen',
     switchToVoice: 'Lieber sprechen',
     textPlaceholder: 'Notiz eingeben…',
