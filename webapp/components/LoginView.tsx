@@ -14,10 +14,13 @@ export interface AppUser {
 
 interface Props {
   onLogin: (user: AppUser) => void;
+  /** Gesetzt = Overlay über dem Beispiel-Graphen (Startseite): schließbar, ohne Demo-Zugang. */
+  onClose?: () => void;
+  initialMode?: 'login' | 'register';
 }
 
-export default function LoginView({ onLogin }: Props) {
-  const [mode, setMode]           = useState<'login' | 'register'>('login');
+export default function LoginView({ onLogin, onClose, initialMode = 'login' }: Props) {
+  const [mode, setMode]           = useState<'login' | 'register'>(initialMode);
   const [name, setName]           = useState('');
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
@@ -65,20 +68,24 @@ export default function LoginView({ onLogin }: Props) {
   };
 
   const isReg = mode === 'register';
+  const overlay = !!onClose;
 
   return (
-    <div style={s.page}>
+    <div style={overlay ? s.overlay : s.page} onClick={onClose}>
       {/* subtle grid */}
-      <svg style={s.gridBg} width="100%" height="100%">
-        <defs>
-          <pattern id="lgrid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,220,160,0.07)" strokeWidth="0.6"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#lgrid)" />
-      </svg>
+      {!overlay && (
+        <svg style={s.gridBg} width="100%" height="100%">
+          <defs>
+            <pattern id="lgrid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,220,160,0.07)" strokeWidth="0.6"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#lgrid)" />
+        </svg>
+      )}
 
-      <div style={s.card}>
+      <div style={s.card} onClick={e => e.stopPropagation()}>
+        {overlay && <button onClick={onClose} style={s.closeBtn} aria-label="Schließen">×</button>}
         {/* Logo */}
         <div style={s.logo}>
           <VelmIcon size={40} radius={10} />
@@ -134,7 +141,7 @@ export default function LoginView({ onLogin }: Props) {
           </button>
         </form>
 
-        {!isReg && (
+        {!isReg && !overlay && (
           <>
             <div style={s.divider}><span style={s.dividerInner}>oder</span></div>
             <button onClick={demoLogin} style={s.ghostBtn}>Demo-Zugang verwenden</button>
@@ -159,6 +166,18 @@ const s: Record<string, React.CSSProperties> = {
     background: '#0E0C09',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Inter', sans-serif",
+  },
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 100,
+    background: 'rgba(8,6,4,0.55)', backdropFilter: 'blur(8px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: "'Inter', sans-serif",
+    animation: 'velm-rise 0.2s ease-out',
+  },
+  closeBtn: {
+    position: 'absolute', top: 14, right: 16,
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: 'rgba(160,144,128,0.6)', fontSize: 22, lineHeight: 1, padding: 4,
   },
   gridBg: {
     position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
