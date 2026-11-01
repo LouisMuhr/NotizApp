@@ -756,6 +756,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         ]).catch((e) => console.warn('[gdpr] remote delete failed', e));
       }
     }
+    // Sync beenden: sonst lebt die UID des geloeschten Kontos weiter — neue Notizen landen in seiner
+    // Outbox, und der naechste Vordergrund-Sync schreibt sie zurueck nach @notizapp_sync_uid.
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    deviceIdRef.current = null;
+    clearUserIdCache();
   }, [publish]);
 
   /**
@@ -821,9 +829,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     clearUserIdCache();
     if (!isSyncConfigured()) return 'replaced';
     // Nur rein lokale Notizen kommen in Frage: Reste eines abgemeldeten Kontos
-    // gehoeren nicht in das naechste, auch nicht in ein leeres (A5).
-    const pureLocal = allRef.current.length > 0
-      && !(await loadSyncUid()) && !(await loadAccountBound().catch(() => true));
+    // gehoeren nicht in das naechste, auch nicht in ein leeres (A5) — das haelt
+    // `@notizapp_account_bound` fest. Die Sync-UID taugt dafuer nicht: im Zustand
+    // `local` kann sie veraltet sein (z. B. nach dem Loeschen eines Kontos, A8).
+    const pureLocal = allRef.current.length > 0 && !(await loadAccountBound().catch(() => true));
     if (pureLocal) {
       // Pull scheitert (null) → 'replace' unten behaelt den lokalen Bestand ohnehin.
       const remote = await pullRemote(userId);

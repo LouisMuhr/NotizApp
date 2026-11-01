@@ -1,0 +1,7 @@
+# Bridge-Deploy (Vercel-Projekt „bridge", Root Directory = bridge, deployt aus diesem Ordner):
+# nur den Bridge-Code hochladen — keine .env-Dateien, keine lokalen CLI-Helfer, nichts aus App/Webapp.
+/*
+!/bridge
+/bridge/.env*
+/bridge/worker
+/bridge/node_modules

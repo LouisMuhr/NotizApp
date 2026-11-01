@@ -121,6 +121,38 @@ async function releaseRun(
   }
 }
 
+/** Sperre nach einem Lauf, in dem die KI keine Notiz einsortiert hat (siehe softReleaseRun). */
+const NOTHING_ASSIGNED_COOLDOWN_MS = 10 * 60 * 1000;
+
+/**
+ * Lauf ohne Ergebnis (KI hat alle Notizen uebersprungen, z. B. nur "test"): fast ganz zurueckgeben.
+ * Eine kurze Sperre bleibt, weil der KI-Aufruf trotzdem bezahlt wurde — sonst liessen sich mit
+ * inhaltsleeren Notizen beliebig viele Aufrufe ausloesen. Free/Basic: ai_last_run so zurueckdatieren,
+ * dass der naechste Lauf nach der Sperre frei ist. Pro rechnet in Laeufen pro Tag: der Lauf bleibt gezaehlt.
+ */
+async function softReleaseRun(
+  supabaseUrl: string,
+  serviceKey: string,
+  uid: string,
+  profile: ProfileRow,
+): Promise<void> {
+  if (profile.tier === 'pro') return;
+  const windowMs = (profile.tier === 'basic' ? 24 : 7 * 24) * 60 * 60 * 1000;
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${uid}`, {
+      method: 'PATCH',
+      headers: { ...sbHeaders(serviceKey), Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        ai_last_run: new Date(Date.now() - windowMs + NOTHING_ASSIGNED_COOLDOWN_MS).toISOString(),
+        ai_runs_today: profile.ai_runs_today ?? 0,
+        ai_day_reset: profile.ai_day_reset,
+      }),
+    });
+  } catch {
+    // Best effort — wie releaseRun.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Auth — Token gegen Supabase verifizieren (Signatur + Ablauf)
 // ---------------------------------------------------------------------------
@@ -435,8 +467,9 @@ export default async function handler(req: any, res: any) {
     }
 
     // Ab hier ist der Lauf gebucht. Entscheidung 2 / O1: Fehler auf UNSERER
-    // Seite (Netz, KI-Antwort unbrauchbar, DB) geben den Lauf zurueck; "keine
-    // Notizen" und ein erfolgreich geschriebenes Ergebnis verbrauchen ihn.
+    // Seite (Netz, KI-Antwort unbrauchbar, DB) geben den Lauf zurueck, ebenso
+    // "keine Notizen" (kein KI-Aufruf). Hat die KI nichts einsortiert, bleibt nur
+    // eine kurze Sperre (softReleaseRun). Nur ein geschriebenes Ergebnis verbraucht ihn.
     let consumed = false;
     try {
       const [allFeedNotes, activeThreads, threadNoteIds, existingLinks] = await Promise.all([
@@ -457,6 +490,9 @@ export default async function handler(req: any, res: any) {
       const feedNotes = allFeedNotes.filter((n: any) => !assignedBefore.has(n.id));
 
       if (!allFeedNotes.length) {
+        // Nichts freigegeben (in der App ist „In Threads einbeziehen" standardmaessig aus): kein
+        // KI-Aufruf, also auch kein verbrauchter Lauf — sonst kostet ein Missverstaendnis eine Woche.
+        await releaseRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
         consumed = true;
         res.status(200).json({ message: 'no_feed_notes', threads_created: 0, threads_updated: 0 });
         return;
@@ -613,6 +649,15 @@ export default async function handler(req: any, res: any) {
           created_at: now,
           updated_at: now,
         });
+      }
+
+      // Keine einzige Notiz einsortiert: nichts schreiben (auch die Verbindungen bleiben, wie sie sind)
+      // und den Lauf bis auf eine kurze Sperre zurueckgeben.
+      if (assigned.size === 0) {
+        await softReleaseRun(SUPABASE_URL, SUPABASE_SERVICE_KEY, uid, profile);
+        consumed = true;
+        res.status(200).json({ message: 'nothing_assigned', threads_created: 0, threads_updated: 0 });
+        return;
       }
 
       if (toInsert.length > 0) {

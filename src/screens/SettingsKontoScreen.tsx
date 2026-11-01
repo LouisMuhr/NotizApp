@@ -699,6 +699,16 @@ export default function SettingsKontoScreen() {
         await finishSecuring(user.id, user.email ?? address);
         return;
       }
+      // Adresse ist schon ein bestaetigtes Konto (z. B. im Web angelegt): Supabase meldet aus
+      // Enumeration-Schutz keinen Fehler, verschickt aber auch keinen Code (leere identities).
+      // Statt auf eine Mail warten zu lassen, die nie kommt: in die Anmeldung — dort kommen die
+      // Notizen dieses Geraets mit (`syncAfterSignIn`).
+      if (user && user.identities?.length === 0) {
+        switchTab('signin');
+        setInputEmail(address);
+        showToast(t('settingsKonto.toastAccountExists'), 'info');
+        return;
+      }
       // Ohne Session gaebe es beim naechsten Kaltstart keinen User, aus dem
       // sich `pending-confirmation` ableiten liesse — daher die Adresse merken.
       await savePendingEmail(address);

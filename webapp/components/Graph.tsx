@@ -20,6 +20,8 @@ import {
 // Intro (Erstbesuch, Demo): Notizen liegen erst lose verstreut, fliegen dann Thread für Thread auf ihre
 // Inseln, zuletzt werden die Verbindungen gezogen. Läuft ohne Zwischenbild direkt auf dem Canvas — nur für
 // kleine Graphen gedacht; jede Eingabe im Graphen bricht es ab.
+// Übergang: Ändern sich die Daten (Notiz einsortiert, neue Synthese), gleiten alle Elemente vom alten zum
+// neuen Layout; neue Notizen fliegen ein (aus `spawnFrom` oder vom Inselrand) und leuchten kurz nach.
 // Leerlauf-Bewegung: Inseln „atmen" (weicher Schein darunter), Lichtpunkte wandern über die Verbindungen.
 // Beides liegt außerhalb des Zwischenbilds (vorgefertigte Sprites, nur drawImage) und entfällt bei
 // prefers-reduced-motion.
@@ -35,6 +37,7 @@ const DEFAULT_INSETS: GraphInsets = { top: 70, right: 24, bottom: 90, left: 24 }
 const CAM_K = 0.12, CAM_K_SLOW = 0.045; // Kamera-Nachlauf pro Bild: normal / Spotlight-Flug
 // Intro-Zeitplan (Sekunden)
 const I_APPEAR = 1.0, I_GATHER = 2.2, I_THREAD_GAP = 0.2, I_NOTE_GAP = 0.05, I_FLY = 1.1, I_SIM_GAP = 0.25, I_SIM = 0.7;
+const MORPH_MS = 1100, FRESH_MS = 2400; // Übergang zwischen Layouts / Nachleuchten neuer Notizen
 
 export interface GraphInsets { top: number; right: number; bottom: number; left: number }
 
@@ -51,6 +54,8 @@ export interface GraphHandle {
   /** Springt zum ersten Treffer (Thread-Titel vor Notiz-Titel) und gibt ihn zurück. */
   flyToMatch: (query: string) => GraphMatch | null;
   skipIntro: () => void;
+  /** Nächste neu auftauchende Notiz startet an diesem Bildschirmpunkt (z. B. dort, wo sie angeklickt wurde). */
+  spawnFrom: (sx: number, sy: number) => void;
 }
 
 interface Props {
@@ -140,6 +145,9 @@ export default function Graph(props: Props) {
     const labelBoxes = new Map<string, number[]>(); // Thread-ID → zuletzt gezeichneter Titel (Welt), für Klicks
     let search = { q: '', v: -1, set: null as Set<string> | null };
     let camK = CAM_K, fontsOk = false, intro: Intro | null = null, introSeen = 0, spotSeen: string | null = null;
+    let morph: { t0: number; from: Map<string, [number, number]>; to: Map<string, [number, number]>; arc: Map<string, number> } | null = null;
+    let pendingSpawn: [number, number] | null = null;
+    const fresh = new Map<string, number>(); // Notiz-ID → Landezeitpunkt (performance.now)
     const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let ambientFrom = 0; // Leerlauf-Bewegung blendet ab hier ein (Seitenstart, Intro-Ende)
     function sprite(stops: Array<[number, string]>) {
@@ -194,10 +202,51 @@ export default function Graph(props: Props) {
     function ensureLayout(): GraphLayout {
       const data = propsRef.current.data;
       if (G && layoutData === data) return G;
+      // Kein Übergang beim ersten Layout, nach dem Schriftwechsel (threadKey leer) und während des Intros
+      const old = G && threadKey && !intro ? G : null;
       G = computeLayout(data, measure); layoutData = data; layoutVer++; IC.ok = false; fade.clear();
+      // Übergang nur, wenn alter und neuer Graph Threads teilen (nicht z. B. Gast → Konto)
+      const prev = old && new Map<string, [number, number]>(old.all.map(o => [o.id, [o.x, o.y]]));
+      const morphing = !!prev && G.threads.some(t => prev.has(t.id));
       const key = data.threads.map(t => t.id).sort().join(',');
-      if (key !== threadKey) { threadKey = key; fit(true); }
+      if (key !== threadKey) { threadKey = key; fit(!morphing); } // vor dem Übergang: fit braucht die Zielpositionen
+      const spawn = pendingSpawn; pendingSpawn = null;
+      if (morphing) startMorph(prev!, G, spawn);
       return G;
+    }
+
+    /** Positionen des alten Layouts werden Startpunkte, neue Notizen starten bei `spawn` oder am Inselrand. */
+    function startMorph(prev: Map<string, [number, number]>, g: GraphLayout, spawn: [number, number] | null) {
+      const from = new Map<string, [number, number]>(), to = new Map<string, [number, number]>(), arc = new Map<string, number>();
+      const now = performance.now();
+      for (const o of g.all) {
+        const tgt: [number, number] = [o.x, o.y];
+        let src = prev.get(o.id);
+        if (!src) {
+          if (o.kind === 'note') {
+            const t = g.byId.get(o.threadIds[0])!, a = Math.random() * Math.PI * 2, d = t.R + 260;
+            src = spawn ?? [t.x + Math.cos(a) * d, t.y + Math.sin(a) * d];
+            if (!spawn) fade.set(o.id, 0); // vom Inselrand: einblenden; aus `spawnFrom`: sofort sichtbar
+            arc.set(o.id, Math.random() < 0.5 ? -0.18 : 0.18);
+            fresh.set(o.id, now + MORPH_MS);
+          } else { src = tgt; fade.set(o.id, 0); } // neue Insel/Verbindung blendet am Zielort ein
+        }
+        from.set(o.id, src); to.set(o.id, tgt);
+        o.x = src[0]; o.y = src[1];
+      }
+      morph = { t0: now, from, to, arc };
+    }
+    function stepMorph(g: GraphLayout, now: number) {
+      if (!morph) return;
+      const p = clamp01((now - morph.t0) / MORPH_MS), e = easeInOut(p);
+      for (const o of g.all) {
+        const a = morph.from.get(o.id), b = morph.to.get(o.id);
+        if (!a || !b) continue;
+        const dx = b[0] - a[0], dy = b[1] - a[1], s = Math.sin(Math.PI * e) * (morph.arc.get(o.id) ?? 0);
+        o.x = a[0] + dx * e - dy * s; o.y = a[1] + dy * e + dx * s;
+      }
+      layoutVer++; IC.ok = false;
+      if (p >= 1) morph = null;
     }
 
     /** Kamera, die den Weltausschnitt in den freien Bereich (ohne Insets) einpasst */
@@ -486,6 +535,19 @@ export default function Graph(props: Props) {
         });
         ctx.globalAlpha = 1;
       }
+      // Gerade eingeflogene Notizen: Ring, der sich ausdehnt und verblasst
+      for (const [id, land] of fresh) {
+        const age = T * 1000 - land;
+        if (age > FRESH_MS) { fresh.delete(id); continue; }
+        const n = age >= 0 ? g.notes.find(x => x.id === id) : undefined;
+        if (!n || !vis(n, 40)) continue;
+        const q = age / FRESH_MS, m = (4 + 18 * easeOut(q)) / Math.min(1, z);
+        ctx.globalAlpha = (1 - q) * 0.8; ctx.strokeStyle = islandColor(g.byId.get(n.threadIds[0])!); ctx.lineWidth = 2 / z;
+        if (detail) rr(ctx, n.x - n.cw / 2 - m, n.y - 14 - m, n.cw + 2 * m, 28 + 2 * m, 14 + m);
+        else { ctx.beginPath(); ctx.arc(n.x, n.y, 6 / z + m, 0, 7); }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
       const sp = spotlightOf(g);
       if (sp && sel === sp.s && (!hover || hover === sp.s || hover === sp.a || hover === sp.b)) {
         const { s, a, b } = sp, cc = simCurve(s, a, b), aa = al(a.id), pulse = 0.55 + 0.35 * Math.sin(T * 3);
@@ -520,6 +582,7 @@ export default function Graph(props: Props) {
 
     // ── Intro ──
     function startIntro(g: GraphLayout) {
+      if (morph) { for (const o of g.all) { const b = morph.to.get(o.id); if (b) { o.x = b[0]; o.y = b[1]; } } morph = null; layoutVer++; }
       fit(true);
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const t of g.threads) { x0 = Math.min(x0, t.x - t.R); x1 = Math.max(x1, t.x + t.R); y0 = Math.min(y0, t.y - t.R); y1 = Math.max(y1, t.y + t.R); }
@@ -762,6 +825,7 @@ export default function Graph(props: Props) {
         return null;
       },
       skipIntro: () => endIntro('done'),
+      spawnFrom: (sx, sy) => { pendingSpawn = toWorld(sx, sy); },
     };
 
     // ── Schleife: 60 Bilder/s bei Bewegung, sonst 30 (nur die laufenden Striche bewegen sich) ──
@@ -786,13 +850,15 @@ export default function Graph(props: Props) {
       }
       const sp = propsRef.current.spotlight?.similarityId ?? null;
       if (sp !== spotSeen) { spotSeen = sp; if (sp) flyToSpotlight(g); }
+      const morphing = !!morph;
+      stepMorph(g, now);
       const moving = Math.abs(cam.tx - cam.x) + Math.abs(cam.ty - cam.y) > 0.05 / cam.z || Math.abs(cam.tz - cam.z) > cam.tz * 1e-4;
       cam.x += (cam.tx - cam.x) * camK; cam.y += (cam.ty - cam.y) * camK; cam.z += (cam.tz - cam.z) * camK;
       if (!moving) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
       const [x0, y0] = toWorld(0, 0), [x1, y1] = toWorld(W, H);
       VIEW = { x0, y0, x1, y1 };
       const fading = updateFade(g);
-      const busy = moving || fading || !!drag || !!pinch || now - lastInput < 300;
+      const busy = moving || fading || morphing || !!drag || !!pinch || now - lastInput < 300;
       if (!busy && now - lastDraw < 33) return;
       lastDraw = now; T = now / 1000;
       draw(g);

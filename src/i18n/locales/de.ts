@@ -145,6 +145,7 @@ export default {
     notSignedIn: 'Nicht eingeloggt',
     noNewNotes: 'Keine neuen Notizen zum Verarbeiten.',
     nothingNew: 'Fertig — nichts Neues.',
+    nothingAssigned: 'Aus deinen Notizen ließ sich noch kein Thread bilden. Notizen mit nur einem Wort oder nur einem Link werden übersprungen. Dein Lauf wurde nicht verbraucht.',
     threadsCreated: {
       one: '{{count}} Thread erstellt',
       other: '{{count}} Threads erstellt',
@@ -361,6 +362,7 @@ export default {
     toastEnterEmailPassword: 'Bitte E-Mail und Passwort eingeben.',
     toastSignInFailed: 'Anmeldung fehlgeschlagen: ',
     toastConfirmEmail: 'Anmeldung unvollständig. Bitte E-Mail bestätigen.',
+    toastAccountExists: 'Für diese Adresse gibt es schon ein Konto. Melde dich an — Notizen, die bisher nur auf diesem Gerät liegen, kommen mit.',
     toastConfirmBeforeSignIn: 'Dein Konto ist noch nicht bestätigt. Gib den Code aus der Mail ein oder fordere einen neuen an.',
     toastPasswordsMismatch: 'Passwörter stimmen nicht überein.',
     toastPasswordTooShort: 'Passwort muss mindestens 6 Zeichen haben.',

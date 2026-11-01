@@ -83,6 +83,29 @@ export const DEMO_DATA: GraphData = {
   ],
 };
 
+/** „Probier's aus": Notizen, die Besucher per Chip in den Beispiel-Graphen werfen. Das Ziel steht fest —
+ *  das zeigt, was die Synthese tut, ohne KI-Aufruf (kostet nichts, klappt immer). */
+export const DEMO_TRY_NOTES: Array<Omit<Note, 'createdAt' | 'updatedAt'>> = [
+  { id: 'demo-try-1', threadId: 'demo-t5', category: 'Reisen', title: 'Ramen-Laden in Osaka',
+    content: 'Kleiner Laden hinter dem Bahnhof Namba, nur acht Plätze. Vor 11 Uhr da sein.' },
+  { id: 'demo-try-2', threadId: 'demo-t4', category: 'Persönlich', title: 'Mittagsschlaf, 20 Minuten',
+    content: 'Kurzer Powernap nach dem Mittag, Wecker auf 20 Minuten. Länger macht mich nur müde.' },
+  { id: 'demo-try-3', threadId: 'demo-t1', category: 'Arbeit', title: 'Zwei-Minuten-Regel',
+    content: 'Was weniger als zwei Minuten dauert, sofort erledigen statt aufschreiben.' },
+  { id: 'demo-try-4', threadId: 'demo-t3', category: 'Ideen', title: 'Newsletter per Weiterleitung speichern',
+    content: 'Abschnitte aus Newslettern per Mail weiterleiten, Velm macht daraus eine Notiz.' },
+];
+
+/** Beispiel-Graph mit einer zusätzlich einsortierten Notiz (neues Objekt → der Graph gleitet ins neue Layout). */
+export function withDemoNote(data: GraphData, n: (typeof DEMO_TRY_NOTES)[number]): GraphData {
+  const now = new Date().toISOString();
+  return {
+    ...data,
+    notes: [...data.notes, { ...n, threadIds: [n.threadId], createdAt: now, updatedAt: now }],
+    threads: data.threads.map(t => t.id === n.threadId ? { ...t, noteIds: [...t.noteIds, n.id], noteCount: t.noteCount + 1 } : t),
+  };
+}
+
 /** Erstbesuch: Nach dem Intro fliegt die Kamera zu dieser Verbindung und hebt die zwei Notizen hervor,
  *  aus denen sie entsteht. */
 export const DEMO_SPOTLIGHT = { similarityId: 'demo-s3', noteIds: ['demo-n2', 'demo-n13'] as [string, string] };

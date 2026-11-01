@@ -428,6 +428,52 @@ test('A7b: syncAfterSignIn uebernimmt bei einem Konto mit Notizen dessen Stand (
   expect(hook.result.current.notes.map((n) => n.title)).toEqual(['Aus dem Konto']);
 });
 
+// ---------------------------------------------------------------------------
+// A8 — Konto geloescht, danach lokal weitergeschrieben, dann neues Konto
+//
+// „Alles loeschen" hat den Sync nicht beendet: Die UID des geloeschten Kontos
+// lebte weiter, ein Vordergrund-Sync schrieb sie zurueck nach @notizapp_sync_uid,
+// und die Anmeldung am neuen (leeren) Konto ersetzte die neuen Notizen durch nichts.
+// ---------------------------------------------------------------------------
+test('A8a: nach deleteAllData wird nichts mehr an das geloeschte Konto geschickt', async () => {
+  const hook = await mountSynced(); // Sync gegen 'user-1'
+  await act(async () => { await hook.result.current.deleteAllData(); });
+  remoteNotes.upsertRemote.mockClear();
+
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'danach' }), title: 'Nach dem Loeschen' }); });
+
+  expect(remoteNotes.upsertRemote).not.toHaveBeenCalled();
+});
+
+test('A8b: Konto geloescht → lokal geschrieben → neues leeres Konto: Notizen wandern hinein', async () => {
+  const hook = await mountSynced();
+  await act(async () => { await hook.result.current.deleteAllData(); });
+  remote.clear();
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'neu-lokal' }), title: 'Fuer das neue Konto' }); });
+
+  let result: string | undefined;
+  await act(async () => { result = await hook.result.current.syncAfterSignIn('frisches-konto'); });
+
+  expect(result).toBe('adopted');
+  expect(hook.result.current.notes.map((n) => n.title)).toEqual(['Fuer das neue Konto']);
+  expect(Array.from(remote.values()).map((n) => n.title)).toEqual(['Fuer das neue Konto']);
+});
+
+test('A8c: veraltete Sync-UID im Zustand local (Altgeraet) verhindert die Uebernahme nicht', async () => {
+  // Stand eines Geraets, auf dem der Fehler schon passiert ist: tote UID gespeichert, kein Merker.
+  await AsyncStorage.setItem('@notizapp_sync_uid', 'geloeschtes-konto');
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'lokal' }), title: 'Lokal' }); });
+
+  let result: string | undefined;
+  await act(async () => { result = await hook.result.current.syncAfterSignIn('frisches-konto'); });
+
+  expect(result).toBe('adopted');
+  expect(Array.from(remote.values()).map((n) => n.title)).toEqual(['Lokal']);
+});
+
 test('A7c: Notizen eines abgemeldeten Kontos wandern auch per syncAfterSignIn nicht ins naechste', async () => {
   const hook = await mountSynced(); // Bestand gehoert zu 'user-1'
   await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'alt' }), title: 'Konto A' }); });

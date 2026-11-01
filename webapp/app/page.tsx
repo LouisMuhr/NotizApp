@@ -11,15 +11,20 @@ import { NoteViewModal, NoteCreateModal, NoteCreateData } from '@/components/Not
 import LoginView, { AppUser } from '@/components/LoginView';
 import VelmIcon from '@/components/VelmIcon';
 import { supabase } from '@/lib/supabase';
-import { DEMO_DATA, DEMO_SPOTLIGHT } from '@/lib/demoData';
+import { DEMO_DATA, DEMO_SPOTLIGHT, DEMO_TRY_NOTES, withDemoNote } from '@/lib/demoData';
 import { stressData } from '@/lib/stressData';
 import { fetchTier, hasBookmarklet } from '@/lib/tier';
+import { fetchNextAllowedAt, runSynthesis, describeResult, formatAvailability } from '@/lib/synthesis';
 
 const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
 const EMPTY: GraphData = { threads: [], notes: [], similarities: [] };
 const CACHE_KEY = 'notiz_graph_cache';
 const INTRO_SEEN_KEY = 'velm_intro_seen';
+// Eigener Graph: Intro einmal pro Konto, sobald er zum ersten Mal Threads hat (meist direkt nach der ersten
+// Synthese). Nur für kleine Graphen — das Intro zeichnet ohne Zwischenbild.
+const USER_INTRO_KEY = (uid: string) => `velm_graph_intro_${uid}`;
+const USER_INTRO_MAX_NOTES = 80;
 
 type IntroStep = 'scatter' | 'gather' | 'connect';
 const INTRO_STEPS: IntroStep[] = ['scatter', 'gather', 'connect'];
@@ -124,20 +129,31 @@ export default function Home() {
   const [graphData, setGraphData] = useState<GraphData>(cached ?? EMPTY);
   const [loading, setLoading]     = useState(!cached); // kein Spinner wenn Cache vorhanden
 
+  const [userIntroKey, setUserIntroKey] = useState(0);
+
   const fetchGraph = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token, uid = session?.user.id;
+    if (!token || !uid) return;
     // Nur Spinner zeigen wenn noch kein Cache da
     if (!readCache()) setLoading(true);
     fetch('/api/graph', { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: GraphData) => {
+        // Erster Graph mit Threads: einmal das Intro mit den eigenen Notizen abspielen
+        try {
+          const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          if (data.threads.length && data.notes.length <= USER_INTRO_MAX_NOTES && !reduced && !localStorage.getItem(USER_INTRO_KEY(uid))) {
+            localStorage.setItem(USER_INTRO_KEY(uid), '1');
+            setUserIntroKey(k => k + 1);
+          }
+        } catch {}
         setGraphData(data);
         writeCache(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [getToken]);
+  }, []);
 
   useEffect(() => { if (user) fetchGraph(); }, [user, fetchGraph]);
 
@@ -150,30 +166,101 @@ export default function Home() {
   }, [user]);
   const showBookmarklet = !!user && tierCheck?.userId === user.id && tierCheck.allowed;
 
+  // Synthese aus dem Web. Die Sperre kommt aus dem Profil (gleiche Regel wie die Bridge) und ist an die
+  // User-ID gebunden; unbekannt = Button gesperrt, aber ohne behauptete Uhrzeit. Bei 429 gewinnt der Server-Wert.
+  const [synthLimit, setSynthLimit] = useState<{ userId: string; nextAllowedAt: Date | null } | null>(null);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [toast, setToast] = useState<{ text: string; id: number } | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    fetchNextAllowedAt(userId).then(r => setSynthLimit(r ? { userId, nextAllowedAt: r.nextAllowedAt } : null));
+  }, [user]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  const limitKnown = !!user && synthLimit?.userId === user.id;
+  const nextAllowedAt = limitKnown ? synthLimit!.nextAllowedAt : null;
+  const synthLimited = !!nextAllowedAt && nextAllowedAt.getTime() > clock;
+  // Gesperrt: Uhr mitlaufen lassen, damit „In 5 Minuten" stimmt und der Button rechtzeitig wieder frei wird.
+  useEffect(() => {
+    if (!synthLimited) return;
+    const timer = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [synthLimited]);
+  const synthDisabled = synthesizing || !limitKnown || synthLimited;
+  const synthLabel = synthesizing ? '✦ Synthese läuft …' : synthLimited ? formatAvailability(nextAllowedAt!, new Date(clock)) : '✦ Synthese starten';
+
+  const handleSynthesize = async () => {
+    if (!user || synthDisabled) return;
+    const userId = user.id;
+    setSynthesizing(true);
+    const r = await runSynthesis();
+    setSynthesizing(false);
+    const say = (text: string) => setToast({ text, id: Date.now() });
+    if (r.kind === 'limit') {
+      if (r.nextAllowedAt) { setSynthLimit({ userId, nextAllowedAt: r.nextAllowedAt }); setClock(Date.now()); }
+      say(r.nextAllowedAt ? `Limit erreicht. ${formatAvailability(r.nextAllowedAt)}.` : 'Limit erreicht.');
+      return;
+    }
+    if (r.kind === 'ok') { say(`✦ ${describeResult(r)}`); fetchGraph(); }
+    else if (r.kind === 'no_new') say('Keine neuen Notizen zum Verarbeiten.');
+    else if (r.kind === 'nothing_assigned') say('Aus deinen Notizen ließ sich noch kein Thread bilden. Notizen mit nur einem Wort oder nur einem Link werden übersprungen. Dein Lauf wurde nicht verbraucht.');
+    else if (r.kind === 'busy') say('Gerade ausgelastet – bitte gleich noch einmal versuchen.');
+    else say(r.message);
+    // Lauf verbraucht oder zurückgegeben: Sperre frisch aus dem Profil
+    fetchNextAllowedAt(userId).then(s => { setSynthLimit(s ? { userId, nextAllowedAt: s.nextAllowedAt } : null); setClock(Date.now()); });
+  };
+
   const [tooltip, setTooltip]           = useState<{ label: string; x: number; y: number } | null>(null);
 
   // Suche: Treffer bleiben im Graphen hell, Enter springt zum ersten und öffnet ihn.
   const [query, setQuery] = useState('');
 
   // Nur `next dev`: ?stress=40 zeigt Gästen einen generierten Graphen mit 40 Threads (Leistungstest).
-  const [guestData] = useState<GraphData>(() => {
+  const [guestBase] = useState<GraphData>(() => {
     if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') return DEMO_DATA;
     const n = Number(new URLSearchParams(window.location.search).get('stress'));
     return n > 0 ? stressData(n) : DEMO_DATA;
   });
+  const isDemo = guestBase === DEMO_DATA;
+  // Der Beispiel-Graph wächst um die Notizen, die Besucher per Chip hineinwerfen.
+  const [guestData, setGuestData] = useState<GraphData>(guestBase);
+  const [tryLeft, setTryLeft] = useState(DEMO_TRY_NOTES);
+  const [thinkingId, setThinkingId] = useState<string | null>(null);
+  const [lastPlaced, setLastPlaced] = useState<string | null>(null);
 
   const graphHandle = useRef<GraphHandle | null>(null);
+  const guestRef = useRef(isGuest);
+  useEffect(() => { guestRef.current = isGuest; });
+
+  /** Chip → kurz „Velm denkt …", dann fliegt die Notiz von hier auf ihre Insel. */
+  const tryNote = (n: (typeof DEMO_TRY_NOTES)[number], el: HTMLElement) => {
+    if (thinkingId) return;
+    setThinkingId(n.id);
+    setTimeout(() => {
+      const r = el.getBoundingClientRect();
+      graphHandle.current?.spawnFrom(r.left + r.width / 2, r.top + r.height / 2);
+      setGuestData(d => withDemoNote(d, n));
+      setTryLeft(l => l.filter(x => x.id !== n.id));
+      setLastPlaced(DEMO_DATA.threads.find(t => t.id === n.threadId)?.title ?? null);
+      setThinkingId(null);
+    }, 900);
+  };
 
   // Erstbesuch (nur Beispiel-Graph): Intro „lose Notizen → Inseln → Verbindungen", danach fliegt die Kamera
   // zu einer Verbindung und die Karte erklärt sie. Wer weniger Bewegung will, bekommt direkt die Verbindung.
   const [introKey, setIntroKey] = useState(() => {
-    if (typeof window === 'undefined' || guestData !== DEMO_DATA) return 0;
+    if (typeof window === 'undefined' || !isDemo) return 0;
     try { if (localStorage.getItem(INTRO_SEEN_KEY)) return 0; } catch { return 0; }
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
   });
   const [introStep, setIntroStep] = useState<IntroStep | null>(null);
   const [spotlight, setSpotlight] = useState<GraphSpotlight | null>(() => {
-    if (typeof window === 'undefined' || guestData !== DEMO_DATA) return null;
+    if (typeof window === 'undefined' || !isDemo) return null;
     try { if (localStorage.getItem(INTRO_SEEN_KEY)) return null; } catch { return null; }
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? DEMO_SPOTLIGHT : null;
   });
@@ -181,11 +268,17 @@ export default function Home() {
   const handleIntro = useCallback((e: IntroEvent) => {
     if (e === 'scatter' || e === 'gather' || e === 'connect') { setIntroStep(e); return; }
     setIntroStep(null);
+    // Eigener Graph: Intro ist verbraucht (ein späterer Neuaufbau des Graphen spielt es nicht noch mal),
+    // kein Spotlight (keine kuratierte Verbindung).
+    if (!guestRef.current) { setUserIntroKey(0); return; }
     try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
     // Abbruch durch Ziehen/Zoomen: nicht die Kamera wegreißen, der Besucher erkundet schon selbst.
     if (e === 'done') setSpotlight(DEMO_SPOTLIGHT);
   }, []);
-  const replayIntro = () => { clearSelection(); setSpotlight(null); setIntroKey(k => k + 1); };
+  const replayIntro = () => {
+    clearSelection(); setSpotlight(null); setIntroKey(k => k + 1);
+    setGuestData(guestBase); setTryLeft(DEMO_TRY_NOTES); setLastPlaced(null);
+  };
   const closeSpotlight = () => {
     setSpotlight(null); graphHandle.current?.zoomReset();
     try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
@@ -227,7 +320,8 @@ export default function Home() {
       body: JSON.stringify(data),
     });
     if (res.ok) {
-      sessionStorage.removeItem('notiz_graph_cache');
+      // Cache NICHT leeren: ohne Cache zeigt fetchGraph den Lade-Spinner, der Graph würde neu aufgebaut
+      // (und spielte das Intro erneut). So lädt er im Hintergrund nach, neue Notizen fliegen ein.
       fetchGraph();
     } else {
       // Fehler nicht stillschweigend schlucken — sonst wirkt das Speichern
@@ -269,8 +363,11 @@ export default function Home() {
   }, [user, fetchGraph]);
 
   // ── derived ───────────────────────────────────────────────────────────────
-  const shown = isGuest ? guestData : graphData;
   const graphLoading = !isGuest && loading;
+  // Konto ohne Threads: nur ein Hinweis auf die App. Entstehen dort Threads, lädt Realtime den Graphen
+  // (und beim ersten Mal läuft das Intro mit den eigenen Notizen).
+  const userEmpty = !!user && !graphLoading && graphData.threads.length === 0;
+  const shown = isGuest ? guestData : graphData;
   const threadNotes: Note[] = selectedThread
     ? shown.notes.filter(n => selectedThread.noteIds.includes(n.id))
     : [];
@@ -301,7 +398,7 @@ export default function Home() {
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* GRAPH */}
-      {!graphLoading && (
+      {!graphLoading && !userEmpty && (
         <Graph
           data={shown}
           onThreadClick={handleThreadClick}
@@ -313,7 +410,7 @@ export default function Home() {
           handleRef={graphHandle}
           query={query}
           insets={{ top: 76, right: 24, bottom: 90, left: isGuest ? 384 : 24 }}
-          introKey={isGuest ? introKey : 0}
+          introKey={isGuest ? introKey : userIntroKey}
           onIntro={handleIntro}
           spotlight={isGuest ? spotlight : null}
         />
@@ -387,6 +484,18 @@ export default function Home() {
         {/* Right: create button + user chip */}
         {user && (
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'all' }}>
+          {/* Synthese (in der leeren Ansicht sitzt der Button in der Karte) */}
+          {!userEmpty && (
+            <button
+              onClick={handleSynthesize}
+              disabled={synthDisabled}
+              title={synthLimited ? 'Synthese-Limit deines Tarifs' : undefined}
+              className={synthesizing ? 'velm-think' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: synthDisabled && !synthesizing ? 'var(--t3)' : 'var(--t1)', cursor: synthDisabled ? 'default' : 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
+            >
+              {synthLabel}
+            </button>
+          )}
           {/* + Notiz Button */}
           <button
             onClick={() => setShowCreate(true)}
@@ -422,7 +531,7 @@ export default function Home() {
       </div>
 
       {/* INTRO: eine Karte pro Phase, erzählt mit, was der Graph gerade zeigt */}
-      {isGuest && !authOverlay && introStep && (
+      {!authOverlay && introStep && (
         <div key={introStep} style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ ...kickerStyle, marginBottom: 0 }}>{INTRO_TEXT[introStep].kicker}</div>
@@ -494,6 +603,31 @@ export default function Home() {
           <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 14 }}>
             Das sind Beispiel-Notizen. Fahr über Threads und Verbindungen oder klick sie an.
           </p>
+          {isDemo && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--t1)', marginBottom: 8 }}>
+                {tryLeft.length ? 'Probier’s aus: Wirf eine Notiz hinein' : 'Alles einsortiert. So läuft das mit deinen eigenen Notizen.'}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {tryLeft.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={e => tryNote(n, e.currentTarget)}
+                    disabled={!!thinkingId}
+                    className="velm-hover"
+                    style={{ padding: '5px 11px', background: thinkingId === n.id ? 'rgba(244,162,97,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${thinkingId === n.id ? 'rgba(244,162,97,0.45)' : 'var(--border2)'}`, borderRadius: 14, fontSize: 12, color: thinkingId === n.id ? 'var(--amber)' : 'var(--t2)', cursor: thinkingId ? 'default' : 'pointer', fontFamily: 'Inter, sans-serif', opacity: thinkingId && thinkingId !== n.id ? 0.5 : 1 }}
+                  >
+                    {thinkingId === n.id ? <span className="velm-think">✦ Velm denkt …</span> : `＋ ${n.title}`}
+                  </button>
+                ))}
+              </div>
+              {lastPlaced && (
+                <div key={tryLeft.length} style={{ fontSize: 12, color: 'var(--t2)', marginTop: 9, animation: 'velm-rise 0.3s ease-out' }}>
+                  → einsortiert in <span style={{ color: 'var(--amber)' }}>{lastPlaced}</span>
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={() => setAuthOverlay('register')}
             className="velm-primary"
@@ -508,7 +642,7 @@ export default function Home() {
           >
             Ich habe schon ein Konto
           </button>
-          {guestData === DEMO_DATA && (
+          {isDemo && (
             <button onClick={replayIntro} className="velm-hover" style={{ ...linkBtnStyle, display: 'block', margin: '12px auto 0' }}>
               ↺ Intro noch einmal ansehen
             </button>
@@ -521,7 +655,7 @@ export default function Home() {
       )}
 
       {/* TEMP (nur zum Testen, vor dem PR entfernen): Intro jederzeit neu abspielen */}
-      {process.env.NODE_ENV === 'development' && isGuest && guestData === DEMO_DATA && (
+      {process.env.NODE_ENV === 'development' && isGuest && isDemo && (
         <button
           onClick={() => { try { localStorage.removeItem(INTRO_SEEN_KEY); } catch {} replayIntro(); }}
           style={{ position: 'absolute', right: 22, bottom: 28, zIndex: 45, padding: '8px 14px', background: 'rgba(244,162,97,0.12)', border: '1px dashed rgba(244,162,97,0.5)', borderRadius: 18, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
@@ -530,12 +664,33 @@ export default function Home() {
         </button>
       )}
 
+      {/* LEERER GRAPH: nur ein Hinweis auf die App — Threads entstehen dort */}
+      {userEmpty && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '70px 24px 24px', pointerEvents: 'none' }}>
+          <div style={{ maxWidth: 420, textAlign: 'center', animation: 'velm-rise 0.5s ease-out' }}>
+            <div style={{ fontFamily: "var(--font-instrument), 'Instrument Serif', Georgia, serif", fontSize: 34, lineHeight: 1.1, color: 'var(--t1)', marginBottom: 12 }}>
+              Dein Graph ist noch leer.
+            </div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--t2)' }}>
+              Erstelle in der Velm-App Notizen und starte unter „Threads“ die Synthese. Sobald Threads entstanden sind, erscheinen sie hier.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ZOOM BUTTONS */}
-      <div style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, zIndex: 20 }}>
+      <div style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', display: userEmpty ? 'none' : 'flex', gap: 5, zIndex: 20 }}>
         <button onClick={() => graphHandle.current?.zoomBy(-0.2)} style={btnStyle}>−</button>
         <button onClick={() => graphHandle.current?.zoomReset()} style={{ ...btnStyle, fontSize: 13, fontWeight: 500 }}>⊙</button>
         <button onClick={() => graphHandle.current?.zoomBy(0.2)} style={btnStyle}>+</button>
       </div>
+
+      {/* RÜCKMELDUNG nach der Synthese */}
+      {toast && (
+        <div key={toast.id} role="status" style={{ position: 'absolute', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 70, padding: '10px 16px', maxWidth: 'calc(100vw - 32px)', background: 'rgba(22,18,14,0.95)', border: '1px solid var(--border2)', borderRadius: 12, fontSize: 13, color: 'var(--t1)', backdropFilter: 'blur(12px)', boxShadow: '0 10px 30px rgba(0,0,0,0.4)', animation: 'velm-rise 0.3s ease-out' }}>
+          {toast.text}
+        </div>
+      )}
 
       {/* TOOLTIP */}
       {tooltip && (

@@ -121,7 +121,8 @@ export function NoteCreateModal({ threads, userId, onClose, onCreate }: CreatePr
   const [title, setTitle]                   = useState('');
   const [content, setContent]               = useState('');
   const [catId, setCatId]                   = useState(CATEGORIES[0]);
-  const [threadId, setThreadId]             = useState(threads[0]?.id ?? '');
+  // Standard: kein Thread — die Synthese sortiert die Notiz ein. Ein fester Thread nur, wenn man ihn wählt.
+  const [threadId, setThreadId]             = useState('');
   const [includeInThreads, setInclude]      = useState(true);
   const [reminder, setReminder]             = useState('none');
   const [reminderDate, setReminderDate]     = useState('');
@@ -192,6 +193,7 @@ export function NoteCreateModal({ threads, userId, onClose, onCreate }: CreatePr
               <div style={{ flex: 1 }}>
                 <label style={s.lbl}>Thread</label>
                 <select value={threadId} onChange={e => setThreadId(e.target.value)} style={s.sel}>
+                  <option value="">Automatisch (bei der Synthese)</option>
                   {threads.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
                 </select>
               </div>
@@ -202,7 +204,7 @@ export function NoteCreateModal({ threads, userId, onClose, onCreate }: CreatePr
           <div style={s.toggleRow}>
             <div>
               <div style={s.toggleLabel}>In Threads einbeziehen</div>
-              <div style={s.toggleSub}>Notiz im Thread-Graph sichtbar machen</div>
+              <div style={s.toggleSub}>Velm sortiert die Notiz bei der Synthese in einen Thread ein</div>
             </div>
             <button
               type="button"
