@@ -53,8 +53,7 @@ eas build --platform android|ios
 npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
-
-Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `npm run dev` (localhost:3000), `npm run build`.
+Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
@@ -150,7 +149,7 @@ Interpolation via `%{var}` oder `{{var}}`. `LanguageContext.tsx` → `useLanguag
 setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, Umschalter unter Darstellung.
 **Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
-**Webapp (graph visualizer)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`), Force-Graph aus Notizen (ohne archivierte)/Threads/Ähnlichkeiten: `app/page.tsx`, `app/api/graph/route.ts`, `components/Graph.tsx` (kein SSR). Eigene Supabase-Login-UI (`components/LoginView.tsx`), auch von `/bookmarklet` genutzt.
+**Webapp (Insel-Graph)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`); Daten `app/api/graph/route.ts` (ohne archivierte). Ohne Login zeigt `/` den Beispiel-Graphen (`lib/demoData.ts`), Login als Overlay (`LoginView` mit `onClose`; Vollbild-Variante für `/bookmarklet`). Graph: jeder Thread eine Insel, Notizen als Pillen, KI-Verbindungen leise Linien (Brücke + Label erst bei Fokus). Layout `lib/graphLayout.ts` (erst Cluster, dann verteilen; Amber-Töne, Nachbarn verschieden), Zeichnen `components/Graph.tsx` (kein SSR; Detailstufen beim Zoom, Labels ohne Überlappung, Zwischenbild-Cache + 30 fps im Leerlauf — Darstellung nicht ohne Leistungsmessung ändern). Notizen stecken in genau einem Thread; Mehrfach-Zuordnung nur in Altdaten.
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`

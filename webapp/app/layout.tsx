@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Lora } from 'next/font/google';
+import { Inter, Lora, Instrument_Serif } from 'next/font/google';
 import './globals.css';
 
 const inter = Inter({
@@ -15,6 +15,14 @@ const lora = Lora({
   display: 'swap',
 });
 
+// Serif der App (Überschriften); im Graphen für die Insel-Namen.
+const instrument = Instrument_Serif({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-instrument',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'Velm — Second Brain',
   description: 'Knowledge Graph für deine Threads und Notizen',
@@ -22,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" className={`h-full ${inter.variable} ${lora.variable}`}>
+    <html lang="de" className={`h-full ${inter.variable} ${lora.variable} ${instrument.variable}`}>
       <body className="h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
         {children}
       </body>

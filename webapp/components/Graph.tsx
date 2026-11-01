@@ -2,224 +2,43 @@
 
 import { useEffect, useRef } from 'react';
 import { GraphData, Thread, Note, Similarity } from '@/types';
+import { categoryAccent } from '@/lib/categoryAccent';
+import {
+  computeLayout, hull, simCurve, ISLAND_COLORS,
+  Box, GraphLayout, LNode, LNote, LSim, LThread, Measure,
+} from '@/lib/graphLayout';
 
-// ── colours ────────────────────────────────────────────
-const C = {
-  bg:          '#0E0C09',
-  amber:       '#F4A261',
-  amberDim:    '#B06030',
-  amberBright: '#FBCB96',
-  green:       '#A8D8A8',
-  greenDim:    '#3A6A3A',
-  white:       '#FFFFFF',
-} as const;
+// ── Insel-Graph ─────────────────────────────────────────────────────────────
+// Jeder Thread ist eine eingefärbte Insel, seine Notizen liegen als Pillen darin. KI-Verbindungen sind
+// leise Linien zwischen den Inseln; Brücke + Beschriftung erscheinen erst bei Fokus (Hover/Auswahl).
+//
+// Viele Notizen: herausgezoomt nur Inseln + Punkte (Detailstufen), Beschriftungen ohne Überlappung
+// (wichtige gewinnen), Insel-Namen in konstanter Bildschirmgröße.
+// Rechenleistung: Inseln, Linien und Notizen liegen in einem Zwischenbild, das nur bei Änderungen neu
+// gemalt wird (Verschieben = Bild kopieren); im Leerlauf 30 statt 60 Bilder/s.
 
-// ── category colours ───────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  'Lernen':     '#5A8FC0',
-  'Arbeit':     '#5AA46A',
-  'Ideen':      '#B0A040',
-  'Persönlich': '#B07090',
-};
-function getCategoryColor(cat: string): string {
-  return CATEGORY_COLORS[cat] ?? C.green;
+const BG = '#0E0C09';
+const LOD = 0.55;        // ab diesem Zoom: Pillen mit Titel statt Punkte
+const CHIP_ZOOM = 0.9;   // ab diesem Zoom: KI-Verbindungen auch ohne Fokus beschriftet
+const DIM = 0.18;        // Deckkraft von allem außerhalb des Fokus
+const ISLAND_PAD = 26;   // Rand der Insel um ihre Notizen
+const MAX_DPR = 2;
+const Z_MIN = 0.08, Z_MAX = 3;
+const DEFAULT_INSETS: GraphInsets = { top: 70, right: 24, bottom: 90, left: 24 };
+
+export interface GraphInsets { top: number; right: number; bottom: number; left: number }
+
+export type GraphMatch = { type: 'note'; note: Note } | { type: 'thread'; thread: Thread };
+
+export interface GraphHandle {
+  zoomBy: (delta: number) => void;
+  zoomReset: () => void;
+  /** Springt zum ersten Treffer (Thread-Titel vor Notiz-Titel) und gibt ihn zurück. */
+  flyToMatch: (query: string) => GraphMatch | null;
 }
-function getCategoryColorDim(cat: string): string {
-  const col = CATEGORY_COLORS[cat];
-  if (!col) return '#3A6A3A';
-  // darken: parse hex, halve brightness, return hex
-  const r = Math.round(parseInt(col.slice(1,3),16) * 0.45);
-  const g = Math.round(parseInt(col.slice(3,5),16) * 0.45);
-  const b = Math.round(parseInt(col.slice(5,7),16) * 0.45);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
-}
-
-const TOPBAR_H         = 54;
-const THREAD_R         = 15;
-const NOTE_R           = 5;
-const SIM_R            = 10;
-const NOTE_SPREAD      = 1.7; // wie weit Notizen aus der Thread-Mitte sitzen
-const LS_KEY           = 'notiz_thread_positions';
-const LS_KEY_NOTES     = 'notiz_note_positions';
-
-// ── Grenzen für das initiale Layout ─────────────────────
-// Positionen sind fraktional (0=links/oben, 1=rechts/unten, 0.5=Mitte).
-// Draggen ist auf 0.02…0.98 geklemmt (DRAG_MIN/MAX). Damit Threads und ihre
-// Notizen beim ersten Aufbau NICHT am Rand kleben, halten wir alles innerhalb
-// eines kleineren "sicheren" Radius um die Mitte. Der maximale Note-Offset
-// (noteOffset · NOTE_SPREAD) wird mit eingerechnet, damit auch die äußersten
-// Notizen komfortabel im Bild liegen.
-const DRAG_MIN         = 0.02;
-const DRAG_MAX         = 0.98;
-const MAX_NOTE_OFFSET  = 0.14 * NOTE_SPREAD;   // größter Betrag aus noteOffset()
-const LAYOUT_MARGIN    = 0.06;                 // zusätzlicher Puffer zum Rand
-// Threads dürfen höchstens so weit aus der Mitte sitzen, dass selbst ihre
-// am weitesten außen liegende Notiz noch innerhalb von [MIN, MAX] bleibt.
-const SAFE_RING_R      = 0.5 - LAYOUT_MARGIN - MAX_NOTE_OFFSET;
-
-function loadPositions(): Record<string, { xf: number; yf: number }> {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '{}'); } catch { return {}; }
-}
-function savePositions(pos: Record<string, { xf: number; yf: number }>) {
-  localStorage.setItem(LS_KEY, JSON.stringify(pos));
-}
-
-// Nur manuell verschobene Notizen werden persistiert (eigener Key).
-function loadNotePositions(): Record<string, { xf: number; yf: number }> {
-  try { return JSON.parse(localStorage.getItem(LS_KEY_NOTES) ?? '{}'); } catch { return {}; }
-}
-function saveNotePositions(pos: Record<string, { xf: number; yf: number }>) {
-  localStorage.setItem(LS_KEY_NOTES, JSON.stringify(pos));
-}
-
-type HitType = 'thread' | 'note' | 'similarity';
-interface HitResult { type: HitType; id: string }
-
-// Hält eine fraktionale Koordinate innerhalb der Drag-Grenzen (Rand-Clamp).
-function clampFrac(v: number): number {
-  return Math.max(DRAG_MIN, Math.min(DRAG_MAX, v));
-}
-
-function noteOffset(idx: number): [number, number] {
-  const offsets: [number, number][] = [
-    [-0.09,-0.09],[0.10,-0.07],[0.12,0.06],[0.05,0.13],[-0.07,0.14],
-    [-0.08,-0.08],[0.10,-0.11],[0.12,0.03],[-0.09,0.09],[0.03,0.13],
-  ];
-  return offsets[idx % offsets.length];
-}
-
-function layoutNodes(data: GraphData): GraphData {
-  const saved = loadPositions();
-  const savedNotes = loadNotePositions();
-  const n = data.threads.length;
-  // Mehr Threads → größerer Ring, damit die Cluster Platz haben.
-  // (Die Kamera zoomt anschließend automatisch passend heran.)
-  // Gegen SAFE_RING_R gedeckelt, damit Threads + Notizen zentral im Bild
-  // liegen und nicht an die Drag-Grenze (0.02…0.98) stoßen.
-  const ringR = Math.min(SAFE_RING_R, 0.27 + Math.max(0, n - 5) * 0.05);
-  // Notizen weiter aus der Thread-Mitte herausziehen.
-  const noteSpread = NOTE_SPREAD;
-  const threads = data.threads.map((th, i) => {
-    if (saved[th.id]) return { ...th, xf: saved[th.id].xf, yf: saved[th.id].yf };
-    if (th.xf !== undefined && th.yf !== undefined) return th;
-    const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-    return { ...th, xf: 0.5 + ringR * Math.cos(angle), yf: 0.5 + ringR * Math.sin(angle) };
-  });
-  const threadMap = new Map(threads.map(t => [t.id, t]));
-  const noteCount = new Map<string, number>();
-  const notes = data.notes.map(note => {
-    // Manuell verschobene Notiz: gespeicherte Position wiederherstellen.
-    if (savedNotes[note.id]) return { ...note, xf: savedNotes[note.id].xf, yf: savedNotes[note.id].yf };
-    if (note.xf !== undefined && note.yf !== undefined) return note;
-    const tids = note.threadIds?.length ? note.threadIds : [note.threadId];
-    // Geteilte Notiz (mehrere Threads): Mittelpunkt aller Threads → sitzt sichtbar dazwischen.
-    if (tids.length > 1) {
-      const pts = tids.map(id => threadMap.get(id)).filter(t => t && t.xf !== undefined) as Thread[];
-      if (pts.length > 1) {
-        const mx = pts.reduce((s, t) => s + t.xf!, 0) / pts.length;
-        const my = pts.reduce((s, t) => s + t.yf!, 0) / pts.length;
-        return { ...note, xf: clampFrac(mx), yf: clampFrac(my) };
-      }
-    }
-    const th = threadMap.get(note.threadId);
-    if (!th || th.xf === undefined) return note;
-    const idx = noteCount.get(note.threadId) ?? 0;
-    noteCount.set(note.threadId, idx + 1);
-    const [ox, oy] = noteOffset(idx);
-    return { ...note, xf: clampFrac(th.xf + ox * noteSpread), yf: clampFrac(th.yf! + oy * noteSpread) };
-  });
-  const similarities = data.similarities.map((s, i) => {
-    const a = threadMap.get(s.threadId1), b = threadMap.get(s.threadId2);
-    if (!a || !b || a.xf === undefined) return s;
-    return simPos(s, a.xf, a.yf!, b.xf!, b.yf!, i);
-  });
-  return { threads, notes, similarities };
-}
-
-function simPos(s: Similarity, ax: number, ay: number, bx: number, by: number, i: number): Similarity {
-  const mx = (ax + bx) / 2, my = (ay + by) / 2;
-  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
-  const sign = i % 2 === 0 ? 1 : -1;
-  return { ...s, xf: mx + sign * (-dy / len) * 0.06, yf: my + sign * (dx / len) * 0.06 };
-}
-
-function hexRgb(hex: string) {
-  return `${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)}`;
-}
-
-function bezierPt(t: number, x1: number, y1: number, cpx: number, cpy: number, x2: number, y2: number) {
-  const m = 1 - t;
-  return { x: m*m*x1 + 2*m*t*cpx + t*t*x2, y: m*m*y1 + 2*m*t*cpy + t*t*y2 };
-}
-
-function drawOrb(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
-  hex: string, wobble: number, animT: number, active: boolean, hovered: boolean) {
-  const rp = r * (active ? 1 + 0.05 * Math.sin(animT * 1.3) : 1) * (hovered ? 1.18 : 1);
-
-  // ── Glow-Halo (shadow pass) ────────────────────────────────────────────────
-  ctx.save();
-  ctx.shadowColor = hex;
-  ctx.shadowBlur  = hovered ? 28 : active ? 18 : 6 + 3 * Math.sin(animT * 0.8 + r);
-  ctx.beginPath();
-  ctx.arc(x, y, rp, 0, Math.PI * 2);
-  ctx.fillStyle   = hex;
-  ctx.globalAlpha = 0.15;
-  ctx.fill();
-  ctx.restore();
-  ctx.shadowBlur = 0; // reset — kritisch
-
-  const gr = ctx.createRadialGradient(x, y, 0, x, y, rp * (active ? 5.5 : hovered ? 4.5 : 3.5));
-  gr.addColorStop(0, `rgba(${hexRgb(hex)},${active ? 0.28 : hovered ? 0.22 : 0.1})`);
-  gr.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, rp * 5.5, 0, Math.PI*2); ctx.fill();
-  ctx.save(); ctx.translate(x, y);
-  ctx.beginPath();
-  for (let i = 0; i <= 28; i++) {
-    const a = (i / 28) * Math.PI * 2;
-    const wr = rp * (1 + wobble * (hovered ? 1.5 : 1) * Math.sin(a * 3 + animT * 0.9 + r));
-    i === 0 ? ctx.moveTo(Math.cos(a)*wr, Math.sin(a)*wr) : ctx.lineTo(Math.cos(a)*wr, Math.sin(a)*wr);
-  }
-  ctx.closePath();
-  ctx.fillStyle = hovered ? C.white : hex;
-  ctx.globalAlpha = active ? 0.95 : hovered ? 0.9 : 0.7; ctx.fill();
-  const hl = ctx.createRadialGradient(-rp*.25, -rp*.25, 0, 0, 0, rp);
-  hl.addColorStop(0,'rgba(255,255,255,0.38)'); hl.addColorStop(.5,'rgba(255,255,255,0.06)'); hl.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle = hl; ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(0,0,rp,0,Math.PI*2); ctx.fill();
-  ctx.restore(); ctx.globalAlpha = 1;
-}
-
-function drawCurve(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number,
-  cpx: number, cpy: number, col: string, alpha: number, width: number) {
-  ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = width;
-  ctx.lineCap = 'round'; ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cpx, cpy, x2, y2); ctx.stroke();
-  ctx.globalAlpha = 1;
-}
-
-function buildNoise(): HTMLCanvasElement {
-  const nc = document.createElement('canvas'); nc.width = 256; nc.height = 256;
-  const nctx = nc.getContext('2d')!;
-  for (let i = 0; i < 256*256; i++) {
-    nctx.fillStyle = `rgba(255,200,140,${Math.random()*0.018})`;
-    nctx.fillRect(i%256, Math.floor(i/256), 1, 1);
-  }
-  return nc;
-}
-
-interface Particle { threadId1: string; threadId2: string; simId: string; p: number; s: number }
-interface DragState {
-  kind: 'thread' | 'note' | 'pan';
-  threadId?: string; noteId?: string; startMouseX: number; startMouseY: number;
-  startXf?: number; startYf?: number;
-  startCamX?: number; startCamY?: number;
-  moved: boolean;
-}
-
-export interface GraphHandle { zoomBy: (delta: number) => void; zoomReset: () => void; }
 
 interface Props {
   data: GraphData;
-  activeFilter: string;
   onThreadClick: (t: Thread) => void;
   onNoteClick: (n: Note) => void;
   onSimilarityClick: (s: Similarity) => void;
@@ -227,490 +46,514 @@ interface Props {
   activeSimilarityId: string | null;
   onTooltip: (label: string | null, x: number, y: number) => void;
   handleRef?: React.MutableRefObject<GraphHandle | null>;
+  /** Suchbegriff: Treffer bleiben hell, der Rest wird gedimmt. */
+  query?: string;
+  /** Freizuhaltende Ränder (Topbar, Hinweiskarten) — „alles zeigen" passt den Graphen dazwischen. */
+  insets?: GraphInsets;
 }
+
+// ── kleine Helfer ───────────────────────────────────────────────────────────
+function rgb(hex: string) { return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]; }
+function rgba(hex: string, a: number) { const [r, g, b] = rgb(hex); return `rgba(${r},${g},${b},${a})`; }
+function mix(hex: string, bg: string, t: number) {
+  const a = rgb(hex), b = rgb(bg);
+  return '#' + a.map((v, i) => Math.round(b[i] + (v - b[i]) * t).toString(16).padStart(2, '0')).join('');
+}
+function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+const noteTitle = (n: Note) => n.title?.trim() || 'Ohne Titel';
+const islandColor = (t: LThread) => ISLAND_COLORS[t.color % ISLAND_COLORS.length];
+
+/** Schriftfamilien aus next/font (CSS-Variablen am <html>), damit der Canvas dieselben Fonts nutzt. */
+function fontFamilies() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  return { serif: v('--font-instrument', "'Instrument Serif', Georgia, serif"), sans: v('--font-inter', 'Inter, system-ui, sans-serif') };
+}
+
+interface Label {
+  text: string; x: number; y: number; font: string; h: number; w: number; color: string; a: number; pri: number;
+  padX: number; padY: number; id?: string; bg?: (box: number[]) => void;
+}
+interface Drag { node: LThread | null; sx: number; sy: number; cx: number; cy: number; moved: boolean; last: [number, number]; clicked: LNode | null }
 
 export default function Graph(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // All mutable runtime state lives here — never triggers re-renders
-  const rt = useRef({
-    animT: 0,
-    hovered: null as HitResult | null,
-    drag: null as DragState | null,
-    suppressClick: false,
-    // Notizen, die der User manuell verschoben hat — bleiben an ihrer Stelle,
-    // auch wenn der zugehörige Thread danach bewegt wird.
-    pinnedNotes: new Set<string>(),
-    noise: null as HTMLCanvasElement | null,
-    particles: [] as Particle[],
-    layout: null as GraphData | null,
-    layoutData: null as GraphData | null,
-    // camera (fractional offset + zoom, lerped each frame like the mockup)
-    camX: 0, camY: 0, camZ: 1,
-    camXt: 0, camYt: 0, camZt: 1,
-    // zuletzt berechnete "fit to content"-Zielwerte (für Zoom-Reset-Button)
-    fitX: 0, fitY: 0, fitZ: 1,
-  });
-
-  // Props mirror — always current, no stale closures
   const propsRef = useRef(props);
-  propsRef.current = props;
+  useEffect(() => { propsRef.current = props; });
 
-  // Expose zoom controls to parent via handleRef
   useEffect(() => {
-    if (!props.handleRef) return;
-    props.handleRef.current = {
-      zoomBy: (delta: number) => {
-        const r = rt.current;
-        r.camZt = Math.max(0.4, Math.min(3.0, r.camZt + delta));
-      },
-      zoomReset: () => {
-        const r = rt.current;
-        // Zurück zur automatischen "Alles im Bild"-Ansicht.
-        r.camXt = r.fitX; r.camYt = r.fitY; r.camZt = r.fitZ;
-      },
-    };
-  });
-
-  // One-time setup: animation loop + all event listeners
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    const canvas: HTMLCanvasElement = canvasRef.current;
-
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
-    rt.current.noise = buildNoise();
+    // Alte Drag-Positionen des früheren Graphen (Bruchteil-Koordinaten) sind mit dem neuen Layout wertlos.
+    try { localStorage.removeItem('notiz_thread_positions'); localStorage.removeItem('notiz_note_positions'); } catch {}
 
-    // ── helpers ─────────────────────────────────────────
+    // ── Zustand (lebt nur in diesem Effekt, löst keine Re-Renders aus) ──
+    let W = 0, H = 0, DPR = 1, T = 0, raf = 0, lastDraw = 0, lastInput = 0;
+    let fonts = fontFamilies();
+    const cam = { x: 0, y: 0, z: 1, tx: 0, ty: 0, tz: 1 };
+    const fitCam = { x: 0, y: 0, z: 1 };
+    let G: GraphLayout | null = null, layoutData: GraphData | null = null, layoutVer = 0, threadKey = '';
+    let hover: LNode | null = null, drag: Drag | null = null;
+    let pinch: { d: number; z: number; wx: number; wy: number } | null = null;
+    const pointers = new Map<number, { x: number; y: number }>();
+    const fade = new Map<string, number>();
+    let fadeVer = 0, FS: Set<string> | null = null;
+    let VIEW = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const widths = new Map<string, number>();
+    const hulls = new Map<string, { v: number; hull: Array<[number, number]>; shared: LNote[] }>();
+    const simGrad = new Map<string, { v: number; g: CanvasGradient }>();
+    const labelBoxes = new Map<string, number[]>(); // Thread-ID → zuletzt gezeichneter Titel (Welt), für Klicks
+    let search = { q: '', v: -1, set: null as Set<string> | null };
 
-    // Camera: same lerp as the mockup (camX/camY are fractional offsets, camZ is scale)
-    function lerpCam() {
-      const r = rt.current, s = 0.09;
-      r.camX += (r.camXt - r.camX) * s;
-      r.camY += (r.camYt - r.camY) * s;
-      r.camZ += (r.camZt - r.camZ) * s;
+    const F = {
+      title: (px: number) => `400 ${px}px ${fonts.serif}`,
+      pill: () => `500 12px ${fonts.sans}`,
+      chip: () => `600 11.5px ${fonts.sans}`,
+      small: () => `600 10px ${fonts.sans}`,
+    };
+    function textW(text: string, font: string) {
+      const k = font + '|' + text;
+      let w = widths.get(k);
+      if (w === undefined) { ctx.font = font; w = ctx.measureText(text).width; widths.set(k, w); }
+      return w;
+    }
+    function trunc(text: string, font: string, max: number) {
+      if (textW(text, font) <= max) return text;
+      let s = text;
+      while (s.length > 1 && textW(s + '…', font) > max) s = s.slice(0, -1);
+      return s + '…';
+    }
+    const measure: Measure = {
+      thread: t => { const cw = textW(t.title, F.title(24)) + 34; return { cw, hw: cw / 2, hh: 20 }; },
+      note: n => { const cw = Math.min(176, textW(noteTitle(n), F.pill()) + 34); return { cw, hw: cw / 2, hh: 14 }; },
+      sim: s => ({ hw: (textW('✦ ' + s.label, F.chip()) + 22) / 2, hh: 13 }),
+    };
+
+    // ── Kamera ──
+    const worldT = (c: CanvasRenderingContext2D) => c.setTransform(DPR * cam.z, 0, 0, DPR * cam.z, DPR * (W / 2 - cam.x * cam.z), DPR * (H / 2 - cam.y * cam.z));
+    const screenT = (c: CanvasRenderingContext2D) => c.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const toWorld = (sx: number, sy: number): [number, number] => [(sx - W / 2) / cam.z + cam.x, (sy - H / 2) / cam.z + cam.y];
+    const vis = (o: Box, m = 0) => o.x + o.hw + m > VIEW.x0 && o.x - o.hw - m < VIEW.x1 && o.y + o.hh + m > VIEW.y0 && o.y - o.hh - m < VIEW.y1;
+    /** Schriftgröße, die beim Herauszoomen auf dem Bildschirm nicht unter px fällt */
+    const sf = (px: number) => px / Math.min(1, cam.z);
+
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      W = canvas!.clientWidth; H = canvas!.clientHeight;
+      canvas!.width = Math.round(W * DPR); canvas!.height = Math.round(H * DPR);
+      IC.ok = false;
     }
 
-    function GW() { return canvas.width; }
-    function GH() { return canvas.height - TOPBAR_H; }
-    // Zoom toward canvas center; camX/camY are pan offsets in fractional units
-    function GX(f: number) { return GW() / 2 + (f - 0.5 - rt.current.camX) * rt.current.camZ * GW(); }
-    function GY(f: number) { return TOPBAR_H + GH() / 2 + (f - 0.5 - rt.current.camY) * rt.current.camZ * GH(); }
+    function ensureLayout(): GraphLayout {
+      const data = propsRef.current.data;
+      if (G && layoutData === data) return G;
+      G = computeLayout(data, measure); layoutData = data; layoutVer++; IC.ok = false; fade.clear();
+      const key = data.threads.map(t => t.id).sort().join(',');
+      if (key !== threadKey) { threadKey = key; fit(true); }
+      return G;
+    }
 
-    function getLayout(): GraphData {
-      const r = rt.current;
-      const p = propsRef.current;
-      if (!r.layout || r.layoutData !== p.data) {
-        r.layout = layoutNodes(p.data);
-        r.layoutData = p.data;
-        // Gepinnte Notizen aus dem Speicher übernehmen (überleben Reload).
-        r.pinnedNotes = new Set(Object.keys(loadNotePositions()));
-        r.particles = r.layout.similarities.map(s => ({
-          threadId1: s.threadId1, threadId2: s.threadId2, simId: s.id,
-          p: Math.random(), s: 0.001 + Math.random() * 0.0015,
-        }));
-        fitToContent(r.layout); // Kamera so setzen, dass alle Knoten ins Bild passen
+    function fit(instant = false) {
+      if (!G || !G.all.length) { Object.assign(fitCam, { x: 0, y: 0, z: 1 }); }
+      else {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of G.all) { x0 = Math.min(x0, p.x - p.hw); x1 = Math.max(x1, p.x + p.hw); y0 = Math.min(y0, p.y - p.hh); y1 = Math.max(y1, p.y + p.hh); }
+        const ins = propsRef.current.insets ?? DEFAULT_INSETS;
+        const left = W > 900 ? ins.left : DEFAULT_INSETS.left; // schmale Bildschirme: Hinweiskarte darf überlappen
+        const aw = Math.max(100, W - left - ins.right), ah = Math.max(100, H - ins.top - ins.bottom), m = ISLAND_PAD + 10;
+        const z = Math.max(Z_MIN, Math.min(1.2, Math.min(aw / (x1 - x0 + m * 2), ah / (y1 - y0 + m * 2))));
+        Object.assign(fitCam, { x: (x0 + x1) / 2 - (left + aw / 2 - W / 2) / z, y: (y0 + y1) / 2 - (ins.top + ah / 2 - H / 2) / z, z });
       }
-      return r.layout;
+      cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z;
+      if (instant) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
+    }
+    function flyTo(x: number, y: number, z: number) {
+      cam.tz = Math.max(Z_MIN, Math.min(Z_MAX, z)); cam.tx = x; cam.ty = y;
+    }
+    function flyToThread(t: LThread) {
+      flyTo(t.x, t.y, Math.min(1.1, Math.min(W - 120, H - 160) / (2 * t.R + 2 * ISLAND_PAD + 80)));
+    }
+    function zoomAround(sx: number, sy: number, nz: number) {
+      const [wx, wy] = toWorld(sx, sy);
+      nz = Math.max(Z_MIN, Math.min(Z_MAX, nz));
+      cam.tx = wx - (sx - W / 2) / nz; cam.ty = wy - (sy - H / 2) / nz; cam.tz = nz;
     }
 
-    // Bounding-Box aller Knoten berechnen und Kamera (Ziel-Werte) so wählen,
-    // dass alles mit etwas Rand sichtbar ist. Der Lerp animiert sanft dorthin.
-    function fitToContent(layout: GraphData) {
-      const pts: Array<{ xf?: number; yf?: number }> = [...layout.threads, ...layout.notes];
-      let minX = 1, maxX = 0, minY = 1, maxY = 0, found = false;
-      for (const pt of pts) {
-        if (pt.xf === undefined || pt.yf === undefined) continue;
-        found = true;
-        minX = Math.min(minX, pt.xf); maxX = Math.max(maxX, pt.xf);
-        minY = Math.min(minY, pt.yf); maxY = Math.max(maxY, pt.yf);
-      }
-      if (!found) return;
-      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      // Spannweite + Rand für Labels/Knotenradius; gegen 0 absichern.
-      const spanX = Math.max(0.001, maxX - minX) + 0.18;
-      const spanY = Math.max(0.001, maxY - minY) + 0.18;
-      // camZ so, dass die größere Achse genau ins Bild passt (Spannweite·camZ ≈ 1).
-      const z = Math.max(0.4, Math.min(2.5, Math.min(1 / spanX, 1 / spanY)));
-      rt.current.fitX = cx - 0.5;
-      rt.current.fitY = cy - 0.5;
-      rt.current.fitZ = z;
-      rt.current.camXt = rt.current.fitX;
-      rt.current.camYt = rt.current.fitY;
-      rt.current.camZt = rt.current.fitZ;
-    }
-
-    function moveThread(threadId: string, xf: number, yf: number) {
-      const layout = rt.current.layout;
-      if (!layout) return;
-      const cxf = clampFrac(xf);
-      const cyf = clampFrac(yf);
-      const old = layout.threads.find(t => t.id === threadId);
-      // Verschiebung des Threads, um manuell platzierte Notizen relativ mitzuziehen.
-      const dxf = old?.xf !== undefined ? cxf - old.xf : 0;
-      const dyf = old?.yf !== undefined ? cyf - old.yf : 0;
-      const threads = layout.threads.map(t => t.id === threadId ? { ...t, xf: cxf, yf: cyf } : t);
-      const tm = new Map(threads.map(t => [t.id, t]));
-      const nc = new Map<string, number>();
-      const pinned = rt.current.pinnedNotes;
-      const notes = layout.notes.map(note => {
-        if (note.threadId !== threadId) return note;
-        // Manuell verschobene Notizen behalten ihren Offset zum Thread:
-        // sie bewegen sich mit, springen aber nicht in die Umlaufbahn zurück.
-        if (pinned.has(note.id)) {
-          if (note.xf === undefined) return note;
-          return { ...note, xf: note.xf + dxf, yf: note.yf! + dyf };
+    // ── Fokus & Suche ──
+    function searchSet(g: GraphLayout): Set<string> | null {
+      const q = (propsRef.current.query ?? '').trim().toLowerCase();
+      if (q !== search.q || search.v !== layoutVer) {
+        let set: Set<string> | null = null;
+        if (q) {
+          set = new Set();
+          for (const t of g.threads) if (t.data.title.toLowerCase().includes(q)) set.add(t.id);
+          for (const n of g.notes) if (noteTitle(n.data).toLowerCase().includes(q)) { set.add(n.id); n.threadIds.forEach(id => set!.add(id)); }
+          if (!set.size) set = null; // nichts gefunden → nicht alles abdunkeln
         }
-        const idx = nc.get(note.threadId) ?? 0; nc.set(note.threadId, idx + 1);
-        const [ox, oy] = noteOffset(idx);
-        return { ...note, xf: cxf + ox * NOTE_SPREAD, yf: cyf + oy * NOTE_SPREAD };
-      });
-      const similarities = layout.similarities.map((s, i) => {
-        if (s.threadId1 !== threadId && s.threadId2 !== threadId) return s;
-        const a = tm.get(s.threadId1), b = tm.get(s.threadId2);
-        if (!a || !b || a.xf === undefined) return s;
-        return simPos(s, a.xf, a.yf!, b.xf!, b.yf!, i);
-      });
-      rt.current.layout = { threads, notes, similarities };
+        search = { q, v: layoutVer, set };
+      }
+      return search.set;
     }
-
-    function moveNote(noteId: string, xf: number, yf: number) {
-      const layout = rt.current.layout;
-      if (!layout) return;
-      const cxf = clampFrac(xf);
-      const cyf = clampFrac(yf);
-      const notes = layout.notes.map(n => n.id === noteId ? { ...n, xf: cxf, yf: cyf } : n);
-      rt.current.pinnedNotes.add(noteId);
-      rt.current.layout = { ...layout, notes };
-    }
-
-    function getNodeAt(mx: number, my: number): HitResult | null {
-      const layout = getLayout();
-      const { activeFilter, activeThreadId } = propsRef.current;
-      const z = rt.current.camZ;
-      for (const s of layout.similarities) {
-        if (s.xf === undefined) continue;
-        if (Math.hypot(mx - GX(s.xf), my - GY(s.yf!)) <= 14 * z) return { type: 'similarity', id: s.id };
-      }
-      for (const th of layout.threads) {
-        if (th.xf === undefined) continue;
-        if (Math.hypot(mx - GX(th.xf), my - GY(th.yf!)) <= THREAD_R * z + 4) return { type: 'thread', id: th.id };
-      }
-      for (const n of layout.notes) {
-        if (n.xf === undefined) continue;
-        if (activeFilter !== 'all' && n.category !== activeFilter) continue;
-        const r = (activeThreadId === n.threadId ? 7 : NOTE_R) * z;
-        if (Math.hypot(mx - GX(n.xf), my - GY(n.yf!)) <= r + 6) return { type: 'note', id: n.id };
-      }
+    function selectedNode(g: GraphLayout): LNode | null {
+      const p = propsRef.current;
+      if (p.activeThreadId) { const t = g.byId.get(p.activeThreadId); if (t) return t; }
+      if (p.activeSimilarityId) { const s = g.sims.find(x => x.id === p.activeSimilarityId); if (s) return s; }
       return null;
     }
-
-    // ── events ───────────────────────────────────────────
-
-    function onMouseDown(e: MouseEvent) {
-      const hit = getNodeAt(e.clientX, e.clientY);
-      if (hit?.type === 'thread') {
-        const th = getLayout().threads.find(t => t.id === hit.id);
-        if (!th || th.xf === undefined) return;
-        rt.current.drag = { kind: 'thread', threadId: th.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: th.xf, startYf: th.yf!, moved: false };
-      } else if (hit?.type === 'note') {
-        const n = getLayout().notes.find(n => n.id === hit.id);
-        if (!n || n.xf === undefined) return;
-        rt.current.drag = { kind: 'note', noteId: n.id, startMouseX: e.clientX, startMouseY: e.clientY, startXf: n.xf, startYf: n.yf!, moved: false };
-      } else if (!hit) {
-        // pan the camera
-        rt.current.drag = { kind: 'pan', startMouseX: e.clientX, startMouseY: e.clientY, startCamX: rt.current.camXt, startCamY: rt.current.camYt, moved: false };
-      } else {
-        return;
+    function focusSet(g: GraphLayout): Set<string> | null {
+      const f = hover ?? selectedNode(g);
+      if (!f) return searchSet(g);
+      if (drag?.moved) return null;
+      const s = new Set([f.id]);
+      if (f.kind === 'thread') {
+        for (const n of f.members) s.add(n.id);
+        for (const x of g.sims) if (x.a === f.id || x.b === f.id) { s.add(x.id); s.add(x.a); s.add(x.b); }
+      } else if (f.kind === 'note') { for (const id of f.threadIds) s.add(id); }
+      else { s.add(f.a); s.add(f.b); }
+      return s;
+    }
+    function updateFade(g: GraphLayout) {
+      FS = focusSet(g);
+      let changed = false;
+      for (const o of g.all) {
+        const tgt = !FS || FS.has(o.id) ? 1 : DIM, cur = fade.get(o.id) ?? 1;
+        if (cur !== tgt) { changed = true; fade.set(o.id, Math.abs(tgt - cur) < 0.01 ? tgt : cur + (tgt - cur) * 0.18); }
       }
-      canvas.style.cursor = 'grabbing';
-      e.preventDefault();
+      if (changed) fadeVer++;
+      return changed;
+    }
+    const al = (id: string) => fade.get(id) ?? 1;
+    const inFocus = (o: LNode) => !!FS && FS.has(o.id);
+    const isHot = (o: LNode) => hover?.id === o.id || selectedNode(G!)?.id === o.id;
+    const chipVisible = (s: LSim) => cam.z >= CHIP_ZOOM || inFocus(s);
+
+    // ── Beschriftungen ohne Überlappung ──
+    let labels: Label[] = [];
+    function flushLabels() {
+      labels.sort((a, b) => b.pri - a.pri);
+      const grid = new Map<number, number[][]>(), cell = 160 / cam.z;
+      labelBoxes.clear();
+      for (const l of labels) {
+        const x0 = l.x - l.w / 2, box = [x0 - l.padX, l.y - l.padY, x0 + l.w + l.padX, l.y + l.h + l.padY];
+        const gx0 = Math.floor(box[0] / cell), gx1 = Math.floor(box[2] / cell), gy0 = Math.floor(box[1] / cell), gy1 = Math.floor(box[3] / cell);
+        let ok = true;
+        outer: for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+          for (const r of grid.get(gx * 1e6 + gy) ?? []) if (box[0] < r[2] && box[2] > r[0] && box[1] < r[3] && box[3] > r[1]) { ok = false; break outer; }
+        }
+        if (!ok) continue;
+        for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+          const k = gx * 1e6 + gy; if (!grid.has(k)) grid.set(k, []); grid.get(k)!.push(box);
+        }
+        if (l.id) labelBoxes.set(l.id, box);
+        ctx.globalAlpha = l.a;
+        l.bg?.(box);
+        ctx.font = l.font; ctx.fillStyle = l.color; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(l.text, l.x, l.y);
+      }
+      ctx.globalAlpha = 1; labels = [];
     }
 
-    function onWindowMouseMove(e: MouseEvent) {
-      const { drag } = rt.current;
+    // ── Zwischenbild für die statische Ebene ──
+    // Deckt den sichtbaren Bereich + 25 % Rand ab und wird wiederverwendet, solange Layout, Fokus und Zoom
+    // gleich sind. Während einer Zoom-Animation wird es nur skaliert und erst in Ruhe neu gemalt.
+    const IC = { cv: document.createElement('canvas'), ok: false, x0: 0, y0: 0, x1: 0, y1: 0, z: 1, lv: -1, fv: -1, key: '' };
+    function cachedLayer(key: string, drawFn: (c: CanvasRenderingContext2D, inView: (o: Box) => boolean) => void) {
+      const z = cam.z, settled = Math.abs(cam.tz - z) <= cam.tz * 1e-4;
+      const inside = IC.ok && VIEW.x0 >= IC.x0 && VIEW.y0 >= IC.y0 && VIEW.x1 <= IC.x1 && VIEW.y1 <= IC.y1;
+      const ratio = IC.ok ? z / IC.z : 0;
+      const same = IC.ok && IC.lv === layoutVer && IC.fv === fadeVer && IC.key === key;
+      if (!(same && inside && (ratio === 1 || (!settled && ratio > 0.8 && ratio < 1.25)))) {
+        const mx = (VIEW.x1 - VIEW.x0) * 0.25, my = (VIEW.y1 - VIEW.y0) * 0.25;
+        Object.assign(IC, { x0: VIEW.x0 - mx, y0: VIEW.y0 - my, x1: VIEW.x1 + mx, y1: VIEW.y1 + my, z });
+        const pw = Math.ceil((IC.x1 - IC.x0) * z * DPR), ph = Math.ceil((IC.y1 - IC.y0) * z * DPR);
+        if (IC.cv.width !== pw || IC.cv.height !== ph) { IC.cv.width = pw; IC.cv.height = ph; }
+        const c = IC.cv.getContext('2d')!;
+        c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, pw, ph);
+        c.setTransform(DPR * z, 0, 0, DPR * z, -IC.x0 * DPR * z, -IC.y0 * DPR * z);
+        drawFn(c, o => o.x + o.hw > IC.x0 && o.x - o.hw < IC.x1 && o.y + o.hh > IC.y0 && o.y - o.hh < IC.y1);
+        Object.assign(IC, { ok: true, lv: layoutVer, fv: fadeVer, key });
+      }
+      const dx = (IC.x0 - cam.x) * z + W / 2, dy = (IC.y0 - cam.y) * z + H / 2;
+      if (z === IC.z) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(IC.cv, Math.round(dx * DPR), Math.round(dy * DPR)); }
+      else { screenT(ctx); ctx.drawImage(IC.cv, dx, dy, (IC.x1 - IC.x0) * z, (IC.y1 - IC.y0) * z); }
+      worldT(ctx);
+    }
+
+    function islandShape(c: CanvasRenderingContext2D, t: LThread, pad: number) {
+      let h = hulls.get(t.id);
+      if (!h || h.v !== layoutVer) {
+        const pts: Array<[number, number]> = [];
+        for (const p of [t, ...t.own]) for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push([p.x + sx * p.hw, p.y + sy * p.hh]);
+        h = { v: layoutVer, hull: hull(pts), shared: t.members.filter(n => n.threadIds.length > 1) };
+        hulls.set(t.id, h);
+      }
+      c.lineJoin = 'round'; c.lineCap = 'round';
+      c.beginPath(); h.hull.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+      c.lineWidth = pad * 2; c.fill(); c.stroke();
+      // Alt-Daten: Notiz in mehreren Threads hängt als Landzunge an der Insel
+      for (const n of h.shared) {
+        c.lineWidth = pad * 1.3; c.beginPath(); c.moveTo(t.x, t.y); c.lineTo(n.x, n.y); c.stroke();
+        rr(c, n.x - n.hw - pad * 0.6, n.y - n.hh - pad * 0.6, 2 * (n.hw + pad * 0.6), 2 * (n.hh + pad * 0.6), n.hh + pad * 0.6); c.fill();
+      }
+    }
+
+    function gradientFor(s: LSim, a: LThread, b: LThread, c: CanvasRenderingContext2D) {
+      if (c !== ctx) { const g = c.createLinearGradient(a.x, a.y, b.x, b.y); g.addColorStop(0, islandColor(a)); g.addColorStop(1, islandColor(b)); return g; }
+      let e = simGrad.get(s.id);
+      if (!e || e.v !== layoutVer) {
+        const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y); g.addColorStop(0, islandColor(a)); g.addColorStop(1, islandColor(b));
+        e = { v: layoutVer, g }; simGrad.set(s.id, e);
+      }
+      return e.g;
+    }
+
+    // ── Zeichnen ──
+    function draw(g: GraphLayout) {
+      screenT(ctx);
+      ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+      const glow = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
+      glow.addColorStop(0, 'rgba(60,46,30,0.35)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+      const z = cam.z, detail = z >= LOD;
+      const sel = selectedNode(g);
+      const key = `${detail}|${hover?.id ?? ''}|${sel?.id ?? ''}|${search.q}`;
+
+      cachedLayer(key, (c, inView) => {
+        // Inseln: deckende Mischfarben statt Transparenz (schnell, keine Überblendungs-Artefakte)
+        for (const t of g.threads) {
+          if (!inView({ x: t.x, y: t.y, hw: t.R + 60, hh: t.R + 60 })) continue;
+          const col = islandColor(t), hot = inFocus(t);
+          c.globalAlpha = al(t.id);
+          c.fillStyle = c.strokeStyle = mix(col, BG, hot ? 0.75 : 0.4); islandShape(c, t, ISLAND_PAD + 1.6 / z);
+          c.fillStyle = c.strokeStyle = mix(col, BG, hot ? 0.2 : 0.12); islandShape(c, t, ISLAND_PAD);
+        }
+        // KI-Verbindungen: leise Linie, im Fokus breites Brücken-Band
+        c.lineCap = 'round';
+        for (const s of g.sims) {
+          const a = g.byId.get(s.a)!, b = g.byId.get(s.b)!, cc = simCurve(s, a, b), hot = inFocus(s);
+          c.strokeStyle = gradientFor(s, a, b, c);
+          c.globalAlpha = al(s.id) * (hot ? 0.22 : 0.3); c.lineWidth = hot ? 16 : 1.2 / z;
+          c.beginPath(); c.moveTo(a.x, a.y); c.quadraticCurveTo(cc.cx, cc.cy, b.x, b.y); c.stroke();
+        }
+        // Notizen: Pillen mit Titel, herausgezoomt nur Punkte
+        for (const n of g.notes) {
+          if (!inView(n)) continue;
+          const h = hover?.id === n.id, cols = n.threadIds.map(id => islandColor(g.byId.get(id)!));
+          c.globalAlpha = al(n.id);
+          if (!detail && !h) { c.fillStyle = mix(cols[0], BG, 0.7); c.beginPath(); c.arc(n.x, n.y, Math.max(5, 2.2 / z), 0, 7); c.fill(); continue; }
+          rr(c, n.x - n.cw / 2, n.y - 14, n.cw, 28, 14);
+          c.fillStyle = h ? '#2E261E' : '#1E1913'; c.fill();
+          if (cols.length > 1) {
+            const lg = c.createLinearGradient(n.x - n.cw / 2, 0, n.x + n.cw / 2, 0);
+            cols.forEach((col, i) => lg.addColorStop(i / (cols.length - 1), col)); c.strokeStyle = lg; c.lineWidth = 1.6;
+          } else { c.strokeStyle = rgba(cols[0], h ? 0.9 : 0.4); c.lineWidth = 1; }
+          c.stroke();
+          c.fillStyle = categoryAccent(n.data.category); c.beginPath(); c.arc(n.x - n.cw / 2 + 14, n.y, 3.2, 0, 7); c.fill();
+          c.font = F.pill(); c.fillStyle = h ? '#FFFFFF' : '#E8DCCB'; c.textAlign = 'left'; c.textBaseline = 'middle';
+          c.fillText(trunc(noteTitle(n.data), F.pill(), n.cw - 34), n.x - n.cw / 2 + 24, n.y + 0.5);
+        }
+        c.globalAlpha = 1;
+      });
+
+      // Live-Ebene: Fokus-Brücken (laufende Striche) + Beschriftungen
+      for (const s of g.sims) {
+        const a = g.byId.get(s.a)!, b = g.byId.get(s.b)!, hot = inFocus(s), aa = al(s.id);
+        if (hot) {
+          const cc = simCurve(s, a, b);
+          ctx.strokeStyle = gradientFor(s, a, b, ctx); ctx.lineCap = 'round';
+          ctx.globalAlpha = aa * 0.9; ctx.lineWidth = 1.3 / z; ctx.setLineDash([6 / z, 5 / z]); ctx.lineDashOffset = -T * 10 / z;
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(cc.cx, cc.cy, b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+        }
+        if (!chipVisible(s) || !vis(s)) continue;
+        const sh = isHot(s) || hot, w = s.hw * 2;
+        ctx.globalAlpha = aa * (hot ? 1 : 0.75);
+        rr(ctx, s.x - w / 2, s.y - 13, w, 26, 13); ctx.fillStyle = sh ? '#F2EDE6' : '#221C16'; ctx.fill();
+        ctx.strokeStyle = 'rgba(242,237,230,0.25)'; ctx.lineWidth = 1 / z; ctx.stroke();
+        ctx.font = F.chip(); ctx.fillStyle = sh ? '#15110D' : '#E8DCCB'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('✦ ' + s.data.label, s.x, s.y + 0.5);
+      }
+      ctx.globalAlpha = 1;
+      // Insel-Namen: konstante Bildschirmgröße, große/fokussierte Threads gewinnen bei Platzmangel
+      for (const t of g.threads) {
+        if (!vis(t, 80)) continue;
+        const a = al(t.id), h = isHot(t), col = islandColor(t), px = Math.max(24, sf(17)), font = F.title(px);
+        labels.push({
+          text: t.data.title, x: t.x, y: t.y - px * 0.55, font, h: px, w: textW(t.data.title, font), color: h ? '#15110D' : col, a,
+          pri: h ? 2000 : inFocus(t) ? 1000 : 100 + t.count, padX: px * 0.7, padY: px * 0.25, id: t.id,
+          bg: box => {
+            rr(ctx, box[0], box[1], box[2] - box[0], box[3] - box[1], (box[3] - box[1]) / 2);
+            ctx.fillStyle = h ? col : mix(col, BG, 0.22); ctx.fill();
+            ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = 1.2 / z; ctx.stroke();
+          },
+        });
+      }
+      flushLabels();
+    }
+
+    // ── Treffer unter dem Zeiger ──
+    function hit(sx: number, sy: number): LNode | null {
+      const g = G; if (!g) return null;
+      const [x, y] = toWorld(sx, sy), z = cam.z, detail = z >= LOD;
+      const inBox = (o: Box) => Math.abs(x - o.x) <= o.hw && Math.abs(y - o.y) <= o.hh;
+      for (const s of g.sims) if (chipVisible(s) && inBox(s)) return s;
+      for (const [id, b] of labelBoxes) if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) return g.byId.get(id) ?? null;
+      for (let i = g.notes.length - 1; i >= 0; i--) {
+        const n = g.notes[i];
+        if (detail ? inBox(n) : Math.hypot(x - n.x, y - n.y) * z < 7) return n;
+      }
+      // Klick auf die Inselfläche = Thread (nächster Mittelpunkt)
+      let best: LThread | null = null, bd = Infinity;
+      for (const t of g.threads) { const d = Math.hypot(x - t.x, y - t.y); if (d < t.R + ISLAND_PAD && d < bd) { bd = d; best = t; } }
+      return best;
+    }
+    function tooltipFor(o: LNode | null, sx: number, sy: number) {
+      const tip = propsRef.current.onTooltip;
+      if (!o) return tip(null, 0, 0);
+      let text: string | null = null;
+      if (o.kind === 'note') {
+        const title = noteTitle(o.data);
+        if (cam.z < LOD || textW(title, F.pill()) > o.cw - 34) text = title;
+      } else if (o.kind === 'thread') { if (!labelBoxes.has(o.id)) text = o.data.title; }
+      else if (!chipVisible(o)) text = '✦ ' + o.data.label;
+      tip(text, sx + 14, sy - 10);
+    }
+
+    // ── Eingaben ──
+    function onPointerDown(e: PointerEvent) {
+      canvas!.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      lastInput = performance.now();
+      if (pointers.size === 2) { // Pinch-Zoom (Touch)
+        const [a, b] = [...pointers.values()], [wx, wy] = toWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: cam.z, wx, wy }; drag = null;
+        return;
+      }
+      const h = hit(e.offsetX, e.offsetY);
+      drag = { node: h?.kind === 'thread' ? h : null, sx: e.offsetX, sy: e.offsetY, cx: cam.tx, cy: cam.ty, moved: false, last: toWorld(e.offsetX, e.offsetY), clicked: h };
+    }
+    function onPointerMove(e: PointerEvent) {
+      lastInput = performance.now();
+      if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+      if (pinch && pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const nz = Math.max(Z_MIN, Math.min(Z_MAX, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        cam.z = cam.tz = nz; cam.x = cam.tx = pinch.wx - (mx - W / 2) / nz; cam.y = cam.ty = pinch.wy - (my - H / 2) / nz;
+        return;
+      }
       if (drag) {
-        const dx = e.clientX - drag.startMouseX, dy = e.clientY - drag.startMouseY;
-        if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true;
-        if (drag.moved) {
-          const z = rt.current.camZ;
-          if (drag.kind === 'thread') {
-            moveThread(drag.threadId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
-          } else if (drag.kind === 'note') {
-            moveNote(drag.noteId!, drag.startXf! + dx / (GW() * z), drag.startYf! + dy / (GH() * z));
-          } else {
-            // pan: pixel delta → fractional delta (divide by zoom scale)
-            rt.current.camXt = drag.startCamX! - dx / (GW() * z);
-            rt.current.camYt = drag.startCamY! - dy / (GH() * z);
-          }
-          propsRef.current.onTooltip(null, 0, 0);
+        if (!drag.moved && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 4) { drag.moved = true; propsRef.current.onTooltip(null, 0, 0); }
+        if (!drag.moved) return;
+        const [wx, wy] = toWorld(e.offsetX, e.offsetY), dx = wx - drag.last[0], dy = wy - drag.last[1];
+        if (drag.node) { // Insel verschieben (nur für diese Sitzung)
+          const t = drag.node;
+          t.x += dx; t.y += dy;
+          for (const n of t.own) { n.x += dx; n.y += dy; }
+          for (const s of G!.sims) if (s.a === t.id || s.b === t.id) { s.x += dx / 2; s.y += dy / 2; }
+          drag.last = [wx, wy]; layoutVer++;
+        } else {
+          cam.tx = drag.cx - (e.offsetX - drag.sx) / cam.z; cam.ty = drag.cy - (e.offsetY - drag.sy) / cam.z; cam.x = cam.tx; cam.y = cam.ty;
         }
+        canvas!.style.cursor = 'grabbing';
         return;
       }
-      const hit = getNodeAt(e.clientX, e.clientY);
-      rt.current.hovered = hit;
-      canvas.style.cursor = hit?.type === 'thread' || hit?.type === 'note' ? 'grab' : hit ? 'pointer' : 'default';
-      if (hit) {
-        const layout = getLayout();
-        const label = hit.type === 'thread' ? layout.threads.find(t => t.id === hit.id)?.title ?? ''
-          : hit.type === 'similarity' ? `✦ ${layout.similarities.find(s => s.id === hit.id)?.label ?? ''}`
-          : layout.notes.find(n => n.id === hit.id)?.title ?? '';
-        propsRef.current.onTooltip(label, e.clientX + 14, e.clientY - 10);
-      } else {
-        propsRef.current.onTooltip(null, 0, 0);
+      if (e.pointerType !== 'mouse') return;
+      hover = hit(e.offsetX, e.offsetY);
+      canvas!.style.cursor = hover ? 'pointer' : 'default';
+      tooltipFor(hover, e.offsetX, e.offsetY);
+    }
+    function onPointerUp(e: PointerEvent) {
+      pointers.delete(e.pointerId);
+      if (pinch) { if (pointers.size < 2) pinch = null; drag = null; return; }
+      const d = drag; drag = null;
+      canvas!.style.cursor = hover ? 'pointer' : 'default';
+      if (!d || d.moved || !d.clicked) return;
+      const h = d.clicked, p = propsRef.current;
+      if (h.kind === 'note') p.onNoteClick(h.data);
+      else if (h.kind === 'sim') p.onSimilarityClick(h.data);
+      else {
+        if (p.activeThreadId === h.id) { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; }
+        else flyToThread(h);
+        p.onThreadClick(h.data);
       }
     }
-
-    function onWindowMouseUp() {
-      const { drag } = rt.current;
-      if (!drag) return;
-      if (drag.kind === 'thread') {
-        if (drag.moved) {
-          const saved = loadPositions();
-          for (const th of getLayout().threads) if (th.xf !== undefined) saved[th.id] = { xf: th.xf, yf: th.yf! };
-          savePositions(saved);
-          // Gepinnte Notizen sind mitgewandert → ihre neuen Positionen sichern.
-          const pinned = rt.current.pinnedNotes;
-          if (pinned.size > 0) {
-            const sn = loadNotePositions();
-            for (const note of getLayout().notes) {
-              if (pinned.has(note.id) && note.xf !== undefined) sn[note.id] = { xf: note.xf, yf: note.yf! };
-            }
-            saveNotePositions(sn);
-          }
-        } else {
-          const th = getLayout().threads.find(t => t.id === drag.threadId);
-          if (th && th.xf !== undefined) {
-            const { activeThreadId } = propsRef.current;
-            if (activeThreadId === th.id) {
-              // Zurück zur "Alles im Bild"-Ansicht statt fix auf Zoom 1.
-              rt.current.camXt = rt.current.fitX; rt.current.camYt = rt.current.fitY; rt.current.camZt = rt.current.fitZ;
-            } else {
-              // Shift thread slightly left of center so the modal has space on the right
-              const targetZ = 1.5;
-              rt.current.camXt = (th.xf - 0.5) - (-0.18);
-              rt.current.camYt = (th.yf! - 0.5);
-              rt.current.camZt = targetZ;
-            }
-            propsRef.current.onThreadClick(th);
-          }
-        }
-      }
-      if (drag.kind === 'note' && drag.moved) {
-        // Eine bewegte Notiz darf nicht als Klick das Modal öffnen.
-        rt.current.suppressClick = true;
-        // Position persistieren, damit sie Reload/Navigation überlebt.
-        const n = getLayout().notes.find(nn => nn.id === drag.noteId);
-        if (n && n.xf !== undefined) {
-          const sn = loadNotePositions();
-          sn[n.id] = { xf: n.xf, yf: n.yf! };
-          saveNotePositions(sn);
-        }
-      }
-      // pan drag: camera target already set in mousemove, nothing extra needed
-      rt.current.drag = null;
-      canvas.style.cursor = 'default';
-    }
-
-    function onMouseLeave() {
-      if (!rt.current.drag) { rt.current.hovered = null; canvas.style.cursor = 'default'; propsRef.current.onTooltip(null, 0, 0); }
-    }
-
-    function onClick(e: MouseEvent) {
-      if (rt.current.drag) return;
-      if (rt.current.suppressClick) { rt.current.suppressClick = false; return; }
-      const hit = getNodeAt(e.clientX, e.clientY);
-      if (!hit || hit.type === 'thread') return;
-      const layout = getLayout();
-      if (hit.type === 'note') { const n = layout.notes.find(n => n.id === hit.id); if (n) propsRef.current.onNoteClick(n); }
-      else { const s = layout.similarities.find(s => s.id === hit.id); if (s) propsRef.current.onSimilarityClick(s); }
-    }
-
+    function onPointerLeave() { if (!drag) { hover = null; propsRef.current.onTooltip(null, 0, 0); } }
+    function onDblClick() { fit(); }
     function onWheel(e: WheelEvent) {
-      e.preventDefault();
-      const r = rt.current;
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      r.camZt = Math.max(0.4, Math.min(3.0, r.camZt * factor));
+      e.preventDefault(); lastInput = performance.now();
+      // Trackpad: zwei Finger schieben, Pinch (ctrlKey) zoomt. Mausrad (große Schritte) zoomt.
+      const trackpadPan = !e.ctrlKey && e.deltaMode === 0 && (Math.abs(e.deltaX) > 0.5 || Math.abs(e.deltaY) < 40);
+      if (trackpadPan) { cam.tx += e.deltaX / cam.z; cam.ty += e.deltaY / cam.z; cam.x = cam.tx; cam.y = cam.ty; return; }
+      const dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+      zoomAround(e.offsetX, e.offsetY, cam.tz * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)));
     }
 
-    canvas.addEventListener('mousedown',  onMouseDown);
-    window.addEventListener('mousemove',  onWindowMouseMove);
-    window.addEventListener('mouseup',    onWindowMouseUp);
-    canvas.addEventListener('mouseleave', onMouseLeave);
-    canvas.addEventListener('click',      onClick);
-    canvas.addEventListener('wheel',      onWheel, { passive: false });
-
-    // ── resize ───────────────────────────────────────────
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-    resize();
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('pointerleave', onPointerLeave);
+    canvas.addEventListener('dblclick', onDblClick);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('resize', resize);
+    resize();
 
-    // ── draw loop ────────────────────────────────────────
-    let raf = 0;
-    function draw() {
-      lerpCam();
-      const { animT, hovered, drag, noise, particles } = rt.current;
-      const z = rt.current.camZ;
-      const layout = getLayout();
-      const { activeFilter, activeThreadId, activeSimilarityId } = propsRef.current;
-      const W = canvas.width, H = canvas.height;
+    // Erst mit den echten Schriften messen, sonst stimmen Pillen- und Titelbreiten nicht.
+    let alive = true;
+    document.fonts.ready.then(() => {
+      if (!alive) return;
+      fonts = fontFamilies(); widths.clear(); layoutData = null; threadKey = '';
+    });
 
-      ctx.clearRect(0,0,W,H);
-      ctx.fillStyle = C.bg; ctx.fillRect(0,0,W,H);
-      const bg = ctx.createRadialGradient(GX(0.42),GY(0.48),0,GX(0.42),GY(0.48),Math.min(GW(),H)*0.7);
-      bg.addColorStop(0,'rgba(70,40,10,0.22)'); bg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
-      if (noise) { const pat = ctx.createPattern(noise,'repeat'); if (pat) { ctx.fillStyle=pat; ctx.fillRect(0,0,W,H); } }
+    const handle = propsRef.current.handleRef;
+    if (handle) handle.current = {
+      zoomBy: delta => { zoomAround(W / 2, H / 2, cam.tz * (1 + delta)); },
+      zoomReset: () => { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; },
+      flyToMatch: query => {
+        const g = G, q = query.trim().toLowerCase();
+        if (!g || !q) return null;
+        const t = g.threads.find(x => x.data.title.toLowerCase().includes(q));
+        if (t) { flyToThread(t); return { type: 'thread', thread: t.data }; }
+        const n = g.notes.find(x => noteTitle(x.data).toLowerCase().includes(q));
+        if (n) { flyTo(n.x, n.y, Math.max(cam.tz, LOD + 0.35)); return { type: 'note', note: n.data }; }
+        return null;
+      },
+    };
 
-      ctx.save(); ctx.beginPath(); ctx.rect(0,TOPBAR_H,GW(),H-TOPBAR_H); ctx.clip();
-
-      function linkLit(simId: string, t1: string, t2: string) {
-        if (activeThreadId && (activeThreadId===t1||activeThreadId===t2)) return true;
-        if (activeSimilarityId===simId) return true;
-        if (!hovered) return false;
-        if (hovered.type==='thread' && (hovered.id===t1||hovered.id===t2)) return true;
-        if (hovered.type==='similarity' && hovered.id===simId) return true;
-        if (hovered.type==='note') { const n=layout.notes.find(n=>n.id===hovered!.id); if (n&&(n.threadId===t1||n.threadId===t2)) return true; }
-        return false;
-      }
-      function noteLit(note: Note) {
-        if (activeThreadId===note.threadId) return true;
-        if (!hovered) return false;
-        if (hovered.type==='note'&&hovered.id===note.id) return true;
-        if (hovered.type==='thread'&&hovered.id===note.threadId) return true;
-        if (hovered.type==='similarity') { const s=layout.similarities.find(s=>s.id===hovered!.id); if (s&&(s.threadId1===note.threadId||s.threadId2===note.threadId)) return true; }
-        return false;
-      }
-      function simLit(s: Similarity) {
-        if (activeSimilarityId===s.id) return true;
-        if (!hovered) return false;
-        if (hovered.type==='similarity'&&hovered.id===s.id) return true;
-        if (hovered.type==='thread'&&(hovered.id===s.threadId1||hovered.id===s.threadId2)) return true;
-        if (hovered.type==='note') { const n=layout.notes.find(n=>n.id===hovered!.id); if (n&&(n.threadId===s.threadId1||n.threadId===s.threadId2)) return true; }
-        return false;
-      }
-
-      // curves: thread–sim
-      for (const sim of layout.similarities) {
-        if (sim.xf===undefined) continue;
-        const a=layout.threads.find(t=>t.id===sim.threadId1), b=layout.threads.find(t=>t.id===sim.threadId2);
-        if (!a||!b||a.xf===undefined||b.xf===undefined) continue;
-        const lit=linkLit(sim.id,sim.threadId1,sim.threadId2);
-        const col=lit?C.amber:'rgba(190,130,70,0.7)', al=lit?0.42:0.24, w=lit?1.6*z:0.85*z;
-        const sx=GX(sim.xf),sy=GY(sim.yf!);
-        drawCurve(ctx,GX(a.xf),GY(a.yf!),sx,sy,GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),col,al,w);
-        drawCurve(ctx,GX(b.xf),GY(b.yf!),sx,sy,GX((b.xf+sim.xf)/2),GY((b.yf!+sim.yf!)/2),col,al,w);
-      }
-
-      // curves: note–thread (eine Linie pro zugehörigem Thread → geteilte Notizen sichtbar)
-      for (const note of layout.notes) {
-        if (note.xf===undefined) continue;
-        if (activeFilter!=='all'&&note.category!==activeFilter) continue;
-        const lit=noteLit(note), hovN=hovered?.type==='note'&&hovered.id===note.id;
-        const catCol=getCategoryColor(note.category);
-        const catRgb=hexRgb(catCol);
-        const tids=note.threadIds?.length?note.threadIds:[note.threadId];
-        for (const tid of tids) {
-          const th=layout.threads.find(t=>t.id===tid);
-          if (!th||th.xf===undefined) continue;
-          drawCurve(ctx,GX(note.xf),GY(note.yf!),GX(th.xf),GY(th.yf!),GX((note.xf+th.xf)/2),GY((note.yf!+th.yf!)/2),
-            hovN?C.white:lit?catCol:`rgba(${catRgb},0.7)`, hovN?0.6:lit?0.36:0.22, hovN?1.4*z:lit?1.0*z:0.7*z);
-        }
-      }
-
-      // particles
-      for (const p of particles) {
-        p.p=(p.p+p.s)%1;
-        if (!linkLit(p.simId,p.threadId1,p.threadId2)) continue;
-        const sim=layout.similarities.find(s=>s.id===p.simId);
-        const a=layout.threads.find(t=>t.id===p.threadId1), b=layout.threads.find(t=>t.id===p.threadId2);
-        if (!sim||!a||!b||sim.xf===undefined||a.xf===undefined||b.xf===undefined) continue;
-        const sx=GX(sim.xf),sy=GY(sim.yf!);
-        const pt=p.p<0.5
-          ?bezierPt(p.p*2,GX(a.xf),GY(a.yf!),GX((a.xf+sim.xf)/2),GY((a.yf!+sim.yf!)/2),sx,sy)
-          :bezierPt((p.p-.5)*2,sx,sy,GX((sim.xf+b.xf)/2),GY((sim.yf!+b.yf!)/2),GX(b.xf),GY(b.yf!));
-        ctx.globalAlpha=0.9*Math.sin(p.p*Math.PI); ctx.fillStyle=C.amberBright;
-        ctx.beginPath(); ctx.arc(pt.x,pt.y,2.2*z,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
-      }
-
-      // note nodes
-      for (const note of layout.notes) {
-        if (note.xf===undefined) continue;
-        if (activeFilter!=='all'&&note.category!==activeFilter) continue;
-        const lit=noteLit(note), isHov=hovered?.type==='note'&&hovered.id===note.id;
-        const catCol=getCategoryColor(note.category);
-        const catDim=getCategoryColorDim(note.category);
-        const shared=(note.threadIds?.length ?? 1) > 1;
-        const nx=GX(note.xf), ny=GY(note.yf!);
-        // Geteilte Notiz (gehört zu mehreren Threads): gestrichelter Amber-Ring als Marker.
-        if (shared) {
-          const rr=(lit?7:NOTE_R)*z+6*z;
-          ctx.save();
-          ctx.globalAlpha=lit||isHov?0.85:0.5; ctx.strokeStyle=C.amber; ctx.lineWidth=1.4*z;
-          ctx.setLineDash([3*z,3*z]); ctx.lineDashOffset=animT*8;
-          ctx.beginPath(); ctx.arc(nx,ny,rr,0,Math.PI*2); ctx.stroke();
-          ctx.restore();
-        }
-        drawOrb(ctx,nx,ny,lit?7:NOTE_R,isHov?C.white:lit?catCol:catDim,0.08,animT,lit,isHov);
-      }
-
-      // similarity nodes
-      for (const sim of layout.similarities) {
-        if (sim.xf===undefined) continue;
-        const x=GX(sim.xf),y=GY(sim.yf!),lit=simLit(sim),isHov=hovered?.type==='similarity'&&hovered.id===sim.id;
-        const r=(lit?12:SIM_R)*z;
-        ctx.globalAlpha=lit?0.35:0.12; ctx.strokeStyle=C.amber; ctx.lineWidth=lit?1.4:1; ctx.setLineDash([3,4]);
-        ctx.beginPath(); ctx.arc(x,y,r*2.5,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
-        const g=ctx.createRadialGradient(x,y,0,x,y,r*5);
-        g.addColorStop(0,`rgba(244,162,97,${lit?0.45:0.12})`); g.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r*5,0,Math.PI*2); ctx.fill();
-        ctx.save(); ctx.translate(x,y); ctx.rotate(Math.PI/4+animT*(lit?0.55:0.22));
-        const d=r*0.92; ctx.fillStyle=lit?C.amberBright:C.amberDim; ctx.globalAlpha=lit?1:0.6;
-        ctx.beginPath(); ctx.moveTo(0,-d); ctx.lineTo(d,0); ctx.lineTo(0,d); ctx.lineTo(-d,0); ctx.closePath(); ctx.fill();
-        ctx.fillStyle='rgba(255,255,255,0.28)';
-        ctx.beginPath(); ctx.moveTo(0,-d*.5); ctx.lineTo(d*.45,0); ctx.lineTo(0,-d*.08); ctx.closePath(); ctx.fill();
-        ctx.restore(); ctx.globalAlpha=1;
-        const ly=y+r*2.8+8;
-        ctx.font=`${lit?'700':'600'} ${(lit?15:13)*z}px Inter,sans-serif`;
-        ctx.fillStyle=lit?C.amberBright:`rgba(244,162,97,${isHov?0.85:0.5})`; ctx.textAlign='center'; ctx.fillText(sim.label,x,ly);
-        ctx.font=`500 ${(lit?11:9.5)*z}px Inter,sans-serif`; ctx.fillStyle=`rgba(244,162,97,${lit?0.55:0.22})`;
-        ctx.fillText('✦ KI-Verbindung',x,ly+(lit?17:14)*z);
-      }
-
-      // thread nodes
-      for (const th of layout.threads) {
-        if (th.xf===undefined) continue;
-        const isDragging=drag?.threadId===th.id, isClicked=activeThreadId===th.id;
-        const isHov=hovered?.type==='thread'&&hovered.id===th.id;
-        const simHov=!isHov&&hovered?.type==='similarity'&&(()=>{const s=layout.similarities.find(s=>s.id===hovered!.id);return s&&(s.threadId1===th.id||s.threadId2===th.id);})();
-        const lit=isClicked||isHov||!!simHov||isDragging;
-        if (isDragging) { ctx.globalAlpha=0.25; ctx.fillStyle=C.amber; ctx.beginPath(); ctx.arc(GX(th.xf)+4,GY(th.yf!)+6,THREAD_R*z*1.1,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; }
-        drawOrb(ctx,GX(th.xf),GY(th.yf!),THREAD_R,C.amber,0.1,animT,lit,isHov||!!simHov);
-        const rl=THREAD_R*z*(lit?1.08:1);
-        ctx.font=`${lit?'600':'500'} ${(lit?13:11)*z}px Inter,sans-serif`;
-        ctx.fillStyle=lit?C.amber:`rgba(${hexRgb(C.amber)},0.5)`; ctx.textAlign='center';
-        ctx.fillText(th.title,GX(th.xf),GY(th.yf!)+rl+16*z);
-      }
-
-      ctx.restore();
-      rt.current.animT += 0.016;
-      raf = requestAnimationFrame(draw);
+    // ── Schleife: 60 Bilder/s bei Bewegung, sonst 30 (nur die laufenden Striche bewegen sich) ──
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      const now = performance.now();
+      const g = ensureLayout();
+      const moving = Math.abs(cam.tx - cam.x) + Math.abs(cam.ty - cam.y) > 0.05 / cam.z || Math.abs(cam.tz - cam.z) > cam.tz * 1e-4;
+      cam.x += (cam.tx - cam.x) * 0.12; cam.y += (cam.ty - cam.y) * 0.12; cam.z += (cam.tz - cam.z) * 0.12;
+      if (!moving) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
+      const [x0, y0] = toWorld(0, 0), [x1, y1] = toWorld(W, H);
+      VIEW = { x0, y0, x1, y1 };
+      const fading = updateFade(g);
+      const busy = moving || fading || !!drag || !!pinch || now - lastInput < 300;
+      if (!busy && now - lastDraw < 33) return;
+      lastDraw = now; T = now / 1000;
+      draw(g);
     }
-
-    raf = requestAnimationFrame(draw);
+    raf = requestAnimationFrame(frame);
 
     return () => {
+      alive = false;
       cancelAnimationFrame(raf);
-      canvas.removeEventListener('mousedown',  onMouseDown);
-      window.removeEventListener('mousemove',  onWindowMouseMove);
-      window.removeEventListener('mouseup',    onWindowMouseUp);
-      canvas.removeEventListener('mouseleave', onMouseLeave);
-      canvas.removeEventListener('click',      onClick);
-      canvas.removeEventListener('wheel',      onWheel);
-      window.removeEventListener('resize',     resize);
+      if (handle) handle.current = null;
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      canvas.removeEventListener('dblclick', onDblClick);
+      canvas.removeEventListener('wheel', onWheel);
+      window.removeEventListener('resize', resize);
     };
-  // runs exactly once after mount — propsRef keeps values current
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0 }} />;
+  return <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', touchAction: 'none' }} />;
 }

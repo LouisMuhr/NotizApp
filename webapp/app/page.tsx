@@ -12,11 +12,13 @@ import LoginView, { AppUser } from '@/components/LoginView';
 import VelmIcon from '@/components/VelmIcon';
 import { supabase } from '@/lib/supabase';
 import { DEMO_DATA } from '@/lib/demoData';
+import { stressData } from '@/lib/stressData';
 import { fetchTier, hasBookmarklet } from '@/lib/tier';
 
 const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
 const EMPTY: GraphData = { threads: [], notes: [], similarities: [] };
+const CACHE_KEY = 'notiz_graph_cache';
 
 export default function Home() {
   // ── auth ──────────────────────────────────────────────────────────────────
@@ -46,29 +48,47 @@ export default function Home() {
           name: u.user_metadata?.full_name ?? u.email!.split('@')[0],
           initial: (u.user_metadata?.full_name ?? u.email!)[0].toUpperCase(),
         });
-      } else if (!session) {
-        // Only clear if not a demo user
-        setUser(prev => prev?.isDemo ? prev : null);
+      } else {
+        setUser(null);
       }
     });
     return () => subscription.unsubscribe();
   }, []);
 
+  // Ohne Login zeigt die Startseite den Beispiel-Graphen; Anmelden öffnet sich als Overlay darüber.
+  const [authOverlay, setAuthOverlay] = useState<'login' | 'register' | null>(null);
+  const isGuest = !user;
+
+  // ── selection state ───────────────────────────────────────────────────────
+  const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
+  const [selectedNote,   setSelectedNote]   = useState<Note | null>(null);
+  const [selectedSim,    setSelectedSim]    = useState<Similarity | null>(null);
+
+  // Wechsel Gast ↔ Konto: Auswahl aus dem vorherigen Graphen verwerfen.
+  const clearSelection = () => { setSelectedThread(null); setSelectedNote(null); setSelectedSim(null); };
+
+  const handleLogin = (u: AppUser) => {
+    clearSelection();
+    setUser(u);
+    setAuthOverlay(null);
+  };
+
   const handleLogout = async () => {
-    if (!user?.isDemo) await supabase.auth.signOut();
+    await supabase.auth.signOut();
+    // Graph-Cache gehört zum Konto — sonst sähe das nächste Konto im selben Tab kurz die alten Notizen.
+    try { sessionStorage.removeItem(CACHE_KEY); } catch {}
+    clearSelection();
+    setGraphData(EMPTY);
     setUser(null);
   };
 
-  /** Aktuellen Supabase-Access-Token holen (null für Demo-User) */
+  /** Aktuellen Supabase-Access-Token holen */
   const getToken = useCallback(async (): Promise<string | null> => {
-    if (user?.isDemo) return null;
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ?? null;
-  }, [user]);
+  }, []);
 
   // ── graph data ────────────────────────────────────────────────────────────
-  const CACHE_KEY = 'notiz_graph_cache';
-
   function readCache(): GraphData | null {
     try {
       const raw = sessionStorage.getItem(CACHE_KEY);
@@ -83,13 +103,7 @@ export default function Home() {
   const [graphData, setGraphData] = useState<GraphData>(cached ?? EMPTY);
   const [loading, setLoading]     = useState(!cached); // kein Spinner wenn Cache vorhanden
 
-  const fetchGraph = useCallback(async (currentUser?: AppUser | null) => {
-    const u = currentUser ?? user;
-    if (u?.isDemo) {
-      setGraphData(DEMO_DATA);
-      setLoading(false);
-      return;
-    }
+  const fetchGraph = useCallback(async () => {
     const token = await getToken();
     if (!token) return;
     // Nur Spinner zeigen wenn noch kein Cache da
@@ -102,35 +116,37 @@ export default function Home() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getToken]);
 
-  useEffect(() => { if (user) fetchGraph(user); }, [user, fetchGraph]);
+  useEffect(() => { if (user) fetchGraph(); }, [user, fetchGraph]);
 
   // Bookmarklet-Button nur mit passendem Abo; an die User-ID gebunden, damit ein Kontowechsel nichts übernimmt.
   const [tierCheck, setTierCheck] = useState<{ userId: string; allowed: boolean } | null>(null);
   useEffect(() => {
-    if (!user || user.isDemo) return;
+    if (!user) return;
     const userId = user.id;
     fetchTier(userId).then((tier) => setTierCheck({ userId, allowed: hasBookmarklet(tier) }));
   }, [user]);
   const showBookmarklet = !!user && tierCheck?.userId === user.id && tierCheck.allowed;
 
-  // ── selection state ───────────────────────────────────────────────────────
-  const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
-  const [selectedNote,   setSelectedNote]   = useState<Note | null>(null);
-  const [selectedSim,    setSelectedSim]    = useState<Similarity | null>(null);
-
-  // Filter-Pills wurden entfernt → Graph zeigt immer alle Knoten.
-  const activeFilter = 'all';
   const [tooltip, setTooltip]           = useState<{ label: string; x: number; y: number } | null>(null);
+
+  // Suche: Treffer bleiben im Graphen hell, Enter springt zum ersten und öffnet ihn.
+  const [query, setQuery] = useState('');
+
+  // Nur `next dev`: ?stress=40 zeigt Gästen einen generierten Graphen mit 40 Threads (Leistungstest).
+  const [guestData] = useState<GraphData>(() => {
+    if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') return DEMO_DATA;
+    const n = Number(new URLSearchParams(window.location.search).get('stress'));
+    return n > 0 ? stressData(n) : DEMO_DATA;
+  });
 
   const graphHandle = useRef<GraphHandle | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null);
+        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null); setAuthOverlay(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -154,7 +170,6 @@ export default function Home() {
   const [showCreate, setShowCreate] = useState(false);
 
   const handleCreateNote = useCallback(async (data: NoteCreateData) => {
-    if (user?.isDemo) { setShowCreate(false); return; }
     const token = await getToken();
     if (!token) return;
     const res = await fetch('/api/notes', {
@@ -171,9 +186,9 @@ export default function Home() {
       const msg = await res.json().catch(() => null);
       alert(`Notiz konnte nicht erstellt werden: ${msg?.error ?? `Fehler ${res.status}`}`);
     }
-  }, [user, getToken, fetchGraph]);
+  }, [getToken, fetchGraph]);
 
-  const handleDeleteNote = useCallback(async (id: string) => {
+  const handleDeleteNote = async (id: string) => {
     // Sofort aus lokalem State entfernen — kein Reload, kein Flackern
     setGraphData(prev => ({
       ...prev,
@@ -185,18 +200,16 @@ export default function Home() {
       })),
     }));
     setSelectedNote(null);
-    if (!user?.isDemo) {
-      const token = await getToken();
-      if (token) await fetch(`/api/notes/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    }
-  }, [user, getToken]);
+    const token = await getToken();
+    if (token) await fetch(`/api/notes/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  };
 
   // ── realtime: Graph neu laden wenn Worker synthetisiert ───────────────────
   useEffect(() => {
-    if (!user || user.isDemo) return;
+    if (!user) return;
     const channel = supabase
       .channel('graph-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'threads' }, () => {
@@ -207,11 +220,17 @@ export default function Home() {
   }, [user, fetchGraph]);
 
   // ── derived ───────────────────────────────────────────────────────────────
+  const shown = isGuest ? guestData : graphData;
+  const graphLoading = !isGuest && loading;
   const threadNotes: Note[] = selectedThread
-    ? graphData.notes.filter(n => selectedThread.noteIds.includes(n.id))
+    ? shown.notes.filter(n => selectedThread.noteIds.includes(n.id))
     : [];
-  const simThread1 = selectedSim ? graphData.threads.find(t => t.id === selectedSim.threadId1) : undefined;
-  const simThread2 = selectedSim ? graphData.threads.find(t => t.id === selectedSim.threadId2) : undefined;
+  const simThread1 = selectedSim ? shown.threads.find(t => t.id === selectedSim.threadId1) : undefined;
+  const simThread2 = selectedSim ? shown.threads.find(t => t.id === selectedSim.threadId2) : undefined;
+  const q = query.trim().toLowerCase();
+  const searchHits = q
+    ? shown.threads.filter(t => t.title.toLowerCase().includes(q)).length + shown.notes.filter(n => (n.title || '').toLowerCase().includes(q)).length
+    : 0;
 
   // ── render ────────────────────────────────────────────────────────────────
 
@@ -220,8 +239,6 @@ export default function Home() {
       <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #F4A261', borderTopColor: 'transparent', animation: 'velm-spin 0.8s linear infinite' }} />
     </div>
   );
-
-  if (!user) return <LoginView onLogin={setUser} />;
 
   const btnStyle: React.CSSProperties = {
     width: 36, height: 36, borderRadius: '50%',
@@ -235,10 +252,9 @@ export default function Home() {
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* GRAPH */}
-      {!loading && (
+      {!graphLoading && (
         <Graph
-          data={graphData}
-          activeFilter={activeFilter}
+          data={shown}
           onThreadClick={handleThreadClick}
           onNoteClick={handleNoteClick}
           onSimilarityClick={handleSimilarityClick}
@@ -246,11 +262,13 @@ export default function Home() {
           activeSimilarityId={selectedSim?.id ?? null}
           onTooltip={handleTooltip}
           handleRef={graphHandle}
+          query={query}
+          insets={{ top: 76, right: 24, bottom: 90, left: isGuest ? 384 : 24 }}
         />
       )}
 
       {/* LOADING */}
-      {loading && (
+      {graphLoading && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--amber)', borderTopColor: 'transparent', animation: 'velm-spin 0.8s linear infinite', margin: '0 auto 12px' }} />
@@ -270,17 +288,60 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Suche */}
+        <div style={{ marginLeft: 22, display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 12px', width: 260, maxWidth: '30vw', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 17, pointerEvents: 'all' }}>
+          <span style={{ color: 'var(--t3)', fontSize: 14 }}>⌕</span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); }
+              if (e.key !== 'Enter') return;
+              const m = graphHandle.current?.flyToMatch(query);
+              if (m?.type === 'note') setSelectedNote(m.note);
+              else if (m?.type === 'thread') { setSelectedSim(null); setSelectedNote(null); setSelectedThread(m.thread); }
+            }}
+            placeholder="Suchen…"
+            className="velm-field"
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--t1)', fontSize: 13, fontFamily: 'Inter, sans-serif' }}
+          />
+          {query.trim() && (
+            <span style={{ fontSize: 11, color: 'var(--t3)', whiteSpace: 'nowrap' }}>
+              {searchHits === 0 ? 'keine Treffer' : `${searchHits} Treffer`}
+            </span>
+          )}
+        </div>
+
+        {/* Right (Gast): Anmelden / Konto erstellen */}
+        {!user && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'all' }}>
+            <button
+              onClick={() => setAuthOverlay('login')}
+              className="velm-hover"
+              style={{ padding: '7px 16px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 20, fontSize: 12.5, fontWeight: 600, color: 'var(--t1)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+            >
+              Anmelden
+            </button>
+            <button
+              onClick={() => setAuthOverlay('register')}
+              className="velm-primary"
+              style={{ padding: '7px 16px', background: '#F4A261', border: 'none', borderRadius: 20, fontSize: 12.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif', boxShadow: '0 0 18px rgba(244,162,97,0.25)' }}
+            >
+              Konto erstellen
+            </button>
+          </div>
+        )}
+
         {/* Right: create button + user chip */}
+        {user && (
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'all' }}>
           {/* + Notiz Button */}
-          {!user.isDemo && (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(244,162,97,0.12)', border: '1px solid rgba(244,162,97,0.25)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
-            >
-              ＋ Notiz
-            </button>
-          )}
+          <button
+            onClick={() => setShowCreate(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(244,162,97,0.12)', border: '1px solid rgba(244,162,97,0.25)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
+          >
+            ＋ Notiz
+          </button>
           {/* Bookmarklet */}
           {showBookmarklet && (
             <Link
@@ -301,11 +362,38 @@ export default function Home() {
               onClick={handleLogout}
               style={{ background: 'none', border: 'none', color: 'var(--t3)', fontSize: 11, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
             >
-              {user.isDemo ? 'Demo beenden' : 'Abmelden'}
+              Abmelden
             </button>
           </div>
         </div>
+        )}
       </div>
+
+      {/* GAST-HINWEIS: erklärt, dass das ein Beispiel ist */}
+      {isGuest && !authOverlay && (
+        <div style={{ position: 'absolute', left: 22, bottom: 24, width: 340, maxWidth: 'calc(100vw - 44px)', padding: '18px 20px', background: 'rgba(22,18,14,0.88)', border: '1px solid var(--border2)', borderRadius: 16, backdropFilter: 'blur(14px)', zIndex: 40, animation: 'velm-rise 0.4s ease-out' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--amber)', marginBottom: 8 }}>
+            Beispiel-Graph
+          </div>
+          <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 19, fontWeight: 500, color: 'var(--t1)', lineHeight: 1.3, marginBottom: 8 }}>
+            So sieht dein Wissen in Velm aus.
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 14 }}>
+            Velm ordnet deine Notizen automatisch in Threads und findet Verbindungen zwischen ihnen. Klick dich durch, oder melde dich an, um deinen eigenen Graphen zu sehen.
+          </p>
+          <button
+            onClick={() => setAuthOverlay('login')}
+            className="velm-primary"
+            style={{ width: '100%', padding: '10px', background: '#F4A261', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+          >
+            Mit Velm-Konto anmelden →
+          </button>
+        </div>
+      )}
+
+      {authOverlay && (
+        <LoginView key={authOverlay} initialMode={authOverlay} onLogin={handleLogin} onClose={() => setAuthOverlay(null)} />
+      )}
 
       {/* ZOOM BUTTONS */}
       <div style={{ position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5, zIndex: 20 }}>
@@ -326,18 +414,18 @@ export default function Home() {
         <ThreadPanel
           thread={selectedThread}
           notes={threadNotes}
-          similarities={graphData.similarities}
-          allThreads={graphData.threads}
+          similarities={shown.similarities}
+          allThreads={shown.threads}
           onNoteClick={handleNoteClick}
           onClose={() => { setSelectedThread(null); graphHandle.current?.zoomReset(); }}
         />
       )}
 
       {selectedNote && (
-        <NoteViewModal note={selectedNote} onClose={() => setSelectedNote(null)} onDelete={handleDeleteNote} />
+        <NoteViewModal note={selectedNote} onClose={() => setSelectedNote(null)} onDelete={user ? handleDeleteNote : undefined} />
       )}
 
-      {showCreate && (
+      {showCreate && user && (
         <NoteCreateModal
           threads={graphData.threads}
           userId={user.id}
