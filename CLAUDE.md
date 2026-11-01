@@ -80,10 +80,10 @@ Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDe
   hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
   `subscribeRemote()` (INSERT/UPDATE/DELETE). Archivieren = `archived_at` setzen, nie DELETE; endgültig
   löschen = Tombstone + `deleteRemote()` (Batches à 200).
-- `resyncForUser(uid, mode)`: Default `'replace'` (Anmeldung = Zweitgerät, Kontostand gilt). `'merge'` nur
-  beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
-  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler bricht
-  ab) — Details unten.
+- `resyncForUser(uid, mode)`: Default `'replace'` (Zweitgerät, Kontostand gilt); `'merge'` nur beim Routine-Start
+  und Erstupload (`uploadLocalNotes`). Anmeldung/Reset rufen `syncAfterSignIn()`: leeres Konto + nie gesyncte
+  Notizen → `uploadLocalNotes` (Konto im Web angelegt); `@notizapp_account_bound` (setzt `detachSync`) hält Reste
+  eines abgemeldeten Kontos raus (A5). „Email not confirmed" → Code-Eingabe; Webapp bestätigt auch per Code.
 ### Konto-Zustände (lokal-first)
 `src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
 `user.email_confirmed_at` abgeleitet, nie aus einem lokalen Flag. **Die App legt nie selbst einen
@@ -149,7 +149,7 @@ Interpolation via `%{var}` oder `{{var}}`. `LanguageContext.tsx` → `useLanguag
 setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, Umschalter unter Darstellung.
 **Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
 `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
-**Webapp (Insel-Graph)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`); Daten `app/api/graph/route.ts` (ohne archivierte). Ohne Login zeigt `/` den Beispiel-Graphen (`lib/demoData.ts`), Login als Overlay (`LoginView` mit `onClose`; Vollbild-Variante für `/bookmarklet`). Graph: jeder Thread eine Insel, Notizen als Pillen, KI-Verbindungen leise Linien (Brücke + Label erst bei Fokus). Layout `lib/graphLayout.ts` (erst Cluster, dann verteilen; Amber-Töne, Nachbarn verschieden), Zeichnen `components/Graph.tsx` (kein SSR; Detailstufen beim Zoom, Labels ohne Überlappung, Zwischenbild-Cache + 30 fps im Leerlauf — Darstellung nicht ohne Leistungsmessung ändern). Notizen stecken in genau einem Thread; Mehrfach-Zuordnung nur in Altdaten.
+**Webapp (Insel-Graph)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`); Daten `app/api/graph/route.ts` (ohne archivierte). Ohne Login zeigt `/` den Beispiel-Graphen (`lib/demoData.ts`), Login als Overlay (`LoginView` mit `onClose`; Vollbild-Variante für `/bookmarklet`). Graph: jeder Thread eine Insel, Notizen als Pillen, KI-Verbindungen leise Linien (Brücke + Label erst bei Fokus). Layout `lib/graphLayout.ts` (erst Cluster, dann verteilen; Amber-Töne, Nachbarn verschieden), Zeichnen `components/Graph.tsx` (kein SSR; Detailstufen beim Zoom, Labels ohne Überlappung, Zwischenbild-Cache + 30 fps im Leerlauf — Darstellung nicht ohne Leistungsmessung ändern). Notizen stecken in genau einem Thread; Mehrfach-Zuordnung nur in Altdaten. Erstbesuch (nur Demo, `velm_intro_seen` in localStorage): Intro lose Notizen → Inseln → Verbindungen (`introKey`/`onIntro`, Karte pro Phase), danach `spotlight` = Kamera zu `DEMO_SPOTLIGHT` + Faden zwischen dessen zwei Notizen; Demo-Verbindungen zeigen auf konkrete Notizen, nicht auf Oberbegriffe. Leerlauf: Insel-Schein (nur Detailstufe) + Lichtpunkte auf Verbindungen als Sprites außerhalb des Zwischenbilds, aus bei reduced-motion. Gast: Hero-Satz links (`.velm-hero`, < 900 px aus), Haupt-CTA „Kostenlos starten" → Registrierung.
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`

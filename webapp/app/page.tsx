@@ -4,14 +4,14 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { GraphData, Thread, Note, Similarity } from '@/types';
-import { GraphHandle } from '@/components/Graph';
+import { GraphHandle, GraphSpotlight, IntroEvent } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
 import { NoteViewModal, NoteCreateModal, NoteCreateData } from '@/components/NoteModal';
 import LoginView, { AppUser } from '@/components/LoginView';
 import VelmIcon from '@/components/VelmIcon';
 import { supabase } from '@/lib/supabase';
-import { DEMO_DATA } from '@/lib/demoData';
+import { DEMO_DATA, DEMO_SPOTLIGHT } from '@/lib/demoData';
 import { stressData } from '@/lib/stressData';
 import { fetchTier, hasBookmarklet } from '@/lib/tier';
 
@@ -19,6 +19,27 @@ const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
 const EMPTY: GraphData = { threads: [], notes: [], similarities: [] };
 const CACHE_KEY = 'notiz_graph_cache';
+const INTRO_SEEN_KEY = 'velm_intro_seen';
+
+type IntroStep = 'scatter' | 'gather' | 'connect';
+const INTRO_STEPS: IntroStep[] = ['scatter', 'gather', 'connect'];
+const INTRO_TEXT: Record<IntroStep, { kicker: string; title: (n: number) => string; body: string }> = {
+  scatter: { kicker: 'Deine Notizen', title: n => `${n} Gedanken, kreuz und quer.`,
+    body: 'Notiert zwischendurch, im Zug, beim Lesen. Ohne Ordner, ohne System.' },
+  gather: { kicker: 'Velm sortiert', title: () => 'Was zusammengehört, findet sich.',
+    body: 'Velm liest mit und bündelt deine Notizen zu Threads. Du legst weder Ordner noch Tags an.' },
+  connect: { kicker: 'Velm verbindet', title: () => 'Und entdeckt, was du übersehen hast.',
+    body: 'Auch zwischen Themen, die auf den ersten Blick nichts miteinander zu tun haben.' },
+};
+
+const cardStyle: React.CSSProperties = {
+  position: 'absolute', left: 22, bottom: 24, width: 340, maxWidth: 'calc(100vw - 44px)', padding: '18px 20px',
+  background: 'rgba(22,18,14,0.88)', border: '1px solid var(--border2)', borderRadius: 16, backdropFilter: 'blur(14px)',
+  zIndex: 40, animation: 'velm-rise 0.4s ease-out',
+};
+const kickerStyle: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--amber)', marginBottom: 8 };
+const cardTitleStyle: React.CSSProperties = { fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 19, fontWeight: 500, color: 'var(--t1)', lineHeight: 1.3, marginBottom: 8 };
+const linkBtnStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--t3)', fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif' };
 
 export default function Home() {
   // ── auth ──────────────────────────────────────────────────────────────────
@@ -143,10 +164,38 @@ export default function Home() {
 
   const graphHandle = useRef<GraphHandle | null>(null);
 
+  // Erstbesuch (nur Beispiel-Graph): Intro „lose Notizen → Inseln → Verbindungen", danach fliegt die Kamera
+  // zu einer Verbindung und die Karte erklärt sie. Wer weniger Bewegung will, bekommt direkt die Verbindung.
+  const [introKey, setIntroKey] = useState(() => {
+    if (typeof window === 'undefined' || guestData !== DEMO_DATA) return 0;
+    try { if (localStorage.getItem(INTRO_SEEN_KEY)) return 0; } catch { return 0; }
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
+  });
+  const [introStep, setIntroStep] = useState<IntroStep | null>(null);
+  const [spotlight, setSpotlight] = useState<GraphSpotlight | null>(() => {
+    if (typeof window === 'undefined' || guestData !== DEMO_DATA) return null;
+    try { if (localStorage.getItem(INTRO_SEEN_KEY)) return null; } catch { return null; }
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? DEMO_SPOTLIGHT : null;
+  });
+
+  const handleIntro = useCallback((e: IntroEvent) => {
+    if (e === 'scatter' || e === 'gather' || e === 'connect') { setIntroStep(e); return; }
+    setIntroStep(null);
+    try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
+    // Abbruch durch Ziehen/Zoomen: nicht die Kamera wegreißen, der Besucher erkundet schon selbst.
+    if (e === 'done') setSpotlight(DEMO_SPOTLIGHT);
+  }, []);
+  const replayIntro = () => { clearSelection(); setSpotlight(null); setIntroKey(k => k + 1); };
+  const closeSpotlight = () => {
+    setSpotlight(null); graphHandle.current?.zoomReset();
+    try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null); setAuthOverlay(null);
+        graphHandle.current?.skipIntro();
+        setSelectedThread(null); setSelectedNote(null); setSelectedSim(null); setAuthOverlay(null); setSpotlight(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -154,13 +203,13 @@ export default function Home() {
   }, []);
 
   const handleThreadClick = useCallback((thread: Thread) => {
-    setSelectedSim(null); setSelectedNote(null);
+    setSelectedSim(null); setSelectedNote(null); setSpotlight(null);
     setSelectedThread(prev => prev?.id === thread.id ? null : thread);
   }, []);
 
   const handleNoteClick     = useCallback((note: Note)       => { setSelectedNote(note); }, []);
   const handleSimilarityClick = useCallback((sim: Similarity) => {
-    setSelectedThread(null); setSelectedNote(null); setSelectedSim(sim);
+    setSelectedThread(null); setSelectedNote(null); setSelectedSim(sim); setSpotlight(null);
   }, []);
   const handleTooltip = useCallback((label: string | null, x: number, y: number) => {
     setTooltip(label ? { label, x, y } : null);
@@ -264,6 +313,9 @@ export default function Home() {
           handleRef={graphHandle}
           query={query}
           insets={{ top: 76, right: 24, bottom: 90, left: isGuest ? 384 : 24 }}
+          introKey={isGuest ? introKey : 0}
+          onIntro={handleIntro}
+          spotlight={isGuest ? spotlight : null}
         />
       )}
 
@@ -369,30 +421,113 @@ export default function Home() {
         )}
       </div>
 
+      {/* INTRO: eine Karte pro Phase, erzählt mit, was der Graph gerade zeigt */}
+      {isGuest && !authOverlay && introStep && (
+        <div key={introStep} style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ ...kickerStyle, marginBottom: 0 }}>{INTRO_TEXT[introStep].kicker}</div>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {INTRO_STEPS.map((s, i) => (
+                <span key={s} style={{ width: 6, height: 6, borderRadius: 3, background: i <= INTRO_STEPS.indexOf(introStep) ? 'var(--amber)' : 'rgba(255,255,255,0.12)', transition: 'background 0.3s' }} />
+              ))}
+            </div>
+          </div>
+          <div style={cardTitleStyle}>{INTRO_TEXT[introStep].title(shown.notes.length)}</div>
+          <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 12 }}>{INTRO_TEXT[introStep].body}</p>
+          <button onClick={() => graphHandle.current?.skipIntro()} className="velm-hover" style={linkBtnStyle}>
+            Überspringen →
+          </button>
+        </div>
+      )}
+
+      {/* SPOTLIGHT: eine Verbindung, die aus zwei konkreten Notizen entsteht */}
+      {isGuest && !authOverlay && !introStep && spotlight && (() => {
+        const sim = shown.similarities.find(s => s.id === spotlight.similarityId);
+        const notes = spotlight.noteIds.map(id => shown.notes.find(n => n.id === id)).filter((n): n is Note => !!n);
+        if (!sim) return null;
+        return (
+          <div style={cardStyle}>
+            <div style={kickerStyle}>✦ Verbindung entdeckt</div>
+            <div style={cardTitleStyle}>{sim.label}</div>
+            <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 12 }}>{sim.explanation}</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {notes.map(n => (
+                <button
+                  key={n.id}
+                  onClick={() => setSelectedNote(n)}
+                  className="velm-hover"
+                  style={{ padding: '4px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 12, fontSize: 11.5, color: 'var(--t2)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+                >
+                  {n.title}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={closeSpotlight}
+              className="velm-primary"
+              style={{ width: '100%', padding: '10px', background: '#F4A261', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+            >
+              Selbst erkunden →
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* HERO: ein Satz statt Erklärtext, in der freien Spalte links über der Karte */}
+      {isGuest && (
+        <div className="velm-hero" style={{ position: 'absolute', left: 42, top: 104, width: 320, zIndex: 35, pointerEvents: 'none', animation: 'velm-rise 0.6s ease-out' }}>
+          <h1 style={{ fontFamily: "var(--font-instrument), 'Instrument Serif', Georgia, serif", fontSize: 52, fontWeight: 400, lineHeight: 1.02, color: 'var(--t1)', letterSpacing: '-0.01em', marginBottom: 16 }}>
+            Du schreibst.<br /><span style={{ color: 'var(--amber)' }}>Velm verbindet.</span>
+          </h1>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--t2)' }}>
+            Notizen landen, wie sie kommen. Velm ordnet sie zu Threads und findet die Verbindungen dazwischen.
+          </p>
+        </div>
+      )}
+
       {/* GAST-HINWEIS: erklärt, dass das ein Beispiel ist */}
-      {isGuest && !authOverlay && (
-        <div style={{ position: 'absolute', left: 22, bottom: 24, width: 340, maxWidth: 'calc(100vw - 44px)', padding: '18px 20px', background: 'rgba(22,18,14,0.88)', border: '1px solid var(--border2)', borderRadius: 16, backdropFilter: 'blur(14px)', zIndex: 40, animation: 'velm-rise 0.4s ease-out' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--amber)', marginBottom: 8 }}>
+      {isGuest && !authOverlay && !introStep && !spotlight && (
+        <div style={cardStyle}>
+          <div style={kickerStyle}>
             Beispiel-Graph
           </div>
-          <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 19, fontWeight: 500, color: 'var(--t1)', lineHeight: 1.3, marginBottom: 8 }}>
-            So sieht dein Wissen in Velm aus.
-          </div>
           <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 14 }}>
-            Velm ordnet deine Notizen automatisch in Threads und findet Verbindungen zwischen ihnen. Klick dich durch, oder melde dich an, um deinen eigenen Graphen zu sehen.
+            Das sind Beispiel-Notizen. Fahr über Threads und Verbindungen oder klick sie an.
           </p>
           <button
-            onClick={() => setAuthOverlay('login')}
+            onClick={() => setAuthOverlay('register')}
             className="velm-primary"
             style={{ width: '100%', padding: '10px', background: '#F4A261', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
           >
-            Mit Velm-Konto anmelden →
+            Kostenlos starten →
           </button>
+          <button
+            onClick={() => setAuthOverlay('login')}
+            className="velm-hover"
+            style={{ width: '100%', marginTop: 8, padding: '9px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--t2)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+          >
+            Ich habe schon ein Konto
+          </button>
+          {guestData === DEMO_DATA && (
+            <button onClick={replayIntro} className="velm-hover" style={{ ...linkBtnStyle, display: 'block', margin: '12px auto 0' }}>
+              ↺ Intro noch einmal ansehen
+            </button>
+          )}
         </div>
       )}
 
       {authOverlay && (
         <LoginView key={authOverlay} initialMode={authOverlay} onLogin={handleLogin} onClose={() => setAuthOverlay(null)} />
+      )}
+
+      {/* TEMP (nur zum Testen, vor dem PR entfernen): Intro jederzeit neu abspielen */}
+      {process.env.NODE_ENV === 'development' && isGuest && guestData === DEMO_DATA && (
+        <button
+          onClick={() => { try { localStorage.removeItem(INTRO_SEEN_KEY); } catch {} replayIntro(); }}
+          style={{ position: 'absolute', right: 22, bottom: 28, zIndex: 45, padding: '8px 14px', background: 'rgba(244,162,97,0.12)', border: '1px dashed rgba(244,162,97,0.5)', borderRadius: 18, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+        >
+          ▶ Intro abspielen (Test)
+        </button>
       )}
 
       {/* ZOOM BUTTONS */}

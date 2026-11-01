@@ -362,6 +362,7 @@ const en: typeof de = {
     toastEnterEmailPassword: 'Please enter email and password.',
     toastSignInFailed: 'Sign in failed: ',
     toastConfirmEmail: 'Sign-in incomplete. Please confirm your email.',
+    toastConfirmBeforeSignIn: 'Your account isn’t confirmed yet. Enter the code from the email or request a new one.',
     toastPasswordsMismatch: 'Passwords do not match.',
     toastPasswordTooShort: 'Password must be at least 6 characters.',
     toastAccountSecured: 'Account secured. Your notes are now syncing.',

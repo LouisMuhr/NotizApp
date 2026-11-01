@@ -361,6 +361,7 @@ export default {
     toastEnterEmailPassword: 'Bitte E-Mail und Passwort eingeben.',
     toastSignInFailed: 'Anmeldung fehlgeschlagen: ',
     toastConfirmEmail: 'Anmeldung unvollständig. Bitte E-Mail bestätigen.',
+    toastConfirmBeforeSignIn: 'Dein Konto ist noch nicht bestätigt. Gib den Code aus der Mail ein oder fordere einen neuen an.',
     toastPasswordsMismatch: 'Passwörter stimmen nicht überein.',
     toastPasswordTooShort: 'Passwort muss mindestens 6 Zeichen haben.',
     toastAccountSecured: 'Konto gesichert. Deine Notizen werden jetzt synchronisiert.',

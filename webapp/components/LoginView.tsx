@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import VelmIcon from '@/components/VelmIcon';
 
@@ -28,24 +28,49 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
   const [pwVisible, setPwVisible] = useState(false);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
+  // Bestätigung per Code wie in der App: Supabase gibt nach signUp() keine Session heraus, solange die
+  // Adresse unbestätigt ist. Erst verifyOtp({type:'signup'}) bestätigt und meldet in einem Schritt an.
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
+  const [code, setCode]             = useState('');
+  const [resendIn, setResendIn]     = useState(0);
+  const [notice, setNotice]         = useState('');
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn(v => v - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
 
   const reset = () => {
     setName(''); setEmail(''); setPassword(''); setConfirmPw('');
     setError(''); setLoading(false); setPwVisible(false);
+    setConfirmFor(null); setCode(''); setNotice('');
   };
   const switchMode = (m: 'login' | 'register') => { reset(); setMode(m); };
+  const toAppUser = (u: { id: string; email?: string; user_metadata?: { full_name?: string } }): AppUser => {
+    const label = u.user_metadata?.full_name?.trim() || u.email!.split('@')[0];
+    return { id: u.id, email: u.email!, name: label, initial: label[0].toUpperCase() };
+  };
+  const askForCode = (address: string) => {
+    setConfirmFor(address); setCode(''); setPassword(''); setConfirmPw(''); setError(''); setLoading(false);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) { setError('Bitte alle Felder ausfüllen.'); return; }
     setLoading(true); setError('');
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
+    // Registriert, aber nie bestätigt (z. B. Fenster geschlossen): direkt zur Code-Eingabe.
+    if (err?.code === 'email_not_confirmed' || /not confirmed/i.test(err?.message ?? '')) {
+      askForCode(email.trim());
+      setNotice('Dein Konto ist noch nicht bestätigt. Gib den Code aus der Mail ein oder fordere einen neuen an.');
+      return;
+    }
     if (err || !data.user) {
       setError(err?.message ?? 'Anmeldung fehlgeschlagen.');
       setLoading(false); return;
     }
-    const u = data.user;
-    onLogin({ id: u.id, email: u.email!, name: u.email!.split('@')[0], initial: u.email![0].toUpperCase() });
+    onLogin(toAppUser(data.user));
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -54,13 +79,48 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
     if (password !== confirmPw)        { setError('Passwörter stimmen nicht überein.'); return; }
     if (password.length < 6)           { setError('Passwort muss mind. 6 Zeichen lang sein.'); return; }
     setLoading(true); setError('');
-    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() } } });
+    // `locale` liest das Mail-Template ({{ .Data.locale }}), wie bei der Registrierung in der App.
+    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim(), locale: 'de' } } });
     if (err || !data.user) {
       setError(err?.message ?? 'Registrierung fehlgeschlagen.');
       setLoading(false); return;
     }
-    const u = data.user;
-    onLogin({ id: u.id, email: u.email!, name: name.trim(), initial: name.trim()[0].toUpperCase() });
+    // Bestätigungspflicht im Projekt aus: signUp() meldet direkt an.
+    if (data.session) { onLogin(toAppUser(data.user)); return; }
+    // Bereits bestätigte Adresse: Supabase meldet keinen Fehler, verschickt aber auch keinen Code
+    // (leere identities). Ohne diesen Hinweis würde man auf eine Mail warten, die nie kommt.
+    if (data.user.identities?.length === 0) {
+      setError('Für diese Adresse gibt es schon ein Konto. Melde dich an.');
+      setLoading(false); return;
+    }
+    askForCode(email.trim());
+    setNotice('');
+  };
+
+  const handleConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmFor || !code.trim()) { setError('Bitte den Code aus der Mail eingeben.'); return; }
+    setLoading(true); setError('');
+    const { data, error: err } = await supabase.auth.verifyOtp({ email: confirmFor, token: code.trim(), type: 'signup' });
+    if (err || !data.session?.user) {
+      setError('Der Code ist ungültig oder abgelaufen. Fordere bei Bedarf einen neuen an.');
+      setLoading(false); return;
+    }
+    onLogin(toAppUser(data.session.user));
+  };
+
+  const handleResend = async () => {
+    if (!confirmFor || resendIn > 0) return;
+    setError(''); setNotice('');
+    const { error: err } = await supabase.auth.resend({ type: 'signup', email: confirmFor });
+    if (err) {
+      // Rate-Limit: Supabase nennt die Restzeit im Text ("after 47 seconds") → als Countdown zeigen.
+      const wait = Number(/(\d+)\s*seconds?/i.exec(err.message)?.[1]);
+      if (Number.isFinite(wait) && wait > 0) { setResendIn(wait); return; }
+      setError(err.message); return;
+    }
+    setResendIn(60);
+    setNotice('Neuer Code ist unterwegs.');
   };
 
   const demoLogin = () => {
@@ -95,6 +155,40 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
           </div>
         </div>
 
+        {confirmFor ? (
+          <form onSubmit={handleConfirm} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            <div>
+              <div style={s.confirmTitle}>Fast geschafft</div>
+              <p style={s.confirmText}>
+                Wir haben einen 6-stelligen Code an <strong style={{ color: '#F2EDE6', fontWeight: 600 }}>{confirmFor}</strong> geschickt.
+                Gib ihn hier ein. Das geht auch später in der Velm-App unter Einstellungen → Konto → Anmelden.
+              </p>
+            </div>
+            <div>
+              <label style={s.label}>Bestätigungscode</label>
+              <input
+                type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus
+                value={code} onChange={e => { setCode(e.target.value.replace(/\s/g, '')); setError(''); }}
+                style={{ ...s.input, fontSize: 18, letterSpacing: '0.3em', textAlign: 'center' }} placeholder="123456"
+              />
+            </div>
+
+            {notice && !error && <div style={s.noticeBox}>{notice}</div>}
+            {error && <div style={s.errorBox}>{error}</div>}
+
+            <button type="submit" disabled={loading} style={{ ...s.primaryBtn, opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'Wird bestätigt…' : 'Konto bestätigen →'}
+            </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <button type="button" onClick={handleResend} disabled={resendIn > 0} style={{ ...s.switchLink, opacity: resendIn > 0 ? 0.5 : 1, cursor: resendIn > 0 ? 'default' : 'pointer' }}>
+                {resendIn > 0 ? `Neuer Code in ${resendIn} s` : 'Code erneut senden'}
+              </button>
+              <button type="button" onClick={() => switchMode('register')} style={{ ...s.switchLink, color: 'rgba(160,144,128,0.7)', fontWeight: 500 }}>
+                Andere E-Mail-Adresse
+              </button>
+            </div>
+          </form>
+        ) : (<>
         {/* Tabs */}
         <div style={s.tabs}>
           <button style={{ ...s.tab, ...(mode === 'login' ? s.tabActive : {}) }} onClick={() => switchMode('login')}>
@@ -155,6 +249,7 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
           }
         </p>
         {!isReg && <p style={s.footnote}>Daten bleiben lokal gespeichert.</p>}
+        </>)}
       </div>
     </div>
   );
@@ -231,6 +326,13 @@ const s: Record<string, React.CSSProperties> = {
     position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
     background: 'none', border: 'none', cursor: 'pointer',
     color: 'rgba(160,144,128,0.5)', fontSize: 12, padding: 4,
+  },
+  confirmTitle: { fontFamily: "var(--font-instrument), 'Instrument Serif', Georgia, serif", fontSize: 28, color: '#F2EDE6', lineHeight: 1.1, marginBottom: 8 },
+  confirmText: { fontSize: 13, color: 'rgba(160,144,128,0.85)', lineHeight: 1.6 },
+  noticeBox: {
+    fontSize: 13, color: '#F2D3B0',
+    padding: '9px 13px', background: 'rgba(244,162,97,0.08)',
+    border: '1px solid rgba(244,162,97,0.2)', borderRadius: 8,
   },
   errorBox: {
     fontSize: 13, color: '#E88080',

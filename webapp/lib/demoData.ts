@@ -68,14 +68,21 @@ export const DEMO_DATA: GraphData = {
   notes: NOTES.map(({ date, ...n }) => ({
     ...n, threadId: n.threadIds[0], createdAt: `${date}T09:00:00Z`, updatedAt: `${date}T09:00:00Z`,
   })),
+  // Verbindungen zeigen auf konkrete Notizen statt auf Oberbegriffe — erst das wirkt wie eine Entdeckung.
   similarities: [
-    { id: 'demo-s1', threadId1: 'demo-t1', threadId2: 'demo-t2', label: 'Selbstoptimierung',
-      explanation: 'Beide Threads drehen sich um persönliches Wachstum durch Methoden und Wissen.' },
-    { id: 'demo-s2', threadId1: 'demo-t2', threadId2: 'demo-t3', label: 'Wissensmanagement',
-      explanation: 'Lerntechniken wie der Zettelkasten fließen direkt in die Projektideen ein.' },
-    { id: 'demo-s3', threadId1: 'demo-t1', threadId2: 'demo-t4', label: 'Energie & Rhythmus',
-      explanation: 'Konzentration hängt an Schlaf und Routinen: wer ausgeruht ist, arbeitet fokussierter.' },
-    { id: 'demo-s4', threadId1: 'demo-t2', threadId2: 'demo-t5', label: 'Sprachenlernen',
-      explanation: 'Japanisch für die Reise wird mit denselben Techniken gelernt wie im Lernen-Thread: Karteikarten und Wiederholung.' },
+    { id: 'demo-s1', threadId1: 'demo-t1', threadId2: 'demo-t2', label: 'Kurz schlägt lang',
+      explanation: '25 Minuten Pomodoro, 10–15 Minuten Karteikarten am Tag: In beiden Threads funktionieren kurze, regelmäßige Einheiten besser als lange Sessions.' },
+    { id: 'demo-s2', threadId1: 'demo-t2', threadId2: 'demo-t3', label: 'Zettelkasten als Produkt',
+      explanation: 'Beim Zettelkasten-Prinzip notierst du „Verbindungen statt Ordner — genau das sollte eine Notiz-App automatisch können“. Die Second-Brain-App aus deinen Projektideen ist dieser Satz als Produkt.' },
+    { id: 'demo-s3', threadId1: 'demo-t1', threadId2: 'demo-t4', label: 'Der Fokus beginnt am Abend',
+      explanation: 'Deine Deep-Work-Regeln legen die wichtigen Aufgaben auf den Morgen. Dein Schlaf-Tracking zeigt aber: spätes Essen und Alkohol kosten Tiefschlaf. Ob der Fokus-Morgen gelingt, entscheidet sich am Abend davor.' },
+    { id: 'demo-s4', threadId1: 'demo-t2', threadId2: 'demo-t5', label: 'Anki ist Spaced Repetition',
+      explanation: 'Die Vokabelkarten für Japanisch sind dieselbe Methode wie „Spaced Repetition“ im Lern-Thread. 10 neue Wörter am Tag passen genau in die 10–15 Minuten, die du dort notiert hast.' },
+    { id: 'demo-s5', threadId1: 'demo-t4', threadId2: 'demo-t5', label: 'Morgenlicht gegen Jetlag',
+      explanation: 'Deine Morgenroutine mit 10 Minuten Licht draußen hilft auch, die innere Uhr nach dem Flug umzustellen. In Kyoto passt sie zum Philosophenweg früh morgens, bevor es voll wird.' },
   ],
 };
+
+/** Erstbesuch: Nach dem Intro fliegt die Kamera zu dieser Verbindung und hebt die zwei Notizen hervor,
+ *  aus denen sie entsteht. */
+export const DEMO_SPOTLIGHT = { similarityId: 'demo-s3', noteIds: ['demo-n2', 'demo-n13'] as [string, string] };

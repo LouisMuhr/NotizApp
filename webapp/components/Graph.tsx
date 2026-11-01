@@ -16,6 +16,13 @@ import {
 // (wichtige gewinnen), Insel-Namen in konstanter Bildschirmgröße.
 // Rechenleistung: Inseln, Linien und Notizen liegen in einem Zwischenbild, das nur bei Änderungen neu
 // gemalt wird (Verschieben = Bild kopieren); im Leerlauf 30 statt 60 Bilder/s.
+//
+// Intro (Erstbesuch, Demo): Notizen liegen erst lose verstreut, fliegen dann Thread für Thread auf ihre
+// Inseln, zuletzt werden die Verbindungen gezogen. Läuft ohne Zwischenbild direkt auf dem Canvas — nur für
+// kleine Graphen gedacht; jede Eingabe im Graphen bricht es ab.
+// Leerlauf-Bewegung: Inseln „atmen" (weicher Schein darunter), Lichtpunkte wandern über die Verbindungen.
+// Beides liegt außerhalb des Zwischenbilds (vorgefertigte Sprites, nur drawImage) und entfällt bei
+// prefers-reduced-motion.
 
 const BG = '#0E0C09';
 const LOD = 0.55;        // ab diesem Zoom: Pillen mit Titel statt Punkte
@@ -25,16 +32,25 @@ const ISLAND_PAD = 26;   // Rand der Insel um ihre Notizen
 const MAX_DPR = 2;
 const Z_MIN = 0.08, Z_MAX = 3;
 const DEFAULT_INSETS: GraphInsets = { top: 70, right: 24, bottom: 90, left: 24 };
+const CAM_K = 0.12, CAM_K_SLOW = 0.045; // Kamera-Nachlauf pro Bild: normal / Spotlight-Flug
+// Intro-Zeitplan (Sekunden)
+const I_APPEAR = 1.0, I_GATHER = 2.2, I_THREAD_GAP = 0.2, I_NOTE_GAP = 0.05, I_FLY = 1.1, I_SIM_GAP = 0.25, I_SIM = 0.7;
 
 export interface GraphInsets { top: number; right: number; bottom: number; left: number }
 
 export type GraphMatch = { type: 'note'; note: Note } | { type: 'thread'; thread: Thread };
+
+/** Intro-Fortschritt: drei Phasen, dann `done` (durchgelaufen/übersprungen) oder `interrupted` (Eingabe im Graphen). */
+export type IntroEvent = 'scatter' | 'gather' | 'connect' | 'done' | 'interrupted';
+
+export interface GraphSpotlight { similarityId: string; noteIds: [string, string] }
 
 export interface GraphHandle {
   zoomBy: (delta: number) => void;
   zoomReset: () => void;
   /** Springt zum ersten Treffer (Thread-Titel vor Notiz-Titel) und gibt ihn zurück. */
   flyToMatch: (query: string) => GraphMatch | null;
+  skipIntro: () => void;
 }
 
 interface Props {
@@ -50,6 +66,11 @@ interface Props {
   query?: string;
   /** Freizuhaltende Ränder (Topbar, Hinweiskarten) — „alles zeigen" passt den Graphen dazwischen. */
   insets?: GraphInsets;
+  /** Intro abspielen: jeder neue Wert ≠ 0 startet es (neu), 0 bricht es ab. */
+  introKey?: number;
+  onIntro?: (e: IntroEvent) => void;
+  /** Hebt eine Verbindung samt der zwei Notizen hervor, aus denen sie entsteht; die Kamera fliegt hin. */
+  spotlight?: GraphSpotlight | null;
 }
 
 // ── kleine Helfer ───────────────────────────────────────────────────────────
@@ -74,6 +95,19 @@ interface Label {
   text: string; x: number; y: number; font: string; h: number; w: number; color: string; a: number; pri: number;
   padX: number; padY: number; id?: string; bg?: (box: number[]) => void;
 }
+interface IntroNote { sx: number; sy: number; r: number; appear: number; go: number; i: number }
+interface Intro {
+  t0: number; step: IntroEvent; notes: Map<string, IntroNote>; isles: Map<string, number>; sims: Map<string, number>;
+  connect: number; end: number; z: number;
+}
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const easeInOut = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t: number) => 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+/** Punkt auf der quadratischen Kurve a → (Kontrollpunkt c) → b */
+const qPoint = (ax: number, ay: number, cx: number, cy: number, bx: number, by: number, t: number): [number, number] =>
+  [(1 - t) * (1 - t) * ax + 2 * (1 - t) * t * cx + t * t * bx, (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * cy + t * t * by];
+
 interface Drag { node: LThread | null; sx: number; sy: number; cx: number; cy: number; moved: boolean; last: [number, number]; clicked: LNode | null }
 
 export default function Graph(props: Props) {
@@ -105,6 +139,18 @@ export default function Graph(props: Props) {
     const simGrad = new Map<string, { v: number; g: CanvasGradient }>();
     const labelBoxes = new Map<string, number[]>(); // Thread-ID → zuletzt gezeichneter Titel (Welt), für Klicks
     let search = { q: '', v: -1, set: null as Set<string> | null };
+    let camK = CAM_K, fontsOk = false, intro: Intro | null = null, introSeen = 0, spotSeen: string | null = null;
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let ambientFrom = 0; // Leerlauf-Bewegung blendet ab hier ein (Seitenstart, Intro-Ende)
+    function sprite(stops: Array<[number, string]>) {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      const c = cv.getContext('2d')!, gr = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+      for (const [o, col] of stops) gr.addColorStop(o, col);
+      c.fillStyle = gr; c.fillRect(0, 0, 128, 128);
+      return cv;
+    }
+    const halos = ISLAND_COLORS.map(col => sprite([[0, rgba(col, 0.5)], [0.5, rgba(col, 0.2)], [1, rgba(col, 0)]]));
+    const spark = sprite([[0, 'rgba(255,240,222,1)'], [0.2, 'rgba(244,162,97,0.6)'], [1, 'rgba(244,162,97,0)']]);
 
     const F = {
       title: (px: number) => `400 ${px}px ${fonts.serif}`,
@@ -154,22 +200,27 @@ export default function Graph(props: Props) {
       return G;
     }
 
+    /** Kamera, die den Weltausschnitt in den freien Bereich (ohne Insets) einpasst */
+    function frameBox(x0: number, y0: number, x1: number, y1: number, maxZ: number) {
+      const ins = propsRef.current.insets ?? DEFAULT_INSETS;
+      const left = W > 900 ? ins.left : DEFAULT_INSETS.left; // schmale Bildschirme: Hinweiskarte darf überlappen
+      const aw = Math.max(100, W - left - ins.right), ah = Math.max(100, H - ins.top - ins.bottom);
+      const z = Math.max(Z_MIN, Math.min(maxZ, Math.min(aw / (x1 - x0), ah / (y1 - y0))));
+      return { x: (x0 + x1) / 2 - (left + aw / 2 - W / 2) / z, y: (y0 + y1) / 2 - (ins.top + ah / 2 - H / 2) / z, z };
+    }
     function fit(instant = false) {
       if (!G || !G.all.length) { Object.assign(fitCam, { x: 0, y: 0, z: 1 }); }
       else {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const p of G.all) { x0 = Math.min(x0, p.x - p.hw); x1 = Math.max(x1, p.x + p.hw); y0 = Math.min(y0, p.y - p.hh); y1 = Math.max(y1, p.y + p.hh); }
-        const ins = propsRef.current.insets ?? DEFAULT_INSETS;
-        const left = W > 900 ? ins.left : DEFAULT_INSETS.left; // schmale Bildschirme: Hinweiskarte darf überlappen
-        const aw = Math.max(100, W - left - ins.right), ah = Math.max(100, H - ins.top - ins.bottom), m = ISLAND_PAD + 10;
-        const z = Math.max(Z_MIN, Math.min(1.2, Math.min(aw / (x1 - x0 + m * 2), ah / (y1 - y0 + m * 2))));
-        Object.assign(fitCam, { x: (x0 + x1) / 2 - (left + aw / 2 - W / 2) / z, y: (y0 + y1) / 2 - (ins.top + ah / 2 - H / 2) / z, z });
+        const m = ISLAND_PAD + 10;
+        Object.assign(fitCam, frameBox(x0 - m, y0 - m, x1 + m, y1 + m, 1.2));
       }
-      cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z;
+      cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K;
       if (instant) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
     }
     function flyTo(x: number, y: number, z: number) {
-      cam.tz = Math.max(Z_MIN, Math.min(Z_MAX, z)); cam.tx = x; cam.ty = y;
+      cam.tz = Math.max(Z_MIN, Math.min(Z_MAX, z)); cam.tx = x; cam.ty = y; camK = CAM_K;
     }
     function flyToThread(t: LThread) {
       flyTo(t.x, t.y, Math.min(1.1, Math.min(W - 120, H - 160) / (2 * t.R + 2 * ISLAND_PAD + 80)));
@@ -177,7 +228,7 @@ export default function Graph(props: Props) {
     function zoomAround(sx: number, sy: number, nz: number) {
       const [wx, wy] = toWorld(sx, sy);
       nz = Math.max(Z_MIN, Math.min(Z_MAX, nz));
-      cam.tx = wx - (sx - W / 2) / nz; cam.ty = wy - (sy - H / 2) / nz; cam.tz = nz;
+      cam.tx = wx - (sx - W / 2) / nz; cam.ty = wy - (sy - H / 2) / nz; cam.tz = nz; camK = CAM_K;
     }
 
     // ── Fokus & Suche ──
@@ -199,7 +250,21 @@ export default function Graph(props: Props) {
       const p = propsRef.current;
       if (p.activeThreadId) { const t = g.byId.get(p.activeThreadId); if (t) return t; }
       if (p.activeSimilarityId) { const s = g.sims.find(x => x.id === p.activeSimilarityId); if (s) return s; }
-      return null;
+      return spotlightOf(g)?.s ?? null;
+    }
+    function spotlightOf(g: GraphLayout): { s: LSim; a: LNote; b: LNote } | null {
+      const sp = propsRef.current.spotlight;
+      if (!sp) return null;
+      const s = g.sims.find(x => x.id === sp.similarityId);
+      const a = g.notes.find(n => n.id === sp.noteIds[0]), b = g.notes.find(n => n.id === sp.noteIds[1]);
+      return s && a && b ? { s, a, b } : null;
+    }
+    function flyToSpotlight(g: GraphLayout) {
+      const sp = spotlightOf(g); if (!sp) return;
+      const a = g.byId.get(sp.s.a)!, b = g.byId.get(sp.s.b)!, m = ISLAND_PAD + 30;
+      const c = frameBox(Math.min(a.x - a.R, b.x - b.R) - m, Math.min(a.y - a.R, b.y - b.R) - m,
+        Math.max(a.x + a.R, b.x + b.R) + m, Math.max(a.y + a.R, b.y + b.R) + m, 1.15);
+      flyTo(c.x, c.y, c.z); camK = CAM_K_SLOW;
     }
     function focusSet(g: GraphLayout): Set<string> | null {
       const f = hover ?? selectedNode(g);
@@ -210,7 +275,11 @@ export default function Graph(props: Props) {
         for (const n of f.members) s.add(n.id);
         for (const x of g.sims) if (x.a === f.id || x.b === f.id) { s.add(x.id); s.add(x.a); s.add(x.b); }
       } else if (f.kind === 'note') { for (const id of f.threadIds) s.add(id); }
-      else { s.add(f.a); s.add(f.b); }
+      else {
+        s.add(f.a); s.add(f.b);
+        const sp = spotlightOf(g);
+        if (sp?.s === f) { s.add(sp.a.id); s.add(sp.b.id); }
+      }
       return s;
     }
     function updateFade(g: GraphLayout) {
@@ -309,16 +378,71 @@ export default function Graph(props: Props) {
     }
 
     // ── Zeichnen ──
-    function draw(g: GraphLayout) {
+    function backdrop() {
       screenT(ctx);
       ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
       const glow = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
       glow.addColorStop(0, 'rgba(60,46,30,0.35)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    }
+    /** Notiz-Pille bei (x, y); `stroke` ersetzt den Rand in Inselfarbe (Intro: noch keinem Thread zugeordnet). */
+    function pill(c: CanvasRenderingContext2D, n: LNote, x: number, y: number, h: boolean, stroke?: string) {
+      const cols = n.threadIds.map(id => islandColor(G!.byId.get(id)!));
+      rr(c, x - n.cw / 2, y - 14, n.cw, 28, 14);
+      c.fillStyle = h ? '#2E261E' : '#1E1913'; c.fill();
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; }
+      else if (cols.length > 1) {
+        const lg = c.createLinearGradient(x - n.cw / 2, 0, x + n.cw / 2, 0);
+        cols.forEach((col, i) => lg.addColorStop(i / (cols.length - 1), col)); c.strokeStyle = lg; c.lineWidth = 1.6;
+      } else { c.strokeStyle = rgba(cols[0], h ? 0.9 : 0.4); c.lineWidth = 1; }
+      c.stroke();
+      c.fillStyle = categoryAccent(n.data.category); c.beginPath(); c.arc(x - n.cw / 2 + 14, y, 3.2, 0, 7); c.fill();
+      c.font = F.pill(); c.fillStyle = h ? '#FFFFFF' : '#E8DCCB'; c.textAlign = 'left'; c.textBaseline = 'middle';
+      c.fillText(trunc(noteTitle(n.data), F.pill(), n.cw - 34), x - n.cw / 2 + 24, y + 0.5);
+    }
+    /** Insel-Name: konstante Bildschirmgröße, große/fokussierte Threads gewinnen bei Platzmangel */
+    function threadLabel(t: LThread, a: number, h: boolean, focus: boolean) {
+      const col = islandColor(t), px = Math.max(24, sf(17)), font = F.title(px), z = cam.z;
+      labels.push({
+        text: t.data.title, x: t.x, y: t.y - px * 0.55, font, h: px, w: textW(t.data.title, font), color: h ? '#15110D' : col, a,
+        pri: h ? 2000 : focus ? 1000 : 100 + t.count, padX: px * 0.7, padY: px * 0.25, id: t.id,
+        bg: box => {
+          rr(ctx, box[0], box[1], box[2] - box[0], box[3] - box[1], (box[3] - box[1]) / 2);
+          ctx.fillStyle = h ? col : mix(col, BG, 0.22); ctx.fill();
+          ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = 1.2 / z; ctx.stroke();
+        },
+      });
+    }
+    function simChip(s: LSim, a: number, light: boolean) {
+      const w = s.hw * 2;
+      ctx.globalAlpha = a;
+      rr(ctx, s.x - w / 2, s.y - 13, w, 26, 13); ctx.fillStyle = light ? '#F2EDE6' : '#221C16'; ctx.fill();
+      ctx.strokeStyle = 'rgba(242,237,230,0.25)'; ctx.lineWidth = 1 / cam.z; ctx.stroke();
+      ctx.font = F.chip(); ctx.fillStyle = light ? '#15110D' : '#E8DCCB'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✦ ' + s.data.label, s.x, s.y + 0.5);
+    }
+
+    function draw(g: GraphLayout) {
+      backdrop();
 
       const z = cam.z, detail = z >= LOD;
       const sel = selectedNode(g);
       const key = `${detail}|${hover?.id ?? ''}|${sel?.id ?? ''}|${search.q}`;
+      const amb = calm ? 0 : clamp01((T * 1000 - ambientFrom) / 1500);
+
+      // Atmender Schein unter den Inseln (das Zwischenbild ist außerhalb der Inseln durchsichtig); in der
+      // Übersicht weggelassen — dort lägen viele große Sprites übereinander, und man sähe sie kaum
+      if (amb > 0 && detail) {
+        worldT(ctx);
+        for (const t of g.threads) {
+          const r0 = (t.R + ISLAND_PAD) * 1.4;
+          if (!vis({ x: t.x, y: t.y, hw: r0, hh: r0 })) continue;
+          const b = Math.sin(T * 0.55 + t.idx * 1.7), r = r0 * (1 + 0.05 * b);
+          ctx.globalAlpha = amb * al(t.id) * (0.38 + 0.2 * b);
+          ctx.drawImage(halos[t.color % halos.length], t.x - r, t.y - r, 2 * r, 2 * r);
+        }
+        ctx.globalAlpha = 1;
+      }
 
       cachedLayer(key, (c, inView) => {
         // Inseln: deckende Mischfarben statt Transparenz (schnell, keine Überblendungs-Artefakte)
@@ -340,24 +464,44 @@ export default function Graph(props: Props) {
         // Notizen: Pillen mit Titel, herausgezoomt nur Punkte
         for (const n of g.notes) {
           if (!inView(n)) continue;
-          const h = hover?.id === n.id, cols = n.threadIds.map(id => islandColor(g.byId.get(id)!));
+          const h = hover?.id === n.id;
           c.globalAlpha = al(n.id);
-          if (!detail && !h) { c.fillStyle = mix(cols[0], BG, 0.7); c.beginPath(); c.arc(n.x, n.y, Math.max(5, 2.2 / z), 0, 7); c.fill(); continue; }
-          rr(c, n.x - n.cw / 2, n.y - 14, n.cw, 28, 14);
-          c.fillStyle = h ? '#2E261E' : '#1E1913'; c.fill();
-          if (cols.length > 1) {
-            const lg = c.createLinearGradient(n.x - n.cw / 2, 0, n.x + n.cw / 2, 0);
-            cols.forEach((col, i) => lg.addColorStop(i / (cols.length - 1), col)); c.strokeStyle = lg; c.lineWidth = 1.6;
-          } else { c.strokeStyle = rgba(cols[0], h ? 0.9 : 0.4); c.lineWidth = 1; }
-          c.stroke();
-          c.fillStyle = categoryAccent(n.data.category); c.beginPath(); c.arc(n.x - n.cw / 2 + 14, n.y, 3.2, 0, 7); c.fill();
-          c.font = F.pill(); c.fillStyle = h ? '#FFFFFF' : '#E8DCCB'; c.textAlign = 'left'; c.textBaseline = 'middle';
-          c.fillText(trunc(noteTitle(n.data), F.pill(), n.cw - 34), n.x - n.cw / 2 + 24, n.y + 0.5);
+          if (!detail && !h) { c.fillStyle = mix(islandColor(g.byId.get(n.threadIds[0])!), BG, 0.7); c.beginPath(); c.arc(n.x, n.y, Math.max(5, 2.2 / z), 0, 7); c.fill(); continue; }
+          pill(c, n, n.x, n.y, h);
         }
         c.globalAlpha = 1;
       });
 
-      // Live-Ebene: Fokus-Brücken (laufende Striche) + Beschriftungen
+      // Live-Ebene: Lichtpunkte, Spotlight (Faden zwischen den zwei Notizen), Fokus-Brücken (laufende Striche), Beschriftungen
+      if (amb > 0 && z > 0.15) {
+        g.sims.forEach((s, i) => {
+          const a = g.byId.get(s.a)!, b = g.byId.get(s.b)!, d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+          // nur in der Lücke zwischen den Inseln, nicht über den Pillen
+          const t0 = (a.R + ISLAND_PAD) / d, t1 = 1 - (b.R + ISLAND_PAD) / d;
+          if (t1 - t0 < 0.05 || !vis({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, hw: Math.abs(b.x - a.x) / 2, hh: Math.abs(b.y - a.y) / 2 })) return;
+          const u = (T * 34 / ((t1 - t0) * d) + i * 0.618) % 1, cc = simCurve(s, a, b);
+          const [x, y] = qPoint(a.x, a.y, cc.cx, cc.cy, b.x, b.y, t0 + (t1 - t0) * u), r = 10 / z;
+          ctx.globalAlpha = amb * al(s.id) * Math.sin(Math.PI * u) * 0.9;
+          ctx.drawImage(spark, x - r, y - r, 2 * r, 2 * r);
+        });
+        ctx.globalAlpha = 1;
+      }
+      const sp = spotlightOf(g);
+      if (sp && sel === sp.s && (!hover || hover === sp.s || hover === sp.a || hover === sp.b)) {
+        const { s, a, b } = sp, cc = simCurve(s, a, b), aa = al(a.id), pulse = 0.55 + 0.35 * Math.sin(T * 3);
+        const lg = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+        lg.addColorStop(0, islandColor(g.byId.get(a.threadIds[0])!)); lg.addColorStop(1, islandColor(g.byId.get(b.threadIds[0])!));
+        ctx.globalAlpha = aa; ctx.strokeStyle = lg; ctx.lineWidth = 1.8 / Math.min(1, z); ctx.lineCap = 'round';
+        ctx.setLineDash([7 / z, 6 / z]); ctx.lineDashOffset = -T * 14 / z;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(cc.cx, cc.cy, b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+        for (const n of [a, b]) {
+          const col = islandColor(g.byId.get(n.threadIds[0])!), m = 5;
+          ctx.globalAlpha = aa * pulse * 0.35; ctx.fillStyle = col;
+          rr(ctx, n.x - n.cw / 2 - m, n.y - 14 - m, n.cw + 2 * m, 28 + 2 * m, 14 + m); ctx.fill();
+          ctx.globalAlpha = aa; pill(ctx, n, n.x, n.y, true, rgba(col, 0.95));
+        }
+        ctx.globalAlpha = 1;
+      }
       for (const s of g.sims) {
         const a = g.byId.get(s.a)!, b = g.byId.get(s.b)!, hot = inFocus(s), aa = al(s.id);
         if (hot) {
@@ -367,27 +511,122 @@ export default function Graph(props: Props) {
           ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(cc.cx, cc.cy, b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
         }
         if (!chipVisible(s) || !vis(s)) continue;
-        const sh = isHot(s) || hot, w = s.hw * 2;
-        ctx.globalAlpha = aa * (hot ? 1 : 0.75);
-        rr(ctx, s.x - w / 2, s.y - 13, w, 26, 13); ctx.fillStyle = sh ? '#F2EDE6' : '#221C16'; ctx.fill();
-        ctx.strokeStyle = 'rgba(242,237,230,0.25)'; ctx.lineWidth = 1 / z; ctx.stroke();
-        ctx.font = F.chip(); ctx.fillStyle = sh ? '#15110D' : '#E8DCCB'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('✦ ' + s.data.label, s.x, s.y + 0.5);
+        simChip(s, aa * (hot ? 1 : 0.75), isHot(s) || hot);
       }
       ctx.globalAlpha = 1;
-      // Insel-Namen: konstante Bildschirmgröße, große/fokussierte Threads gewinnen bei Platzmangel
+      for (const t of g.threads) if (vis(t, 80)) threadLabel(t, al(t.id), isHot(t), inFocus(t));
+      flushLabels();
+    }
+
+    // ── Intro ──
+    function startIntro(g: GraphLayout) {
+      fit(true);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const t of g.threads) { x0 = Math.min(x0, t.x - t.R); x1 = Math.max(x1, t.x + t.R); y0 = Math.min(y0, t.y - t.R); y1 = Math.max(y1, t.y + t.R); }
+      // Lose verstreut: „bester Kandidat" aus 14 Zufallspunkten hält die Pillen auseinander
+      const placed: Array<[number, number]> = [], notes = new Map<string, IntroNote>();
+      const order = [...g.notes].sort(() => Math.random() - 0.5);
+      order.forEach((n, i) => {
+        let best: [number, number] = [0, 0], bd = -1;
+        for (let k = 0; k < 14; k++) {
+          const c: [number, number] = [x0 + Math.random() * (x1 - x0), y0 + Math.random() * (y1 - y0)];
+          const d = placed.reduce((m, p) => Math.min(m, Math.hypot((p[0] - c[0]) / 2.2, p[1] - c[1])), Infinity);
+          if (d > bd) { bd = d; best = c; }
+        }
+        placed.push(best);
+        notes.set(n.id, { sx: best[0], sy: best[1], r: (Math.random() - 0.5) * 0.45, appear: 0.2 + I_APPEAR * i / order.length, go: 0, i });
+      });
+      // Einsammeln: Threads von links nach rechts, Notizen leicht versetzt
+      const isles = new Map<string, number>();
+      let arrive = I_GATHER;
+      [...g.threads].sort((a, b) => a.x - b.x).forEach((t, j) => {
+        const go = I_GATHER + j * I_THREAD_GAP;
+        t.members.forEach((n, k) => { const o = notes.get(n.id); if (o && !o.go) o.go = go + k * I_NOTE_GAP; });
+        isles.set(t.id, go + I_FLY * 0.45);
+        arrive = Math.max(arrive, go + Math.max(0, t.members.length - 1) * I_NOTE_GAP + I_FLY);
+      });
+      const sims = new Map<string, number>(), connect = arrive + 0.15;
+      [...g.sims].sort((a, b) => a.x - b.x).forEach((s, i) => sims.set(s.id, connect + i * I_SIM_GAP));
+      // Am Ende stehen alle Verbindungs-Labels kurz da, damit man sie lesen kann
+      const end = Math.max(connect + 2.4, connect + Math.max(0, g.sims.length - 1) * I_SIM_GAP + I_SIM + 1.6);
+      intro = { t0: performance.now(), step: 'scatter', notes, isles, sims, connect, end, z: fitCam.z };
+      hover = null; propsRef.current.onTooltip(null, 0, 0);
+      propsRef.current.onIntro?.('scatter');
+    }
+    function endIntro(e: 'done' | 'interrupted') {
+      if (!intro) return;
+      intro = null; IC.ok = false; fade.clear(); ambientFrom = performance.now();
+      cam.x = cam.tx = fitCam.x; cam.y = cam.ty = fitCam.y; cam.z = cam.tz = fitCam.z;
+      propsRef.current.onIntro?.(e);
+    }
+    function drawIntro(g: GraphLayout, sec: number) {
+      const I = intro!;
+      // Kamera: langsames Heranfahren bis zum Ende des Einsammelns
+      const zp = easeOut(clamp01(sec / I.connect));
+      cam.x = cam.tx = fitCam.x; cam.y = cam.ty = fitCam.y; cam.z = cam.tz = I.z * (0.88 + 0.12 * zp);
+      const z = cam.z;
+      const [vx0, vy0] = toWorld(0, 0), [vx1, vy1] = toWorld(W, H);
+      VIEW = { x0: vx0, y0: vy0, x1: vx1, y1: vy1 };
+      backdrop(); worldT(ctx);
+
+      // Inseln wachsen, sobald ihre Notizen ankommen (Rand leuchtet dabei kurz auf)
       for (const t of g.threads) {
-        if (!vis(t, 80)) continue;
-        const a = al(t.id), h = isHot(t), col = islandColor(t), px = Math.max(24, sf(17)), font = F.title(px);
-        labels.push({
-          text: t.data.title, x: t.x, y: t.y - px * 0.55, font, h: px, w: textW(t.data.title, font), color: h ? '#15110D' : col, a,
-          pri: h ? 2000 : inFocus(t) ? 1000 : 100 + t.count, padX: px * 0.7, padY: px * 0.25, id: t.id,
-          bg: box => {
-            rr(ctx, box[0], box[1], box[2] - box[0], box[3] - box[1], (box[3] - box[1]) / 2);
-            ctx.fillStyle = h ? col : mix(col, BG, 0.22); ctx.fill();
-            ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = 1.2 / z; ctx.stroke();
-          },
-        });
+        const p = clamp01((sec - I.isles.get(t.id)!) / 0.7);
+        if (p <= 0) continue;
+        const col = islandColor(t), k = 0.75 + 0.25 * easeOutBack(p);
+        ctx.save(); ctx.translate(t.x, t.y); ctx.scale(k, k); ctx.translate(-t.x, -t.y);
+        ctx.globalAlpha = easeOut(p);
+        ctx.fillStyle = ctx.strokeStyle = mix(col, BG, 0.4 + 0.45 * Math.sin(Math.PI * p)); islandShape(ctx, t, ISLAND_PAD + 1.6 / z);
+        ctx.fillStyle = ctx.strokeStyle = mix(col, BG, 0.12); islandShape(ctx, t, ISLAND_PAD);
+        ctx.restore();
+      }
+      // Verbindungen werden gezogen, ein Lichtpunkt läuft vorneweg
+      ctx.lineCap = 'round';
+      for (const s of g.sims) {
+        const p = clamp01((sec - I.sims.get(s.id)!) / I_SIM);
+        if (p <= 0) continue;
+        const a = g.byId.get(s.a)!, b = g.byId.get(s.b)!, cc = simCurve(s, a, b), e = easeInOut(p), N = 32;
+        const glowing = 1 - clamp01((sec - I.sims.get(s.id)! - I_SIM) / 0.8);
+        ctx.globalAlpha = 0.3 + 0.4 * glowing; ctx.strokeStyle = gradientFor(s, a, b, ctx); ctx.lineWidth = (1.2 + glowing) / z;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y);
+        for (let i = 1; i <= Math.ceil(N * e); i++) { const [x, y] = qPoint(a.x, a.y, cc.cx, cc.cy, b.x, b.y, Math.min(e, i / N)); ctx.lineTo(x, y); }
+        ctx.stroke();
+        if (p < 1) {
+          const [x, y] = qPoint(a.x, a.y, cc.cx, cc.cy, b.x, b.y, e), r = 16 / Math.min(1, z);
+          const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+          rg.addColorStop(0, 'rgba(255,236,210,0.95)'); rg.addColorStop(0.25, 'rgba(244,162,97,0.55)'); rg.addColorStop(1, 'rgba(244,162,97,0)');
+          ctx.globalAlpha = Math.sin(Math.PI * p) * 0.9 + 0.1; ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+        }
+      }
+      // Notizen: auftauchen, treiben, auf einem leichten Bogen zur Insel fliegen
+      const detail = z >= LOD;
+      for (const n of g.notes) {
+        const o = I.notes.get(n.id);
+        if (!o) continue;
+        const ap = easeOut(clamp01((sec - o.appear) / 0.45));
+        if (ap <= 0) continue;
+        const fp = easeInOut(clamp01((sec - o.go) / I_FLY)), still = 1 - fp;
+        const sx = o.sx + Math.sin(sec * 0.9 + o.i) * 5 * still, sy = o.sy + Math.cos(sec * 0.7 + o.i * 1.7) * 4 * still - (1 - ap) * 10;
+        const dx = n.x - sx, dy = n.y - sy, arc = Math.sin(Math.PI * fp) * 0.18 * (o.i % 2 ? 1 : -1);
+        const x = sx + dx * fp - dy * arc, y = sy + dy * fp + dx * arc;
+        ctx.globalAlpha = ap;
+        if (!detail && fp >= 1) {
+          ctx.fillStyle = mix(islandColor(g.byId.get(n.threadIds[0])!), BG, 0.7); ctx.beginPath(); ctx.arc(x, y, Math.max(5, 2.2 / z), 0, 7); ctx.fill();
+          continue;
+        }
+        ctx.save(); ctx.translate(x, y); ctx.rotate(o.r * still); ctx.scale(0.92 + 0.08 * ap, 0.92 + 0.08 * ap);
+        pill(ctx, n, 0, 0, false, fp < 1 ? `rgba(232,220,203,${0.22 + 0.2 * fp})` : undefined);
+        ctx.restore();
+      }
+      // Chips erscheinen, sobald ihre Linie steht; ist der Zoom fürs Normalbild zu klein, blenden sie am Ende wieder aus
+      for (const s of g.sims) {
+        const p = clamp01((sec - I.sims.get(s.id)! - I_SIM * 0.8) / 0.35), out = chipVisible(s) ? 1 : clamp01((I.end - sec) / 0.6);
+        if (p > 0 && out > 0) simChip(s, 0.75 * easeOut(p) * out, false);
+      }
+      ctx.globalAlpha = 1;
+      for (const t of g.threads) {
+        const p = clamp01((sec - I.isles.get(t.id)! - 0.35) / 0.5);
+        if (p > 0) threadLabel(t, easeOut(p), false, false);
       }
       flushLabels();
     }
@@ -422,6 +661,7 @@ export default function Graph(props: Props) {
 
     // ── Eingaben ──
     function onPointerDown(e: PointerEvent) {
+      endIntro('interrupted'); camK = CAM_K;
       canvas!.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
       lastInput = performance.now();
@@ -459,7 +699,7 @@ export default function Graph(props: Props) {
         canvas!.style.cursor = 'grabbing';
         return;
       }
-      if (e.pointerType !== 'mouse') return;
+      if (e.pointerType !== 'mouse' || intro) return;
       hover = hit(e.offsetX, e.offsetY);
       canvas!.style.cursor = hover ? 'pointer' : 'default';
       tooltipFor(hover, e.offsetX, e.offsetY);
@@ -483,6 +723,7 @@ export default function Graph(props: Props) {
     function onDblClick() { fit(); }
     function onWheel(e: WheelEvent) {
       e.preventDefault(); lastInput = performance.now();
+      endIntro('interrupted'); camK = CAM_K;
       // Trackpad: zwei Finger schieben, Pinch (ctrlKey) zoomt. Mausrad (große Schritte) zoomt.
       const trackpadPan = !e.ctrlKey && e.deltaMode === 0 && (Math.abs(e.deltaX) > 0.5 || Math.abs(e.deltaY) < 40);
       if (trackpadPan) { cam.tx += e.deltaX / cam.z; cam.ty += e.deltaY / cam.z; cam.x = cam.tx; cam.y = cam.ty; return; }
@@ -504,13 +745,13 @@ export default function Graph(props: Props) {
     let alive = true;
     document.fonts.ready.then(() => {
       if (!alive) return;
-      fonts = fontFamilies(); widths.clear(); layoutData = null; threadKey = '';
+      fonts = fontFamilies(); widths.clear(); layoutData = null; threadKey = ''; fontsOk = true;
     });
 
     const handle = propsRef.current.handleRef;
     if (handle) handle.current = {
       zoomBy: delta => { zoomAround(W / 2, H / 2, cam.tz * (1 + delta)); },
-      zoomReset: () => { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; },
+      zoomReset: () => { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K; },
       flyToMatch: query => {
         const g = G, q = query.trim().toLowerCase();
         if (!g || !q) return null;
@@ -520,6 +761,7 @@ export default function Graph(props: Props) {
         if (n) { flyTo(n.x, n.y, Math.max(cam.tz, LOD + 0.35)); return { type: 'note', note: n.data }; }
         return null;
       },
+      skipIntro: () => endIntro('done'),
     };
 
     // ── Schleife: 60 Bilder/s bei Bewegung, sonst 30 (nur die laufenden Striche bewegen sich) ──
@@ -527,8 +769,25 @@ export default function Graph(props: Props) {
       raf = requestAnimationFrame(frame);
       const now = performance.now();
       const g = ensureLayout();
+      // Intro erst mit den echten Schriften starten, sonst springt das Layout mittendrin
+      const k = propsRef.current.introKey ?? 0;
+      if (!k && intro) endIntro('interrupted');
+      if (k !== introSeen) {
+        if (!k) introSeen = 0;
+        else if (fontsOk) { introSeen = k; startIntro(g); }
+        else { backdrop(); return; }
+      }
+      if (intro) {
+        const sec = (now - intro.t0) / 1000;
+        const step: IntroEvent = sec < I_GATHER ? 'scatter' : sec < intro.connect ? 'gather' : 'connect';
+        if (step !== intro.step) { intro.step = step; propsRef.current.onIntro?.(step); }
+        if (sec >= intro.end) endIntro('done');
+        else { T = now / 1000; lastDraw = now; drawIntro(g, sec); return; }
+      }
+      const sp = propsRef.current.spotlight?.similarityId ?? null;
+      if (sp !== spotSeen) { spotSeen = sp; if (sp) flyToSpotlight(g); }
       const moving = Math.abs(cam.tx - cam.x) + Math.abs(cam.ty - cam.y) > 0.05 / cam.z || Math.abs(cam.tz - cam.z) > cam.tz * 1e-4;
-      cam.x += (cam.tx - cam.x) * 0.12; cam.y += (cam.ty - cam.y) * 0.12; cam.z += (cam.tz - cam.z) * 0.12;
+      cam.x += (cam.tx - cam.x) * camK; cam.y += (cam.ty - cam.y) * camK; cam.z += (cam.tz - cam.z) * camK;
       if (!moving) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
       const [x0, y0] = toWorld(0, 0), [x1, y1] = toWorld(W, H);
       VIEW = { x0, y0, x1, y1 };

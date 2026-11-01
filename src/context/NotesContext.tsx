@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
   loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid, clearSyncUid,
+  loadAccountBound, saveAccountBound,
   loadTierCache, saveTierCache, clearTierCache,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
@@ -65,6 +66,14 @@ interface NotesContextType {
    *   ersetzt. Gilt fuer Anmeldung auf einem Zweitgeraet und fuer das Abmelden.
    */
   resyncForUser: (userId: string, mode?: ResyncMode) => Promise<void>;
+  /**
+   * Sync nach einer Anmeldung: wie `resyncForUser(uid, 'replace')`, ausser das
+   * Konto ist leer und die lokalen Notizen gehoerten nie zu einem Konto — dann
+   * wandern sie hinein (`uploadLocalNotes`), statt durch „nichts" ersetzt zu
+   * werden. Typisch: Konto im Web angelegt, App vorher rein lokal genutzt.
+   * Wirft nur im Uebernahme-Fall (wie `uploadLocalNotes`).
+   */
+  syncAfterSignIn: (userId: string) => Promise<'adopted' | 'replaced'>;
   /**
    * Einmaliger Upload der lokalen Notizen bei Erstregistrierung. Wirft bei
    * Fehler, damit der Aufrufer einen sichtbaren Retry anbieten kann.
@@ -727,6 +736,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       '@notizapp_tombstones',
       '@notizapp_pending_sync',
       '@notizapp_sync_uid',
+      '@notizapp_account_bound',
       '@notizapp_tier_cache',
       '@notizapp_pending_parse',
     ]);
@@ -807,6 +817,25 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setInitialUploadPending(false);
   }, [startSync]);
 
+  const syncAfterSignIn = useCallback(async (userId: string): Promise<'adopted' | 'replaced'> => {
+    clearUserIdCache();
+    if (!isSyncConfigured()) return 'replaced';
+    // Nur rein lokale Notizen kommen in Frage: Reste eines abgemeldeten Kontos
+    // gehoeren nicht in das naechste, auch nicht in ein leeres (A5).
+    const pureLocal = allRef.current.length > 0
+      && !(await loadSyncUid()) && !(await loadAccountBound().catch(() => true));
+    if (pureLocal) {
+      // Pull scheitert (null) → 'replace' unten behaelt den lokalen Bestand ohnehin.
+      const remote = await pullRemote(userId);
+      if (remote !== null && remote.length === 0) {
+        await uploadLocalNotes(userId);
+        return 'adopted';
+      }
+    }
+    await startSync(userId, 'replace');
+    return 'replaced';
+  }, [startSync, uploadLocalNotes]);
+
   /**
    * Sync abschalten, lokalen Bestand unveraendert behalten. Beim Abmelden geht
    * die App damit zurueck nach `local` — es wird KEIN neuer User erzeugt und
@@ -826,7 +855,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     pendingRef.current = new Set();
     await savePendingSync([]).catch(() => {});
     // Zuletzt gesyncte UID vergessen, damit `identityChanged` beim naechsten
-    // Sync korrekt greift.
+    // Sync korrekt greift. Dass der Bestand aus einem Konto stammt, bleibt
+    // gemerkt (siehe `syncAfterSignIn`).
+    if (await loadSyncUid().catch(() => null)) await saveAccountBound().catch(() => {});
     await clearSyncUid().catch(() => {});
     // Der Tier gehoert zum abgemeldeten Konto. Zurueck auf "unbekannt", damit
     // die UI nichts aus dem alten Konto behauptet.
@@ -861,6 +892,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         rescheduleAllReminders,
         resyncForUser,
+        syncAfterSignIn,
         uploadLocalNotes,
         initialUploadPending,
         detachSync,

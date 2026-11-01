@@ -394,6 +394,55 @@ test('A5: nach detachSync landen Notizen des alten Kontos nicht im naechsten', a
 });
 
 // ---------------------------------------------------------------------------
+// A7 — Konto im Web angelegt, App vorher rein lokal: Anmeldung verliert nichts
+//
+// 'replace' ist fuer Zweitgeraete gedacht. Ist das Konto aber leer und waren
+// die Notizen hier nie in einem Konto, wuerde 'replace' sie durch „nichts"
+// ersetzen. Dann wandern sie stattdessen ins Konto.
+// ---------------------------------------------------------------------------
+test('A7: syncAfterSignIn uebernimmt rein lokale Notizen in ein leeres Konto', async () => {
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'lokal' }), title: 'Vor dem Konto' }); });
+
+  let result: string | undefined;
+  await act(async () => { result = await hook.result.current.syncAfterSignIn('web-konto'); });
+
+  expect(result).toBe('adopted');
+  expect(hook.result.current.notes.map((n) => n.title)).toEqual(['Vor dem Konto']);
+  expect(Array.from(remote.values()).map((n) => n.title)).toEqual(['Vor dem Konto']);
+});
+
+test('A7b: syncAfterSignIn uebernimmt bei einem Konto mit Notizen dessen Stand (Zweitgeraet)', async () => {
+  userId.getUserId.mockResolvedValue(null);
+  const hook = renderHook(() => useNotes(), { wrapper });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'lokal' }), title: 'Nur hier' }); });
+  remote.set('konto-1', makeNote({ id: 'konto-1', title: 'Aus dem Konto' }));
+
+  let result: string | undefined;
+  await act(async () => { result = await hook.result.current.syncAfterSignIn('account-user'); });
+
+  expect(result).toBe('replaced');
+  expect(hook.result.current.notes.map((n) => n.title)).toEqual(['Aus dem Konto']);
+});
+
+test('A7c: Notizen eines abgemeldeten Kontos wandern auch per syncAfterSignIn nicht ins naechste', async () => {
+  const hook = await mountSynced(); // Bestand gehoert zu 'user-1'
+  await act(async () => { await hook.result.current.addNote({ ...makeNote({ id: 'alt' }), title: 'Konto A' }); });
+  await act(async () => { await hook.result.current.detachSync(); });
+
+  // Anderes, leeres Konto (z. B. jemand anderes am selben Geraet).
+  remote.clear();
+  let result: string | undefined;
+  await act(async () => { result = await hook.result.current.syncAfterSignIn('konto-b'); });
+
+  expect(result).toBe('replaced');
+  expect(Array.from(remote.values()).map((n) => n.title)).not.toContain('Konto A');
+});
+
+// ---------------------------------------------------------------------------
 // A6 — Zweites Konto: notes.id ist global eindeutig
 //
 // Wurde eine Notiz schon in Konto A hochgeladen, gehoert die Zeile dort. RLS
