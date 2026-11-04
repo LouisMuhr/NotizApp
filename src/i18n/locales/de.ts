@@ -439,7 +439,7 @@ export default {
     dataCardBody: 'Velm speichert deine Notizen lokal auf diesem Gerät. Optional werden sie verschlüsselt über Supabase synchronisiert. Nutzt du KI-Funktionen (Synthese, KI-Sprachnotizen), gehen die betroffenen Texte zur Verarbeitung an Anthropic (Claude). Darüber hinaus werden keine Daten an Dritte weitergegeben.',
     portabilitySection: 'Datenportabilität',
     exportTitle: 'Notizen exportieren',
-    exportSub: 'Alle Notizen & Threads als JSON',
+    exportSub: 'Notizen, Threads & Kontodaten als JSON',
     exportButton: 'Exportieren',
     deletionSection: 'Datenlöschung',
     deletionBanner: 'Löscht dein Konto und alle Daten (inkl. E-Mail-Adresse) endgültig — lokal und auf dem Server. Nicht rückgängig zu machen. Sichere deine Daten vorher per Export.',

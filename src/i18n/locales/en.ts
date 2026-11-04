@@ -440,7 +440,7 @@ const en: typeof de = {
     dataCardBody: 'Velm stores your notes locally on this device. Optionally, they are synced encrypted via Supabase. When you use AI features (synthesis, AI voice notes), the relevant text is sent to Anthropic (Claude) for processing. Beyond that, no data is shared with third parties.',
     portabilitySection: 'Data portability',
     exportTitle: 'Export notes',
-    exportSub: 'All notes & threads as JSON',
+    exportSub: 'Notes, threads & account data as JSON',
     exportButton: 'Export',
     deletionSection: 'Data deletion',
     deletionBanner: 'Permanently deletes your account and all data (incl. email address) — locally and on the server. Cannot be undone. Back up your data first via export.',
