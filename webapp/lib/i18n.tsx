@@ -82,6 +82,11 @@ const de = {
     network: 'Keine Verbindung. Die Notiz wurde nicht gespeichert, bitte versuch es erneut.',
     internal: 'Speichern fehlgeschlagen. Bitte versuch es erneut.',
   } satisfies Record<NoteError, string>,
+  deleteErrors: {
+    unauthorized: 'Deine Anmeldung ist abgelaufen. Bitte melde dich neu an — die Notiz wurde nicht gelöscht.',
+    network: 'Keine Verbindung. Die Notiz wurde nicht gelöscht.',
+    internal: 'Löschen fehlgeschlagen. Bitte versuch es erneut.',
+  },
   synth: {
     errors: {
       ai_unavailable: 'Die KI ist gerade nicht erreichbar. Dein Lauf wurde nicht verbraucht.',
@@ -224,6 +229,11 @@ const en: Widen<Dict> = {
     unauthorized: 'Your session has expired. Please sign in again — your input is kept.',
     network: 'No connection. The note was not saved, please try again.',
     internal: 'Saving failed. Please try again.',
+  },
+  deleteErrors: {
+    unauthorized: 'Your session has expired. Please sign in again — the note was not deleted.',
+    network: 'No connection. The note was not deleted.',
+    internal: 'Deleting failed. Please try again.',
   },
   synth: {
     errors: {

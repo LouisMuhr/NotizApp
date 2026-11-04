@@ -18,6 +18,7 @@ import { useI18n } from '@/lib/i18n';
 import { categoriesFor } from '@/lib/categoryAccent';
 import type { NoteDraft, NoteError } from '@/lib/noteDraft';
 import { isNetworkError } from '@/lib/createNote';
+import type { DeleteError } from '@/lib/deleteNote';
 import { stressData } from '@/lib/stressData';
 import { fetchTier, hasBookmarklet } from '@/lib/tier';
 import { fetchNextAllowedAt, runSynthesis, describeResult, formatAvailability, synthErrorText } from '@/lib/synthesis';
@@ -126,12 +127,6 @@ export default function Home() {
     setGraphData(EMPTY);
     setUser(null);
   };
-
-  /** Aktuellen Supabase-Access-Token holen */
-  const getToken = useCallback(async (): Promise<string | null> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token ?? null;
-  }, []);
 
   // ── graph data ────────────────────────────────────────────────────────────
   function readCache(): GraphData | null {
@@ -374,23 +369,38 @@ export default function Home() {
     return null;
   }, [fetchGraph, t]);
 
+  /** null = gelöscht (oder war schon weg), sonst Fehler-Code */
+  const requestDelete = async (id: string): Promise<DeleteError | null> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return 'network';
+    const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+    if (!session) return isNetworkError(sessErr) ? 'network' : 'unauthorized';
+    let res: Response;
+    try {
+      res = await fetch(`/api/notes/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.access_token}` } });
+    } catch {
+      return 'network';
+    }
+    if (res.ok || res.status === 404) return null;
+    const code = (await res.json().catch(() => null))?.error;
+    return code === 'network' || code === 'unauthorized' ? code : res.status === 401 ? 'unauthorized' : 'internal';
+  };
+
   const handleDeleteNote = async (id: string) => {
-    // Sofort aus lokalem State entfernen — kein Reload, kein Flackern
+    // Sofort aus dem Graphen nehmen (kein Flackern); scheitert es, kommt die Notiz mit Hinweis zurück
+    const before = graphData;
     setGraphData(prev => ({
       ...prev,
       notes: prev.notes.filter(n => n.id !== id),
-      threads: prev.threads.map(t => ({
-        ...t,
-        noteIds: t.noteIds.filter(nid => nid !== id),
-        noteCount: Math.max(0, t.noteCount - 1),
-      })),
+      threads: prev.threads.map(t => t.noteIds.includes(id)
+        ? { ...t, noteIds: t.noteIds.filter(nid => nid !== id), noteCount: Math.max(0, t.noteCount - 1) }
+        : t),
     }));
     setSelectedNote(null);
-    const token = await getToken();
-    if (token) await fetch(`/api/notes/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const err = await requestDelete(id);
+    if (err) {
+      setGraphData(before);
+      setToast({ text: t.deleteErrors[err === 'not_found' ? 'internal' : err], id: Date.now() });
+    }
   };
 
   // ── realtime: Graph neu laden wenn Worker synthetisiert ───────────────────
