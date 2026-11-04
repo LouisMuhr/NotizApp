@@ -1101,7 +1101,7 @@ export default function SettingsKontoScreen() {
                   {/* Art. 13 DSGVO: Hinweis auf die Datenschutzerklärung bei der Erhebung */}
                   <Text style={styles.hintText}>
                     {t('settingsKonto.privacyHint')}{' '}
-                    <Text style={{ textDecorationLine: 'underline' }} onPress={openPrivacyPolicy}>
+                    <Text style={{ textDecorationLine: 'underline' }} onPress={() => openPrivacyPolicy(locale)}>
                       {t('settingsKonto.privacyLink')}
                     </Text>.
                   </Text>

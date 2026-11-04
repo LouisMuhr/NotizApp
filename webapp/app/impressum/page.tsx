@@ -9,14 +9,14 @@ export const metadata: Metadata = {
 
 export default function ImpressumPage() {
   return (
-    <LegalPage title="Impressum">
+    <LegalPage lang="de" kind="imprint" title="Impressum">
       <h2 style={legal.h2}>Angaben gemäß § 5 DDG</h2>
       <p style={legal.p}>
         {OPERATOR.name}<br />
-        {OPERATOR.business}<br />
+        {OPERATOR.business.de}<br />
         {OPERATOR.street}<br />
         {OPERATOR.city}<br />
-        {OPERATOR.country}
+        {OPERATOR.country.de}
       </p>
 
       <h2 style={legal.h2}>Kontakt</h2>

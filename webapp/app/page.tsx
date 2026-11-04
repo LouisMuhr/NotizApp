@@ -610,8 +610,8 @@ export default function Home() {
                     <LangSwitch />
                   </div>
                   <div style={{ display: 'flex', gap: 12, marginBottom: 10, fontSize: 11.5 }}>
-                    <Link href="/impressum" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
-                    <Link href="/privacy" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
+                    <Link href={t.legal.imprintHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
+                    <Link href={t.legal.privacyHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
                   </div>
                   <button
                     onClick={() => { setUserMenu(false); handleLogout(); }}
@@ -798,8 +798,8 @@ export default function Home() {
 
       {/* IMPRESSUM/DATENSCHUTZ: von der Startseite aus immer erreichbar (Handy: Konto-Menü bzw. Login) */}
       <div className="velm-legal" style={{ position: 'absolute', right: 16, bottom: 10, zIndex: 15, display: 'flex', gap: 12, fontSize: 11, fontFamily: 'Inter, sans-serif' }}>
-        <Link href="/impressum" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
-        <Link href="/privacy" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
+        <Link href={t.legal.imprintHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
+        <Link href={t.legal.privacyHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
       </div>
 
       {/* RÜCKMELDUNG nach der Synthese */}

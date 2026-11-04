@@ -264,12 +264,12 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
         {isReg && (
           <p style={s.footnote}>
             {t.login.privacyHint}{' '}
-            <a href="/privacy" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacyPolicy}</a>.
+            <a href={t.legal.privacyHref} target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacyPolicy}</a>.
           </p>
         )}
         <p style={{ ...s.footnote, display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <a href="/impressum" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.imprint}</a>
-          <a href="/privacy" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacy}</a>
+          <a href={t.legal.imprintHref} target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.imprint}</a>
+          <a href={t.legal.privacyHref} target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacy}</a>
         </p>
         </>)}
       </div>

@@ -22,7 +22,7 @@ Dieses Dokument ist intern. Auf Anfrage der Aufsichtsbehörde vorlegen, nicht ve
 | Anthropic PBC | USA | KI-Synthese, KI-Sprachnotizen (Claude Haiku) | USA | SCC im DPA (Teil der Commercial Terms) | ☐ |
 | 650 Industries, Inc. (Expo) | USA | OTA-App-Updates (EAS Update), Builds | USA | DPF bzw. SCC im DPA | ☐ |
 | Stripe Payments Europe Ltd. / Stripe, Inc. | IE / USA | Zahlungsabwicklung (sobald angebunden) | EU / USA | SCC / DPF | ☐ |
-| [ggf. SMTP-Anbieter] | | Versand Auth-Mails, falls in Supabase eingetragen | | | ☐ |
+| Resend (Plus Five Five, Inc.) | USA | Versand der Auth-Mails (Codes) als SMTP von Supabase Auth | USA | DPF + SCC im DPA (Teil der ToS) | ☐ |
 
 Eigenständig Verantwortliche (keine Auftragsverarbeitung): Google (Android-Spracherkennung), Apple (iOS-Spracherkennung,
 App Store), Google Play. Werden in der Datenschutzerklärung genannt.
@@ -51,8 +51,8 @@ App Store), Google Play. Werden in der Datenschutzerklärung genannt.
 | Rechtsgrundlage | Art. 6 Abs. 1 lit. b DSGVO |
 | Betroffene | registrierte Nutzer, Registrierungs-Interessenten |
 | Daten | E-Mail, Passwort-Hash (bcrypt), optional Anzeigename (Webapp), Sprache (`user_metadata.locale`), Zeitstempel (Registrierung, Bestätigung, letzte Anmeldung), Session-Tokens, IP bei Auth-Requests |
-| Empfänger | Supabase |
-| Drittland | Supabase Inc. USA (Daten in Frankfurt) |
+| Empfänger | Supabase, Resend (Mailversand) |
+| Drittland | Supabase Inc. USA (Daten in Frankfurt), Resend USA (DPF) |
 | Löschung | Kontolöschung durch Nutzer (sofort, Cascade auf alle Inhalte); unbestätigte Registrierungen bei Abbruch sofort, sonst nach 30 Tagen (pg_cron `delete-unconfirmed-signups`, täglich 03:17 UTC) |
 
 ### V3 – Synchronisation und Web-App

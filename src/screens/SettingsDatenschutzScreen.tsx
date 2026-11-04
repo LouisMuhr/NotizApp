@@ -55,7 +55,7 @@ export default function SettingsDatenschutzScreen() {
   const navigation = useNavigation<any>();
   const { notes, archivedNotes, deleteAllData } = useNotes();
   const { threads, clearAllThreads, detachSync: detachThreadsSync } = useThoughts();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -144,8 +144,8 @@ export default function SettingsDatenschutzScreen() {
         </Text>
         <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
           {[
-            { label: t('settingsDatenschutz.privacyPolicy'), icon: 'shield-lock-outline' as const, onPress: openPrivacyPolicy },
-            { label: t('settingsDatenschutz.imprint'), icon: 'information-outline' as const, onPress: openImprint },
+            { label: t('settingsDatenschutz.privacyPolicy'), icon: 'shield-lock-outline' as const, onPress: () => openPrivacyPolicy(locale) },
+            { label: t('settingsDatenschutz.imprint'), icon: 'information-outline' as const, onPress: () => openImprint(locale) },
           ].map((item) => (
             <Pressable key={item.label} onPress={item.onPress} style={styles.row} accessibilityRole="link">
               <View style={[styles.rowIcon, { backgroundColor: Tokens.amberDeep }]}>

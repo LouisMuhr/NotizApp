@@ -1,14 +1,23 @@
 import { Linking } from 'react-native';
+import type { AppLocale } from '../i18n';
 
 // Einzige Fassung von Datenschutzerklärung und Impressum liegt in der Webapp
-// (webapp/app/privacy, webapp/app/impressum); `app.json` → privacyPolicyUrl zeigt ebenfalls dorthin.
-export const PRIVACY_URL = 'https://www.velmnote.com/privacy';
-export const IMPRINT_URL = 'https://www.velmnote.com/impressum';
+// (webapp/app/privacy + impressum, englisch unter /en/…, Routen in webapp/components/LegalPage.tsx).
+// `app.json` → privacyPolicyUrl zeigt auf die deutsche Fassung, die zur englischen verlinkt.
+const BASE = 'https://www.velmnote.com';
 
-export function openPrivacyPolicy() {
-  Linking.openURL(PRIVACY_URL).catch(() => {});
+export function privacyUrl(locale: AppLocale): string {
+  return `${BASE}${locale === 'en' ? '/en/privacy' : '/privacy'}`;
 }
 
-export function openImprint() {
-  Linking.openURL(IMPRINT_URL).catch(() => {});
+export function imprintUrl(locale: AppLocale): string {
+  return `${BASE}${locale === 'en' ? '/en/imprint' : '/impressum'}`;
+}
+
+export function openPrivacyPolicy(locale: AppLocale) {
+  Linking.openURL(privacyUrl(locale)).catch(() => {});
+}
+
+export function openImprint(locale: AppLocale) {
+  Linking.openURL(imprintUrl(locale)).catch(() => {});
 }

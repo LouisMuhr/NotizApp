@@ -17,7 +17,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 // und Stores verlinken hierher. Inhalt muss zu docs/audit/dsgvo-2026-11-04.md passen.
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Datenschutzerklärung" updated={PRIVACY_UPDATED}>
+    <LegalPage lang="de" kind="privacy" title="Datenschutzerklärung" updated={PRIVACY_UPDATED.de}>
       <p style={p}>
         Diese Erklärung gilt für die App Velm (Android, iOS) und die Web-App unter www.velmnote.com.
         Sie beschreibt, welche personenbezogenen Daten wir verarbeiten, wofür, auf welcher
@@ -26,8 +26,8 @@ export default function PrivacyPage() {
 
       <h2 style={h2}>1. Verantwortlicher</h2>
       <p style={p}>
-        {OPERATOR.name} ({OPERATOR.business})<br />
-        {OPERATOR.street}, {OPERATOR.city}, {OPERATOR.country}<br />
+        {OPERATOR.name} ({OPERATOR.business.de})<br />
+        {OPERATOR.street}, {OPERATOR.city}, {OPERATOR.country.de}<br />
         E-Mail: <a style={a} href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a>
       </p>
       <p style={p}>Einen Datenschutzbeauftragten müssen wir nicht benennen.</p>
@@ -58,7 +58,7 @@ export default function PrivacyPage() {
       <p style={p}>
         Zweck: Konto bereitstellen, Notizen geräteübergreifend synchronisieren, Web-App anzeigen.
         Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Vertrag). Bestätigungs- und Wiederherstellungscodes
-        senden wir per E-Mail über unseren Auth-Dienst (siehe Abschnitt 5).
+        senden wir per E-Mail über unseren Auth-Dienst und den Versanddienst Resend (siehe Abschnitt 5).
       </p>
 
       <h3 style={h3}>3.3 KI-Funktionen</h3>
@@ -136,7 +136,8 @@ export default function PrivacyPage() {
 
       <h2 style={h2}>5. Empfänger und Auftragsverarbeiter</h2>
       <ul style={ul}>
-        <li style={li}><strong>Supabase Inc.</strong> (USA; Daten in Frankfurt) – Datenbank, Anmeldung, Versand der Bestätigungs-E-Mails. <Ext href="https://supabase.com/privacy">Datenschutz</Ext></li>
+        <li style={li}><strong>Supabase Inc.</strong> (USA; Daten in Frankfurt) – Datenbank und Anmeldung. <Ext href="https://supabase.com/privacy">Datenschutz</Ext></li>
+        <li style={li}><strong>Resend</strong> (Plus Five Five, Inc., USA) – Versand der E-Mails mit Bestätigungs- und Anmeldecodes (E-Mail-Adresse, Code, Sprache). <Ext href="https://resend.com/legal/privacy-policy">Datenschutz</Ext></li>
         <li style={li}><strong>Vercel Inc.</strong> (USA; Funktionen in Frankfurt) – Hosting der Web-App und der Server-Schnittstellen. <Ext href="https://vercel.com/legal/privacy-policy">Datenschutz</Ext></li>
         <li style={li}><strong>Anthropic PBC</strong> (USA) – KI-Verarbeitung nach Abschnitt 3.3. <Ext href="https://www.anthropic.com/legal/privacy">Datenschutz</Ext></li>
         <li style={li}><strong>650 Industries, Inc. (Expo)</strong> (USA) – Auslieferung von App-Updates. <Ext href="https://expo.dev/privacy">Datenschutz</Ext></li>

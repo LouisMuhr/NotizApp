@@ -127,7 +127,7 @@ const de = {
     footnote: 'Deine Notizen liegen auf Servern in Frankfurt.',
     privacyHint: 'Mit der Registrierung gilt unsere',
   },
-  legal: { imprint: 'Impressum', privacy: 'Datenschutz', privacyPolicy: 'Datenschutzerklärung' },
+  legal: { imprint: 'Impressum', privacy: 'Datenschutz', privacyPolicy: 'Datenschutzerklärung', imprintHref: '/impressum', privacyHref: '/privacy' },
   bookmarklet: {
     back: '← Zurück zum Graph', name: 'Velm Bookmarklet', sub: 'Text markieren → Notiz speichern',
     needsAccount: 'Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.',
@@ -277,7 +277,7 @@ const en: Widen<Dict> = {
     footnote: 'Your notes are stored on servers in Frankfurt.',
     privacyHint: 'By signing up you accept our',
   },
-  legal: { imprint: 'Legal notice', privacy: 'Privacy', privacyPolicy: 'privacy policy' },
+  legal: { imprint: 'Legal notice', privacy: 'Privacy', privacyPolicy: 'privacy policy', imprintHref: '/en/imprint', privacyHref: '/en/privacy' },
   bookmarklet: {
     back: '← Back to the graph', name: 'Velm Bookmarklet', sub: 'Select text → save a note',
     needsAccount: 'The bookmarklet needs a real Velm account. Please sign in with your account.',
