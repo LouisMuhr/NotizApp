@@ -3,6 +3,16 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import VelmIcon from '@/components/VelmIcon';
+import { useI18n, type Messages } from '@/lib/i18n';
+
+/** Supabase-Fehler → verständlicher Text; rohe (englische) Meldungen nie direkt zeigen. */
+function authErrorText(t: Messages, err: { code?: string; status?: number; name?: string; message?: string } | null, fallback: string): string {
+  if (!err) return fallback;
+  if (err.code === 'invalid_credentials' || /invalid login credentials/i.test(err.message ?? '')) return t.login.invalidCredentials;
+  if (err.status === 429 || /rate limit/i.test(err.message ?? '')) return t.login.tooMany;
+  if (err.name === 'AuthRetryableFetchError' || /fetch/i.test(err.message ?? '')) return t.login.networkError;
+  return fallback;
+}
 
 export interface AppUser {
   id: string;
@@ -20,6 +30,7 @@ interface Props {
 }
 
 export default function LoginView({ onLogin, onClose, initialMode = 'login' }: Props) {
+  const { locale, t } = useI18n();
   const [mode, setMode]           = useState<'login' | 'register'>(initialMode);
   const [name, setName]           = useState('');
   const [email, setEmail]         = useState('');
@@ -57,17 +68,17 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) { setError('Bitte alle Felder ausfüllen.'); return; }
+    if (!email || !password) { setError(t.login.fillAll); return; }
     setLoading(true); setError('');
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     // Registriert, aber nie bestätigt (z. B. Fenster geschlossen): direkt zur Code-Eingabe.
     if (err?.code === 'email_not_confirmed' || /not confirmed/i.test(err?.message ?? '')) {
       askForCode(email.trim());
-      setNotice('Dein Konto ist noch nicht bestätigt. Gib den Code aus der Mail ein oder fordere einen neuen an.');
+      setNotice(t.login.notConfirmed);
       return;
     }
     if (err || !data.user) {
-      setError(err?.message ?? 'Anmeldung fehlgeschlagen.');
+      setError(authErrorText(t, err, t.login.loginFailed));
       setLoading(false); return;
     }
     onLogin(toAppUser(data.user));
@@ -75,14 +86,14 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) { setError('Bitte alle Felder ausfüllen.'); return; }
-    if (password !== confirmPw)        { setError('Passwörter stimmen nicht überein.'); return; }
-    if (password.length < 6)           { setError('Passwort muss mind. 6 Zeichen lang sein.'); return; }
+    if (!name || !email || !password) { setError(t.login.fillAll); return; }
+    if (password !== confirmPw)        { setError(t.login.pwMismatch); return; }
+    if (password.length < 6)           { setError(t.login.pwShort); return; }
     setLoading(true); setError('');
     // `locale` liest das Mail-Template ({{ .Data.locale }}), wie bei der Registrierung in der App.
-    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim(), locale: 'de' } } });
+    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim(), locale } } });
     if (err || !data.user) {
-      setError(err?.message ?? 'Registrierung fehlgeschlagen.');
+      setError(authErrorText(t, err, t.login.registerFailed));
       setLoading(false); return;
     }
     // Bestätigungspflicht im Projekt aus: signUp() meldet direkt an.
@@ -90,7 +101,7 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
     // Bereits bestätigte Adresse: Supabase meldet keinen Fehler, verschickt aber auch keinen Code
     // (leere identities). Ohne diesen Hinweis würde man auf eine Mail warten, die nie kommt.
     if (data.user.identities?.length === 0) {
-      setError('Für diese Adresse gibt es schon ein Konto. Melde dich an.');
+      setError(t.login.exists);
       setLoading(false); return;
     }
     askForCode(email.trim());
@@ -99,11 +110,11 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
 
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirmFor || !code.trim()) { setError('Bitte den Code aus der Mail eingeben.'); return; }
+    if (!confirmFor || !code.trim()) { setError(t.login.enterCode); return; }
     setLoading(true); setError('');
     const { data, error: err } = await supabase.auth.verifyOtp({ email: confirmFor, token: code.trim(), type: 'signup' });
     if (err || !data.session?.user) {
-      setError('Der Code ist ungültig oder abgelaufen. Fordere bei Bedarf einen neuen an.');
+      setError(err?.status === 429 ? t.login.tooMany : t.login.codeInvalid);
       setLoading(false); return;
     }
     onLogin(toAppUser(data.session.user));
@@ -117,10 +128,10 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
       // Rate-Limit: Supabase nennt die Restzeit im Text ("after 47 seconds") → als Countdown zeigen.
       const wait = Number(/(\d+)\s*seconds?/i.exec(err.message)?.[1]);
       if (Number.isFinite(wait) && wait > 0) { setResendIn(wait); return; }
-      setError(err.message); return;
+      setError(authErrorText(t, err, t.login.tooMany)); return;
     }
     setResendIn(60);
-    setNotice('Neuer Code ist unterwegs.');
+    setNotice(t.login.codeSent);
   };
 
   const demoLogin = () => {
@@ -145,27 +156,26 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
       )}
 
       <div style={s.card} onClick={e => e.stopPropagation()}>
-        {overlay && <button onClick={onClose} style={s.closeBtn} aria-label="Schließen">×</button>}
+        {overlay && <button onClick={onClose} style={s.closeBtn} aria-label={t.login.close}>×</button>}
         {/* Logo */}
         <div style={s.logo}>
           <VelmIcon size={40} radius={10} />
           <div>
             <div style={s.logoName}>Velm</div>
-            <div style={s.logoSub}>Second Brain</div>
+            <div style={s.logoSub}>{t.topbar.tagline}</div>
           </div>
         </div>
 
         {confirmFor ? (
           <form onSubmit={handleConfirm} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
             <div>
-              <div style={s.confirmTitle}>Fast geschafft</div>
+              <div style={s.confirmTitle}>{t.login.almost}</div>
               <p style={s.confirmText}>
-                Wir haben einen 6-stelligen Code an <strong style={{ color: '#F2EDE6', fontWeight: 600 }}>{confirmFor}</strong> geschickt.
-                Gib ihn hier ein. Das geht auch später in der Velm-App unter Einstellungen → Konto → Anmelden.
+                {t.login.codeText(confirmFor)[0]}<strong style={{ color: '#F2EDE6', fontWeight: 600 }}>{confirmFor}</strong>{t.login.codeText(confirmFor)[2]}
               </p>
             </div>
             <div>
-              <label style={s.label}>Bestätigungscode</label>
+              <label style={s.label}>{t.login.codeLabel}</label>
               <input
                 type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus
                 value={code} onChange={e => { setCode(e.target.value.replace(/\s/g, '')); setError(''); }}
@@ -177,14 +187,14 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
             {error && <div style={s.errorBox}>{error}</div>}
 
             <button type="submit" disabled={loading} style={{ ...s.primaryBtn, opacity: loading ? 0.6 : 1 }}>
-              {loading ? 'Wird bestätigt…' : 'Konto bestätigen →'}
+              {loading ? t.login.confirming : t.login.confirm}
             </button>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
               <button type="button" onClick={handleResend} disabled={resendIn > 0} style={{ ...s.switchLink, opacity: resendIn > 0 ? 0.5 : 1, cursor: resendIn > 0 ? 'default' : 'pointer' }}>
-                {resendIn > 0 ? `Neuer Code in ${resendIn} s` : 'Code erneut senden'}
+                {resendIn > 0 ? t.login.resendIn(resendIn) : t.login.resend}
               </button>
               <button type="button" onClick={() => switchMode('register')} style={{ ...s.switchLink, color: 'rgba(160,144,128,0.7)', fontWeight: 500 }}>
-                Andere E-Mail-Adresse
+                {t.login.otherEmail}
               </button>
             </div>
           </form>
@@ -192,26 +202,26 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
         {/* Tabs */}
         <div style={s.tabs}>
           <button style={{ ...s.tab, ...(mode === 'login' ? s.tabActive : {}) }} onClick={() => switchMode('login')}>
-            Anmelden
+            {t.login.tabLogin}
           </button>
           <button style={{ ...s.tab, ...(mode === 'register' ? s.tabActive : {}) }} onClick={() => switchMode('register')}>
-            Registrieren
+            {t.login.tabRegister}
           </button>
         </div>
 
         <form onSubmit={isReg ? handleRegister : handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           {isReg && (
             <div>
-              <label style={s.label}>Name</label>
-              <input type="text" value={name} autoFocus onChange={e => { setName(e.target.value); setError(''); }} style={s.input} placeholder="Max Mustermann" />
+              <label style={s.label}>{t.login.name}</label>
+              <input type="text" value={name} autoFocus onChange={e => { setName(e.target.value); setError(''); }} style={s.input} placeholder={t.login.namePh} />
             </div>
           )}
           <div>
-            <label style={s.label}>E-Mail</label>
-            <input type="email" value={email} autoFocus={!isReg} onChange={e => { setEmail(e.target.value); setError(''); }} style={s.input} placeholder="name@beispiel.de" />
+            <label style={s.label}>{t.login.email}</label>
+            <input type="email" value={email} autoFocus={!isReg} onChange={e => { setEmail(e.target.value); setError(''); }} style={s.input} placeholder={t.login.emailPh} />
           </div>
           <div>
-            <label style={s.label}>Passwort</label>
+            <label style={s.label}>{t.login.password}</label>
             <div style={{ position: 'relative' }}>
               <input type={pwVisible ? 'text' : 'password'} value={password} onChange={e => { setPassword(e.target.value); setError(''); }} style={{ ...s.input, paddingRight: 40 }} placeholder="••••••••" />
               <button type="button" onClick={() => setPwVisible(v => !v)} style={s.pwEye}>
@@ -221,7 +231,7 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
           </div>
           {isReg && (
             <div>
-              <label style={s.label}>Passwort bestätigen</label>
+              <label style={s.label}>{t.login.passwordConfirm}</label>
               <input type={pwVisible ? 'text' : 'password'} value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setError(''); }} style={s.input} placeholder="••••••••" />
             </div>
           )}
@@ -230,25 +240,25 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
 
           <button type="submit" disabled={loading} style={{ ...s.primaryBtn, opacity: loading ? 0.6 : 1 }}>
             {loading
-              ? (isReg ? 'Konto wird erstellt…' : 'Anmelden…')
-              : (isReg ? 'Konto erstellen →' : 'Anmelden →')}
+              ? (isReg ? t.login.creating : t.login.loggingIn)
+              : (isReg ? t.login.create : t.login.login)}
           </button>
         </form>
 
         {!isReg && !overlay && (
           <>
-            <div style={s.divider}><span style={s.dividerInner}>oder</span></div>
-            <button onClick={demoLogin} style={s.ghostBtn}>Demo-Zugang verwenden</button>
+            <div style={s.divider}><span style={s.dividerInner}>{t.login.or}</span></div>
+            <button onClick={demoLogin} style={s.ghostBtn}>{t.login.demo}</button>
           </>
         )}
 
         <p style={s.switchHint}>
           {isReg
-            ? <> Bereits ein Konto?{' '}<button style={s.switchLink} onClick={() => switchMode('login')}>Anmelden</button></>
-            : <> Noch kein Konto?{' '}<button style={s.switchLink} onClick={() => switchMode('register')}>Registrieren</button></>
+            ? <> {t.login.haveAccount}{' '}<button style={s.switchLink} onClick={() => switchMode('login')}>{t.login.tabLogin}</button></>
+            : <> {t.login.noAccount}{' '}<button style={s.switchLink} onClick={() => switchMode('register')}>{t.login.tabRegister}</button></>
           }
         </p>
-        {!isReg && <p style={s.footnote}>Daten bleiben lokal gespeichert.</p>}
+        {!isReg && <p style={s.footnote}>{t.login.footnote}</p>}
         </>)}
       </div>
     </div>
@@ -282,8 +292,8 @@ const s: Record<string, React.CSSProperties> = {
     background: 'rgba(22,18,14,0.98)',
     border: '1px solid rgba(255,220,160,0.12)',
     borderRadius: 14,
-    padding: '36px 44px 32px',
-    width: 390,
+    padding: '36px clamp(20px, 6vw, 44px) 32px',
+    width: 390, maxWidth: 'calc(100vw - 24px)',
     boxShadow: '0 8px 48px rgba(0,0,0,0.55)',
   },
   logo: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 },

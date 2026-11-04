@@ -13,3 +13,11 @@ function hash(s: string): number {
 export function categoryAccent(category: string): string {
   return SOFT[hash(category) % SOFT.length];
 }
+
+/** Standard-Kategorien der App (src/models/Note.ts); dazu kommen die in Notizen benutzten. */
+export const DEFAULT_CATEGORIES = ['Allgemein', 'Arbeit', 'Privat', 'Ideen', 'Einkauf'];
+
+export function categoriesFor(used: Array<string | null | undefined>): string[] {
+  const extra = [...new Set(used.filter((c): c is string => !!c))].filter(c => !DEFAULT_CATEGORIES.includes(c)).sort((a, b) => a.localeCompare(b, 'de'));
+  return [...DEFAULT_CATEGORIES, ...extra];
+}

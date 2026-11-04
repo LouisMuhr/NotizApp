@@ -6,15 +6,21 @@ import Link from 'next/link';
 import { GraphData, Thread, Note, Similarity } from '@/types';
 import { GraphHandle, GraphSpotlight, IntroEvent } from '@/components/Graph';
 import ThreadPanel from '@/components/ThreadPanel';
+import ThreadList from '@/components/ThreadList';
 import SimilarityOverlay from '@/components/SimilarityOverlay';
-import { NoteViewModal, NoteCreateModal, NoteCreateData } from '@/components/NoteModal';
+import { NoteViewModal, NoteCreateModal } from '@/components/NoteModal';
 import LoginView, { AppUser } from '@/components/LoginView';
 import VelmIcon from '@/components/VelmIcon';
+import LangSwitch from '@/components/LangSwitch';
 import { supabase } from '@/lib/supabase';
-import { DEMO_DATA, DEMO_SPOTLIGHT, DEMO_TRY_NOTES, withDemoNote } from '@/lib/demoData';
+import { DEMO_SPOTLIGHT, demoFor, withDemoNote, type DemoTryNote } from '@/lib/demoData';
+import { useI18n } from '@/lib/i18n';
+import { categoriesFor } from '@/lib/categoryAccent';
+import type { NoteDraft, NoteError } from '@/lib/noteDraft';
+import { isNetworkError } from '@/lib/createNote';
 import { stressData } from '@/lib/stressData';
 import { fetchTier, hasBookmarklet } from '@/lib/tier';
-import { fetchNextAllowedAt, runSynthesis, describeResult, formatAvailability } from '@/lib/synthesis';
+import { fetchNextAllowedAt, runSynthesis, describeResult, formatAvailability, synthErrorText } from '@/lib/synthesis';
 
 const Graph = dynamic(() => import('@/components/Graph'), { ssr: false });
 
@@ -28,25 +34,20 @@ const USER_INTRO_MAX_NOTES = 80;
 
 type IntroStep = 'scatter' | 'gather' | 'connect';
 const INTRO_STEPS: IntroStep[] = ['scatter', 'gather', 'connect'];
-const INTRO_TEXT: Record<IntroStep, { kicker: string; title: (n: number) => string; body: string }> = {
-  scatter: { kicker: 'Deine Notizen', title: n => `${n} Gedanken, kreuz und quer.`,
-    body: 'Notiert zwischendurch, im Zug, beim Lesen. Ohne Ordner, ohne System.' },
-  gather: { kicker: 'Velm sortiert', title: () => 'Was zusammengehört, findet sich.',
-    body: 'Velm liest mit und bündelt deine Notizen zu Threads. Du legst weder Ordner noch Tags an.' },
-  connect: { kicker: 'Velm verbindet', title: () => 'Und entdeckt, was du übersehen hast.',
-    body: 'Auch zwischen Themen, die auf den ersten Blick nichts miteinander zu tun haben.' },
-};
 
 const cardStyle: React.CSSProperties = {
   position: 'absolute', left: 22, bottom: 24, width: 340, maxWidth: 'calc(100vw - 44px)', padding: '18px 20px',
   background: 'rgba(22,18,14,0.88)', border: '1px solid var(--border2)', borderRadius: 16, backdropFilter: 'blur(14px)',
   zIndex: 40, animation: 'velm-rise 0.4s ease-out',
 };
+const NARROW_QUERY = '(max-width: 640px)';
+const cardNarrow: React.CSSProperties = { left: 10, right: 10, bottom: 10, width: 'auto', maxWidth: 'none', padding: '14px 16px' };
 const kickerStyle: React.CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--amber)', marginBottom: 8 };
 const cardTitleStyle: React.CSSProperties = { fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 19, fontWeight: 500, color: 'var(--t1)', lineHeight: 1.3, marginBottom: 8 };
 const linkBtnStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, color: 'var(--t3)', fontSize: 12, cursor: 'pointer', fontFamily: 'Inter, sans-serif' };
 
 export default function Home() {
+  const { locale, t } = useI18n();
   // ── auth ──────────────────────────────────────────────────────────────────
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -84,6 +85,24 @@ export default function Home() {
   // Ohne Login zeigt die Startseite den Beispiel-Graphen; Anmelden öffnet sich als Overlay darüber.
   const [authOverlay, setAuthOverlay] = useState<'login' | 'register' | null>(null);
   const isGuest = !user;
+
+  // ── Handy: kompakte Topbar, Karte über die volle Breite; der Graph rückt über die gemessene Karte ──
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW_QUERY);
+    const on = () => setNarrow(mq.matches);
+    on(); mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  const [userMenu, setUserMenu] = useState(false);
+  const [cardH, setCardH] = useState(0);
+  const cardObs = useRef<ResizeObserver | null>(null);
+  const cardRef = useCallback((el: HTMLDivElement | null) => {
+    cardObs.current?.disconnect(); cardObs.current = null;
+    if (!el) return; // kein Zurücksetzen auf 0: beim Kartenwechsel käme sonst kurz ein falscher Ausschnitt
+    const ro = new ResizeObserver(() => setCardH(el.offsetHeight));
+    ro.observe(el); cardObs.current = ro;
+  }, []);
 
   // ── selection state ───────────────────────────────────────────────────────
   const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
@@ -192,25 +211,25 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [synthLimited]);
   const synthDisabled = synthesizing || !limitKnown || synthLimited;
-  const synthLabel = synthesizing ? '✦ Synthese läuft …' : synthLimited ? formatAvailability(nextAllowedAt!, new Date(clock)) : '✦ Synthese starten';
+  const synthLabel = synthesizing ? t.topbar.synthRunning : synthLimited ? formatAvailability(t, nextAllowedAt!, new Date(clock)) : t.topbar.synthStart;
 
   const handleSynthesize = async () => {
     if (!user || synthDisabled) return;
     const userId = user.id;
     setSynthesizing(true);
-    const r = await runSynthesis();
+    const r = await runSynthesis(locale);
     setSynthesizing(false);
     const say = (text: string) => setToast({ text, id: Date.now() });
     if (r.kind === 'limit') {
       if (r.nextAllowedAt) { setSynthLimit({ userId, nextAllowedAt: r.nextAllowedAt }); setClock(Date.now()); }
-      say(r.nextAllowedAt ? `Limit erreicht. ${formatAvailability(r.nextAllowedAt)}.` : 'Limit erreicht.');
+      say(r.nextAllowedAt ? t.synth.limitUntil(formatAvailability(t, r.nextAllowedAt)) : t.synth.limit);
       return;
     }
-    if (r.kind === 'ok') { say(`✦ ${describeResult(r)}`); fetchGraph(); }
-    else if (r.kind === 'no_new') say('Keine neuen Notizen zum Verarbeiten.');
-    else if (r.kind === 'nothing_assigned') say('Aus deinen Notizen ließ sich noch kein Thread bilden. Notizen mit nur einem Wort oder nur einem Link werden übersprungen. Dein Lauf wurde nicht verbraucht.');
-    else if (r.kind === 'busy') say('Gerade ausgelastet – bitte gleich noch einmal versuchen.');
-    else say(r.message);
+    if (r.kind === 'ok') { say(`✦ ${describeResult(t, r)}`); fetchGraph(); }
+    else if (r.kind === 'no_new') say(t.synth.noNew);
+    else if (r.kind === 'nothing_assigned') say(t.synth.nothingAssigned);
+    else if (r.kind === 'busy') say(t.synth.busy);
+    else say(synthErrorText(t, r.code));
     // Lauf verbraucht oder zurückgegeben: Sperre frisch aus dem Profil
     fetchNextAllowedAt(userId).then(s => { setSynthLimit(s ? { userId, nextAllowedAt: s.nextAllowedAt } : null); setClock(Date.now()); });
   };
@@ -221,24 +240,31 @@ export default function Home() {
   const [query, setQuery] = useState('');
 
   // Nur `next dev`: ?stress=40 zeigt Gästen einen generierten Graphen mit 40 Threads (Leistungstest).
-  const [guestBase] = useState<GraphData>(() => {
-    if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') return DEMO_DATA;
+  const [stress] = useState<GraphData | null>(() => {
+    if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') return null;
     const n = Number(new URLSearchParams(window.location.search).get('stress'));
-    return n > 0 ? stressData(n) : DEMO_DATA;
+    return n > 0 ? stressData(n) : null;
   });
-  const isDemo = guestBase === DEMO_DATA;
+  const demo = demoFor(locale);
+  const guestBase = stress ?? demo.data;
+  const isDemo = !stress;
   // Der Beispiel-Graph wächst um die Notizen, die Besucher per Chip hineinwerfen.
   const [guestData, setGuestData] = useState<GraphData>(guestBase);
-  const [tryLeft, setTryLeft] = useState(DEMO_TRY_NOTES);
+  const [tryLeft, setTryLeft] = useState<DemoTryNote[]>(demo.tryNotes);
   const [thinkingId, setThinkingId] = useState<string | null>(null);
-  const [lastPlaced, setLastPlaced] = useState<string | null>(null);
+  const [lastPlaced, setLastPlaced] = useState<string | null>(null); // Thread-ID, Titel folgt der Sprache
+  // Sprache gewechselt (z. B. Abmelden → Browsersprache): Beispiel in der neuen Sprache neu aufsetzen
+  const [demoLocale, setDemoLocale] = useState(locale);
+  if (demoLocale !== locale) {
+    setDemoLocale(locale); setGuestData(guestBase); setTryLeft(demo.tryNotes); setLastPlaced(null);
+  }
 
   const graphHandle = useRef<GraphHandle | null>(null);
   const guestRef = useRef(isGuest);
   useEffect(() => { guestRef.current = isGuest; });
 
   /** Chip → kurz „Velm denkt …", dann fliegt die Notiz von hier auf ihre Insel. */
-  const tryNote = (n: (typeof DEMO_TRY_NOTES)[number], el: HTMLElement) => {
+  const tryNote = (n: DemoTryNote, el: HTMLElement) => {
     if (thinkingId) return;
     setThinkingId(n.id);
     setTimeout(() => {
@@ -246,7 +272,7 @@ export default function Home() {
       graphHandle.current?.spawnFrom(r.left + r.width / 2, r.top + r.height / 2);
       setGuestData(d => withDemoNote(d, n));
       setTryLeft(l => l.filter(x => x.id !== n.id));
-      setLastPlaced(DEMO_DATA.threads.find(t => t.id === n.threadId)?.title ?? null);
+      setLastPlaced(n.threadId);
       setThinkingId(null);
     }, 900);
   };
@@ -277,7 +303,7 @@ export default function Home() {
   }, []);
   const replayIntro = () => {
     clearSelection(); setSpotlight(null); setIntroKey(k => k + 1);
-    setGuestData(guestBase); setTryLeft(DEMO_TRY_NOTES); setLastPlaced(null);
+    setGuestData(guestBase); setTryLeft(demo.tryNotes); setLastPlaced(null);
   };
   const closeSpotlight = () => {
     setSpotlight(null); graphHandle.current?.zoomReset();
@@ -311,25 +337,42 @@ export default function Home() {
   // ── note create / delete ──────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
 
-  const handleCreateNote = useCallback(async (data: NoteCreateData) => {
-    const token = await getToken();
-    if (!token) return;
-    const res = await fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      // Cache NICHT leeren: ohne Cache zeigt fetchGraph den Lade-Spinner, der Graph würde neu aufgebaut
-      // (und spielte das Intro erneut). So lädt er im Hintergrund nach, neue Notizen fliegen ein.
-      fetchGraph();
-    } else {
-      // Fehler nicht stillschweigend schlucken — sonst wirkt das Speichern
-      // erfolgreich, obwohl die Notiz nie angelegt wurde.
-      const msg = await res.json().catch(() => null);
-      alert(`Notiz konnte nicht erstellt werden: ${msg?.error ?? `Fehler ${res.status}`}`);
+  // Handy: Thread-Liste als Ausweg aus vollen Graphen
+  const [showList, setShowList] = useState(false);
+  const closeThread = () => { setSelectedThread(null); graphHandle.current?.zoomReset(); };
+  const selectFromList = (thread: Thread) => {
+    setShowList(false); setSelectedSim(null); setSelectedNote(null); setSpotlight(null);
+    setSelectedThread(thread); graphHandle.current?.focusThread(thread.id);
+  };
+
+  // Fehler gehen als Code ans Fenster zurück; es bleibt mit allen Eingaben offen (nichts geht verloren).
+  const handleCreateNote = useCallback(async (draft: NoteDraft): Promise<NoteError | null> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return 'network';
+    // Abgelaufene Session ohne Netz: das Auffrischen scheitert am Netz, nicht an der Anmeldung
+    const { data: { session }, error: sessErr } = await supabase.auth.getSession();
+    if (!session) return isNetworkError(sessErr) ? 'network' : 'unauthorized';
+    const token = session.access_token;
+    let res: Response;
+    try {
+      res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(draft),
+      });
+    } catch {
+      return 'network';
     }
-  }, [getToken, fetchGraph]);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      const code = json?.error as NoteError | undefined;
+      return code && code in t.noteErrors ? code : res.status === 401 ? 'unauthorized' : 'internal';
+    }
+    setToast({ text: t.noteCreate.created, id: Date.now() });
+    // Cache NICHT leeren: ohne Cache zeigt fetchGraph den Lade-Spinner, der Graph würde neu aufgebaut
+    // (und spielte das Intro erneut). So lädt er im Hintergrund nach, neue Notizen fliegen ein.
+    fetchGraph();
+    return null;
+  }, [fetchGraph, t]);
 
   const handleDeleteNote = async (id: string) => {
     // Sofort aus lokalem State entfernen — kein Reload, kein Flackern
@@ -393,6 +436,13 @@ export default function Home() {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', backdropFilter: 'blur(12px)', transition: 'all 0.15s', userSelect: 'none',
   };
+  const card = narrow ? { ...cardStyle, ...cardNarrow } : cardStyle;
+  // Handy: Thread-Leiste unten statt Fenster; sie ersetzt die Hinweiskarte und wird wie sie gemessen
+  const sheetOpen = narrow && !!selectedThread;
+  const cardShown = !authOverlay && (sheetOpen || !!introStep || isGuest);
+  const insets = narrow
+    ? { top: 64, right: 12, bottom: cardShown && cardH ? cardH + 18 : 24, left: 12 }
+    : { top: 76, right: 24, bottom: 90, left: isGuest ? 384 : 24 };
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
@@ -409,10 +459,11 @@ export default function Home() {
           onTooltip={handleTooltip}
           handleRef={graphHandle}
           query={query}
-          insets={{ top: 76, right: 24, bottom: 90, left: isGuest ? 384 : 24 }}
+          insets={insets}
           introKey={isGuest ? introKey : userIntroKey}
           onIntro={handleIntro}
           spotlight={isGuest ? spotlight : null}
+          untitledLabel={t.common.untitled}
         />
       )}
 
@@ -421,24 +472,26 @@ export default function Home() {
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid var(--amber)', borderTopColor: 'transparent', animation: 'velm-spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-            <p style={{ color: 'var(--t3)', fontSize: 13 }}>Graph wird geladen…</p>
+            <p style={{ color: 'var(--t3)', fontSize: 13 }}>{t.common.loadingGraph}</p>
           </div>
         </div>
       )}
 
       {/* TOP BAR */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: 'rgba(14,12,9,0.75)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', padding: '0 22px', zIndex: 50, pointerEvents: 'none' }}>
-        {/* Left: logo + title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 54, background: 'rgba(14,12,9,0.75)', borderBottom: '1px solid var(--border)', backdropFilter: 'blur(20px)', display: 'flex', alignItems: 'center', padding: narrow ? '0 12px' : '0 22px', zIndex: 50, pointerEvents: 'none' }}>
+        {/* Left: logo + title (Handy: nur das Logo) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0 }}>
           <VelmIcon size={30} radius={8} />
-          <div>
-            <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 15, fontWeight: 500, color: 'var(--t1)', letterSpacing: '-0.01em' }}>Velm</div>
-            <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Second Brain</div>
-          </div>
+          {!narrow && (
+            <div>
+              <div style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 15, fontWeight: 500, color: 'var(--t1)', letterSpacing: '-0.01em' }}>Velm</div>
+              <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{t.topbar.tagline}</div>
+            </div>
+          )}
         </div>
 
         {/* Suche */}
-        <div style={{ marginLeft: 22, display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 12px', width: 260, maxWidth: '30vw', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 17, pointerEvents: 'all' }}>
+        <div style={{ marginLeft: narrow ? 10 : 22, display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 12px', ...(narrow ? { flex: 1, minWidth: 0 } : { width: 260, maxWidth: '30vw' }), background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 17, pointerEvents: 'all' }}>
           <span style={{ color: 'var(--t3)', fontSize: 14 }}>⌕</span>
           <input
             value={query}
@@ -446,54 +499,71 @@ export default function Home() {
             onKeyDown={e => {
               if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); }
               if (e.key !== 'Enter') return;
+              setShowList(false);
               const m = graphHandle.current?.flyToMatch(query);
               if (m?.type === 'note') setSelectedNote(m.note);
               else if (m?.type === 'thread') { setSelectedSim(null); setSelectedNote(null); setSelectedThread(m.thread); }
             }}
-            placeholder="Suchen…"
+            placeholder={t.topbar.search}
             className="velm-field"
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--t1)', fontSize: 13, fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: 'var(--t1)', fontSize: narrow ? 16 : 13, fontFamily: 'Inter, sans-serif' /* iOS zoomt bei Feldern unter 16 px */ }}
           />
           {query.trim() && (
             <span style={{ fontSize: 11, color: 'var(--t3)', whiteSpace: 'nowrap' }}>
-              {searchHits === 0 ? 'keine Treffer' : `${searchHits} Treffer`}
+              {narrow ? searchHits : searchHits === 0 ? t.topbar.noHits : t.topbar.hits(searchHits)}
             </span>
           )}
         </div>
 
+        {/* Handy: Umschalter Graph ↔ Thread-Liste */}
+        {narrow && !userEmpty && !graphLoading && (
+          <button
+            onClick={() => setShowList(v => !v)}
+            aria-label={showList ? t.topbar.showGraph : t.topbar.showList}
+            className="velm-hover"
+            style={{ marginLeft: 8, flexShrink: 0, width: 34, height: 34, borderRadius: '50%', background: showList ? 'rgba(244,162,97,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${showList ? 'rgba(244,162,97,0.4)' : 'var(--border2)'}`, color: showList ? 'var(--amber)' : 'var(--t2)', fontSize: 15, cursor: 'pointer', pointerEvents: 'all', fontFamily: 'Inter, sans-serif' }}
+          >
+            {showList ? '◎' : '☰'}
+          </button>
+        )}
+
         {/* Right (Gast): Anmelden / Konto erstellen */}
         {!user && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'all' }}>
+          <div style={{ marginLeft: 'auto', paddingLeft: 10, display: 'flex', alignItems: 'center', gap: narrow ? 8 : 10, pointerEvents: 'all' }}>
+            <LangSwitch />
             <button
               onClick={() => setAuthOverlay('login')}
               className="velm-hover"
-              style={{ padding: '7px 16px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 20, fontSize: 12.5, fontWeight: 600, color: 'var(--t1)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+              style={{ padding: '7px 16px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 20, fontSize: 12.5, fontWeight: 600, color: 'var(--t1)', cursor: 'pointer', fontFamily: 'Inter, sans-serif', whiteSpace: 'nowrap' }}
             >
-              Anmelden
+              {t.topbar.login}
             </button>
-            <button
+            {/* Handy: „Kostenlos starten" steht schon in der Karte */}
+            {!narrow && <button
               onClick={() => setAuthOverlay('register')}
               className="velm-primary"
               style={{ padding: '7px 16px', background: '#F4A261', border: 'none', borderRadius: 20, fontSize: 12.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif', boxShadow: '0 0 18px rgba(244,162,97,0.25)' }}
             >
-              Konto erstellen
-            </button>
+              {t.topbar.register}
+            </button>}
           </div>
         )}
 
         {/* Right: create button + user chip */}
         {user && (
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'all' }}>
+        <div style={{ marginLeft: 'auto', paddingLeft: 10, display: 'flex', alignItems: 'center', gap: narrow ? 8 : 14, pointerEvents: 'all' }}>
+          {/* Sprache (Handy: im Konto-Menü, die Leiste ist dort schon voll) */}
+          {!narrow && <LangSwitch />}
           {/* Synthese (in der leeren Ansicht sitzt der Button in der Karte) */}
           {!userEmpty && (
             <button
               onClick={handleSynthesize}
               disabled={synthDisabled}
-              title={synthLimited ? 'Synthese-Limit deines Tarifs' : undefined}
+              title={synthLimited ? (narrow ? synthLabel : t.topbar.synthLimitTitle) : undefined}
               className={synthesizing ? 'velm-think' : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: synthDisabled && !synthesizing ? 'var(--t3)' : 'var(--t1)', cursor: synthDisabled ? 'default' : 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s', whiteSpace: 'nowrap' }}
             >
-              {synthLabel}
+              {narrow ? (synthesizing ? '✦ …' : synthLimited ? '✦' : t.topbar.synthShort) : synthLabel}
             </button>
           )}
           {/* + Notiz Button */}
@@ -501,18 +571,45 @@ export default function Home() {
             onClick={() => setShowCreate(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(244,162,97,0.12)', border: '1px solid rgba(244,162,97,0.25)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
           >
-            ＋ Notiz
+            {narrow ? '＋' : t.topbar.newNote}
           </button>
-          {/* Bookmarklet */}
-          {showBookmarklet && (
+          {/* Bookmarklet (Handy: gibt es dort nicht) */}
+          {showBookmarklet && !narrow && (
             <Link
               href="/bookmarklet"
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: 20, fontSize: 12, fontWeight: 600, color: 'var(--t2)', textDecoration: 'none', fontFamily: 'Inter, sans-serif', transition: 'all 0.15s' }}
             >
-              🔖 Bookmarklet
+              {t.topbar.bookmarklet}
             </Link>
           )}
-          {/* User chip */}
+          {/* User chip (Handy: nur die Initiale, Abmelden im Menü) */}
+          {narrow ? (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setUserMenu(v => !v)}
+                aria-label={t.topbar.account}
+                style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(244,162,97,0.2)', border: '1px solid rgba(244,162,97,0.25)', color: '#F4A261', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+              >
+                {user.initial}
+              </button>
+              {userMenu && (
+                <div style={{ position: 'absolute', right: 0, top: 40, minWidth: 180, padding: '12px 14px', background: 'var(--s2)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.4)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--t3)' }}>{t.topbar.language}</span>
+                    <LangSwitch />
+                  </div>
+                  <button
+                    onClick={() => { setUserMenu(false); handleLogout(); }}
+                    className="velm-hover"
+                    style={{ width: '100%', padding: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12.5, fontWeight: 600, color: 'var(--t1)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
+                  >
+                    {t.topbar.logout}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(244,162,97,0.08)', border: '1px solid rgba(244,162,97,0.15)', borderRadius: 20, padding: '4px 12px' }}>
             <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'rgba(244,162,97,0.2)', color: '#F4A261', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
               {user.initial}
@@ -523,40 +620,41 @@ export default function Home() {
               onClick={handleLogout}
               style={{ background: 'none', border: 'none', color: 'var(--t3)', fontSize: 11, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: 0 }}
             >
-              Abmelden
+              {t.topbar.logout}
             </button>
           </div>
+          )}
         </div>
         )}
       </div>
 
       {/* INTRO: eine Karte pro Phase, erzählt mit, was der Graph gerade zeigt */}
       {!authOverlay && introStep && (
-        <div key={introStep} style={cardStyle}>
+        <div key={introStep} ref={cardRef} style={card}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div style={{ ...kickerStyle, marginBottom: 0 }}>{INTRO_TEXT[introStep].kicker}</div>
+            <div style={{ ...kickerStyle, marginBottom: 0 }}>{t.intro[introStep].kicker}</div>
             <div style={{ display: 'flex', gap: 5 }}>
               {INTRO_STEPS.map((s, i) => (
                 <span key={s} style={{ width: 6, height: 6, borderRadius: 3, background: i <= INTRO_STEPS.indexOf(introStep) ? 'var(--amber)' : 'rgba(255,255,255,0.12)', transition: 'background 0.3s' }} />
               ))}
             </div>
           </div>
-          <div style={cardTitleStyle}>{INTRO_TEXT[introStep].title(shown.notes.length)}</div>
-          <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 12 }}>{INTRO_TEXT[introStep].body}</p>
+          <div style={cardTitleStyle}>{t.intro[introStep].title(shown.notes.length)}</div>
+          <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 12 }}>{t.intro[introStep].body}</p>
           <button onClick={() => graphHandle.current?.skipIntro()} className="velm-hover" style={linkBtnStyle}>
-            Überspringen →
+            {t.intro.skip}
           </button>
         </div>
       )}
 
       {/* SPOTLIGHT: eine Verbindung, die aus zwei konkreten Notizen entsteht */}
-      {isGuest && !authOverlay && !introStep && spotlight && (() => {
+      {isGuest && !authOverlay && !introStep && !sheetOpen && spotlight && (() => {
         const sim = shown.similarities.find(s => s.id === spotlight.similarityId);
         const notes = spotlight.noteIds.map(id => shown.notes.find(n => n.id === id)).filter((n): n is Note => !!n);
         if (!sim) return null;
         return (
-          <div style={cardStyle}>
-            <div style={kickerStyle}>✦ Verbindung entdeckt</div>
+          <div ref={cardRef} style={card}>
+            <div style={kickerStyle}>{t.spotlight.kicker}</div>
             <div style={cardTitleStyle}>{sim.label}</div>
             <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 12 }}>{sim.explanation}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
@@ -567,7 +665,7 @@ export default function Home() {
                   className="velm-hover"
                   style={{ padding: '4px 10px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 12, fontSize: 11.5, color: 'var(--t2)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
                 >
-                  {n.title}
+                  {n.title || t.common.untitled}
                 </button>
               ))}
             </div>
@@ -576,7 +674,7 @@ export default function Home() {
               className="velm-primary"
               style={{ width: '100%', padding: '10px', background: '#F4A261', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
             >
-              Selbst erkunden →
+              {t.spotlight.explore}
             </button>
           </div>
         );
@@ -586,29 +684,37 @@ export default function Home() {
       {isGuest && (
         <div className="velm-hero" style={{ position: 'absolute', left: 42, top: 104, width: 320, zIndex: 35, pointerEvents: 'none', animation: 'velm-rise 0.6s ease-out' }}>
           <h1 style={{ fontFamily: "var(--font-instrument), 'Instrument Serif', Georgia, serif", fontSize: 52, fontWeight: 400, lineHeight: 1.02, color: 'var(--t1)', letterSpacing: '-0.01em', marginBottom: 16 }}>
-            Du schreibst.<br /><span style={{ color: 'var(--amber)' }}>Velm verbindet.</span>
+            {t.hero.line1}<br /><span style={{ color: 'var(--amber)' }}>{t.hero.line2}</span>
           </h1>
           <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--t2)' }}>
-            Notizen landen, wie sie kommen. Velm ordnet sie zu Threads und findet die Verbindungen dazwischen.
+            {t.hero.body}
           </p>
         </div>
       )}
 
       {/* GAST-HINWEIS: erklärt, dass das ein Beispiel ist */}
-      {isGuest && !authOverlay && !introStep && !spotlight && (
-        <div style={cardStyle}>
-          <div style={kickerStyle}>
-            Beispiel-Graph
+      {isGuest && !authOverlay && !introStep && !sheetOpen && !spotlight && (
+        <div ref={cardRef} style={card}>
+          {/* Handy: kompakt — kein Erklärtext, Intro-Link oben rechts, Chips in einer wischbaren Zeile */}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <div style={kickerStyle}>
+              {t.guest.kicker}
+            </div>
+            {narrow && isDemo && (
+              <button onClick={replayIntro} className="velm-hover" style={linkBtnStyle}>{t.guest.replayShort}</button>
+            )}
           </div>
-          <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 14 }}>
-            Das sind Beispiel-Notizen. Fahr über Threads und Verbindungen oder klick sie an.
-          </p>
+          {!narrow && (
+            <p style={{ fontSize: 13, color: 'var(--t2)', lineHeight: 1.55, marginBottom: 14 }}>
+              {t.guest.body}
+            </p>
+          )}
           {isDemo && (
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: narrow ? 12 : 16 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--t1)', marginBottom: 8 }}>
-                {tryLeft.length ? 'Probier’s aus: Wirf eine Notiz hinein' : 'Alles einsortiert. So läuft das mit deinen eigenen Notizen.'}
+                {tryLeft.length ? t.guest.tryIt : t.guest.allDone}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div className="velm-scroll" style={narrow ? { display: 'flex', gap: 6, overflowX: 'auto', whiteSpace: 'nowrap', margin: '0 -16px', padding: '0 16px 2px' } : { display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {tryLeft.map(n => (
                   <button
                     key={n.id}
@@ -617,13 +723,13 @@ export default function Home() {
                     className="velm-hover"
                     style={{ padding: '5px 11px', background: thinkingId === n.id ? 'rgba(244,162,97,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${thinkingId === n.id ? 'rgba(244,162,97,0.45)' : 'var(--border2)'}`, borderRadius: 14, fontSize: 12, color: thinkingId === n.id ? 'var(--amber)' : 'var(--t2)', cursor: thinkingId ? 'default' : 'pointer', fontFamily: 'Inter, sans-serif', opacity: thinkingId && thinkingId !== n.id ? 0.5 : 1 }}
                   >
-                    {thinkingId === n.id ? <span className="velm-think">✦ Velm denkt …</span> : `＋ ${n.title}`}
+                    {thinkingId === n.id ? <span className="velm-think">{t.guest.thinking}</span> : `＋ ${n.title}`}
                   </button>
                 ))}
               </div>
               {lastPlaced && (
                 <div key={tryLeft.length} style={{ fontSize: 12, color: 'var(--t2)', marginTop: 9, animation: 'velm-rise 0.3s ease-out' }}>
-                  → einsortiert in <span style={{ color: 'var(--amber)' }}>{lastPlaced}</span>
+                  {t.guest.placedIn} <span style={{ color: 'var(--amber)' }}>{shown.threads.find(th => th.id === lastPlaced)?.title}</span>
                 </div>
               )}
             </div>
@@ -633,18 +739,19 @@ export default function Home() {
             className="velm-primary"
             style={{ width: '100%', padding: '10px', background: '#F4A261', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 700, color: '#0E0C09', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
           >
-            Kostenlos starten →
+            {t.guest.start}
           </button>
-          <button
+          {/* Handy: „Anmelden" steht in der Topbar */}
+          {!narrow && <button
             onClick={() => setAuthOverlay('login')}
             className="velm-hover"
             style={{ width: '100%', marginTop: 8, padding: '9px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border2)', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--t2)', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
           >
-            Ich habe schon ein Konto
-          </button>
-          {isDemo && (
+            {t.guest.haveAccount}
+          </button>}
+          {isDemo && !narrow && (
             <button onClick={replayIntro} className="velm-hover" style={{ ...linkBtnStyle, display: 'block', margin: '12px auto 0' }}>
-              ↺ Intro noch einmal ansehen
+              {t.guest.replayIntro}
             </button>
           )}
         </div>
@@ -654,25 +761,15 @@ export default function Home() {
         <LoginView key={authOverlay} initialMode={authOverlay} onLogin={handleLogin} onClose={() => setAuthOverlay(null)} />
       )}
 
-      {/* TEMP (nur zum Testen, vor dem PR entfernen): Intro jederzeit neu abspielen */}
-      {process.env.NODE_ENV === 'development' && isGuest && isDemo && (
-        <button
-          onClick={() => { try { localStorage.removeItem(INTRO_SEEN_KEY); } catch {} replayIntro(); }}
-          style={{ position: 'absolute', right: 22, bottom: 28, zIndex: 45, padding: '8px 14px', background: 'rgba(244,162,97,0.12)', border: '1px dashed rgba(244,162,97,0.5)', borderRadius: 18, fontSize: 12, fontWeight: 600, color: '#F4A261', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
-        >
-          ▶ Intro abspielen (Test)
-        </button>
-      )}
-
       {/* LEERER GRAPH: nur ein Hinweis auf die App — Threads entstehen dort */}
       {userEmpty && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '70px 24px 24px', pointerEvents: 'none' }}>
           <div style={{ maxWidth: 420, textAlign: 'center', animation: 'velm-rise 0.5s ease-out' }}>
             <div style={{ fontFamily: "var(--font-instrument), 'Instrument Serif', Georgia, serif", fontSize: 34, lineHeight: 1.1, color: 'var(--t1)', marginBottom: 12 }}>
-              Dein Graph ist noch leer.
+              {t.empty.title}
             </div>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--t2)' }}>
-              Erstelle in der Velm-App Notizen und starte unter „Threads“ die Synthese. Sobald Threads entstanden sind, erscheinen sie hier.
+              {t.empty.body}
             </p>
           </div>
         </div>
@@ -699,6 +796,22 @@ export default function Home() {
         </div>
       )}
 
+      {/* HANDY: Thread-Liste (über dem Graphen, unter der Topbar) */}
+      {narrow && showList && (
+        <ThreadList threads={shown.threads} notes={shown.notes} query={query} onSelect={selectFromList} />
+      )}
+
+      {/* HANDY: zurück zur Übersicht, solange eine Insel fokussiert ist */}
+      {sheetOpen && !showList && (
+        <button
+          onClick={closeThread}
+          className="velm-hover"
+          style={{ position: 'absolute', top: 64, left: 12, zIndex: 46, padding: '7px 14px', background: 'rgba(14,12,9,0.85)', border: '1px solid var(--border2)', borderRadius: 18, fontSize: 12.5, fontWeight: 600, color: 'var(--t1)', cursor: 'pointer', fontFamily: 'Inter, sans-serif', backdropFilter: 'blur(12px)' }}
+        >
+          {t.topbar.overview}
+        </button>
+      )}
+
       {/* OVERLAYS */}
       {selectedThread && (
         <ThreadPanel
@@ -707,7 +820,9 @@ export default function Home() {
           similarities={shown.similarities}
           allThreads={shown.threads}
           onNoteClick={handleNoteClick}
-          onClose={() => { setSelectedThread(null); graphHandle.current?.zoomReset(); }}
+          onClose={closeThread}
+          variant={narrow ? 'sheet' : 'modal'}
+          sheetRef={narrow ? cardRef : undefined}
         />
       )}
 
@@ -718,7 +833,7 @@ export default function Home() {
       {showCreate && user && (
         <NoteCreateModal
           threads={graphData.threads}
-          userId={user.id}
+          categories={categoriesFor(graphData.notes.map(n => n.category))}
           onClose={() => setShowCreate(false)}
           onCreate={handleCreateNote}
         />

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Tier } from '@/lib/tier';
+import type { Locale, Messages } from '@/lib/i18n';
 
 // Synthese aus der Webapp: derselbe Bridge-Endpunkt wie in der App (`POST /api/synthesize`, Supabase-Token).
 // Rate-Limit und Abrechnung entscheidet allein der Server; hier wird nur angezeigt.
@@ -39,56 +40,52 @@ export type SynthesisResult =
   | { kind: 'nothing_assigned' }
   | { kind: 'limit'; nextAllowedAt: Date | null }
   | { kind: 'busy' }
-  | { kind: 'error'; message: string };
+  /** `code` = Fehler-Code des Servers bzw. `network`/`not_signed_in`; Text kommt aus lib/i18n.tsx */
+  | { kind: 'error'; code: string };
 
-const SERVER_ERRORS: Record<string, string> = {
-  ai_unavailable: 'Die KI ist gerade nicht erreichbar. Dein Lauf wurde nicht verbraucht.',
-  ai_response_invalid: 'Die KI-Antwort war unbrauchbar. Dein Lauf wurde nicht verbraucht.',
-  synthesis_failed: 'Die Synthese ist fehlgeschlagen. Dein Lauf wurde nicht verbraucht.',
-  profile_unavailable: 'Dein Profil konnte gerade nicht geladen werden. Bitte später erneut versuchen.',
-  internal: 'Unerwarteter Serverfehler. Bitte später erneut versuchen.',
-};
-
-export async function runSynthesis(): Promise<SynthesisResult> {
+export async function runSynthesis(locale: Locale): Promise<SynthesisResult> {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return { kind: 'error', message: 'Nicht angemeldet.' };
+  if (!session) return { kind: 'error', code: 'not_signed_in' };
   let res: Response;
   try {
     res = await fetch(`${BRIDGE_URL}/api/synthesize`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locale: 'de' }),
+      // Die Bridge schreibt Thread-Titel und Zusammenfassungen in dieser Sprache
+      body: JSON.stringify({ locale }),
     });
   } catch {
-    return { kind: 'error', message: 'Keine Verbindung zum Server. Bitte später erneut versuchen.' };
+    return { kind: 'error', code: 'network' };
   }
   const json = await res.json().catch(() => ({}));
   if (res.status === 429) {
     if (json?.error === 'busy') return { kind: 'busy' };
     return { kind: 'limit', nextAllowedAt: json?.next_allowed_at ? new Date(json.next_allowed_at) : null };
   }
-  if (!res.ok) {
-    const code = typeof json?.error === 'string' ? json.error : 'internal';
-    return { kind: 'error', message: SERVER_ERRORS[code] ?? SERVER_ERRORS.internal };
-  }
+  if (!res.ok) return { kind: 'error', code: typeof json?.error === 'string' ? json.error : 'internal' };
   if (json.message === 'no_feed_notes' || json.message === 'no_new_notes') return { kind: 'no_new' };
   if (json.message === 'nothing_assigned') return { kind: 'nothing_assigned' };
   return { kind: 'ok', created: json.threads_created ?? 0, updated: json.threads_updated ?? 0 };
 }
 
+/** Text zu einem Fehler-Code; unbekannte Codes → allgemeiner Serverfehler. */
+export function synthErrorText(t: Messages, code: string): string {
+  return t.synth.errors[code] ?? t.synth.errors.internal;
+}
+
 /** Ergebnis als kurzer Satz (wie in der App). */
-export function describeResult(r: { created: number; updated: number }): string {
+export function describeResult(t: Messages, r: { created: number; updated: number }): string {
   const parts: string[] = [];
-  if (r.created) parts.push(`${r.created} ${r.created === 1 ? 'Thread' : 'Threads'} erstellt`);
-  if (r.updated) parts.push(`${r.updated} ${r.updated === 1 ? 'Thread' : 'Threads'} aktualisiert`);
-  return parts.length ? parts.join(', ') : 'Fertig — nichts Neues.';
+  if (r.created) parts.push(t.synth.created(r.created));
+  if (r.updated) parts.push(t.synth.updated(r.updated));
+  return parts.length ? parts.join(', ') : t.synth.nothingNew;
 }
 
 /** „In 30 Minuten verfügbar" / „Ab 16:32 verfügbar" / „Ab Do., 17. Sep., 16:32 verfügbar" — nie aufgerundete Tage. */
-export function formatAvailability(next: Date, now = new Date()): string {
+export function formatAvailability(t: Messages, next: Date, now = new Date()): string {
   const minutes = Math.max(1, Math.ceil((next.getTime() - now.getTime()) / 60_000));
-  if (minutes < 60) return minutes === 1 ? 'In 1 Minute verfügbar' : `In ${minutes} Minuten verfügbar`;
+  if (minutes < 60) return t.synth.inMinutes(minutes);
   const sameDay = next.toDateString() === now.toDateString();
-  if (sameDay) return `Ab ${next.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} verfügbar`;
-  return `Ab ${next.toLocaleString('de-DE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} verfügbar`;
+  if (sameDay) return t.synth.from(next.toLocaleTimeString(t.dateLocale, { hour: '2-digit', minute: '2-digit' }));
+  return t.synth.from(next.toLocaleString(t.dateLocale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }));
 }

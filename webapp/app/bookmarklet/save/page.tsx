@@ -8,15 +8,12 @@ import { fetchTier, hasBookmarklet } from '@/lib/tier';
 import { categoryAccent } from '@/lib/categoryAccent';
 import VelmIcon from '@/components/VelmIcon';
 import LoginView, { AppUser } from '@/components/LoginView';
+import { useI18n } from '@/lib/i18n';
+import { DEFAULT_CATEGORIES, categoriesFor } from '@/lib/categoryAccent';
+import type { Recurrence } from '@/lib/noteDraft';
 
 const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? 'https://bridge-three-coral.vercel.app';
-const DEFAULT_CATEGORIES = ['Allgemein', 'Arbeit', 'Privat', 'Ideen', 'Einkauf'];
-const RECURRENCES = [
-  { value: 'once', label: 'Einmalig' },
-  { value: 'daily', label: 'Täglich' },
-  { value: 'weekly', label: 'Wöchentlich' },
-  { value: 'monthly', label: 'Monatlich' },
-];
+const RECURRENCES: Recurrence[] = ['once', 'daily', 'weekly', 'monthly'];
 
 type Capture = { title: string; text: string; url: string; host: string; pageTitle: string };
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -48,23 +45,11 @@ function defaultReminder(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`;
 }
 
-function errorMessage(code: string | undefined): string {
-  switch (code) {
-    case 'unauthorized': return 'Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu und melde dich erneut an.';
-    case 'tier_required': return 'Das Bookmarklet ist ab dem Basic-Plan verfügbar.';
-    case 'account_required': return 'Dafür brauchst du ein bestätigtes Velm-Konto.';
-    case 'network': return 'Keine Verbindung. Bitte prüfe dein Internet und versuch es erneut.';
-    case 'rate_limited': return 'Du hast heute schon 50 Notizen per Bookmarklet gespeichert. Morgen geht es weiter.';
-    case 'content_too_long': return 'Der Text ist zu lang (höchstens 50.000 Zeichen). Bitte kürze ihn.';
-    case 'invalid_reminder': return 'Das Datum der Erinnerung ist ungültig.';
-    default: return 'Speichern fehlgeschlagen. Bitte versuch es erneut.';
-  }
-}
-
 // Nur im Browser rendern: das Fragment mit dem markierten Text gibt es serverseitig nicht.
 export default dynamic(() => Promise.resolve(BookmarkletSavePage), { ssr: false });
 
 function BookmarkletSavePage() {
+  const { t } = useI18n();
   const [capture] = useState<Capture | null>(readCapture);
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -76,7 +61,7 @@ function BookmarkletSavePage() {
   const [feedsThreads, setFeedsThreads] = useState(false);
   const [reminderOn, setReminderOn] = useState(false);
   const [reminderAt, setReminderAt] = useState('');
-  const [recurrence, setRecurrence] = useState('once');
+  const [recurrence, setRecurrence] = useState<Recurrence>('once');
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [errorCode, setErrorCode] = useState<string | undefined>();
@@ -104,9 +89,7 @@ function BookmarkletSavePage() {
     // Die neuesten 1000 Notizen reichen für die Kategorienliste; mehr liefert PostgREST ohnehin nicht.
     supabase.from('notes').select('category').eq('user_id', user.id)
       .order('updated_at', { ascending: false }).limit(1000).then(({ data }) => {
-      const used = (data ?? []).map((r: { category: string | null }) => r.category).filter((c): c is string => !!c);
-      const extra = [...new Set(used)].filter((c) => !DEFAULT_CATEGORIES.includes(c)).sort((a, b) => a.localeCompare(b, 'de'));
-      setCategories([...DEFAULT_CATEGORIES, ...extra]);
+      setCategories(categoriesFor((data ?? []).map((r: { category: string | null }) => r.category)));
     });
   }, [user]);
 
@@ -133,8 +116,8 @@ function BookmarkletSavePage() {
       // Die Quelle wird wie bisher an den Inhalt angehängt, im Formular steht sie nur als Hinweis.
       const url = capture?.url ?? '';
       const body: Record<string, unknown> = {
-        title: title.trim() || 'Notiz aus Bookmarklet',
-        content: text.trim() ? (url ? `${text}\n\nQuelle: ${url}` : text) : url,
+        title: title.trim() || t.bookmarklet.defaultTitle,
+        content: text.trim() ? (url ? `${text}\n\n${t.bookmarklet.sourcePrefix}: ${url}` : text) : url,
         category,
         feeds_threads: feedsThreads,
       };
@@ -172,7 +155,7 @@ function BookmarkletSavePage() {
     <header style={s.header}>
       <VelmIcon size={30} radius={8} />
       <div style={{ minWidth: 0 }}>
-        <div style={s.headerTitle}>In Velm speichern</div>
+        <div style={s.headerTitle}>{t.bookmarklet.saveHeading}</div>
         <div style={s.headerSub}>{user.email}</div>
       </div>
     </header>
@@ -188,14 +171,14 @@ function BookmarkletSavePage() {
   );
 
   if (user.isDemo) {
-    return notice(<p style={s.noticeText}>Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.</p>);
+    return notice(<p style={s.noticeText}>{t.bookmarklet.needsAccount}</p>);
   }
 
   if (tierBlocked) {
     return notice(
       <>
-        <p style={s.noticeTitle}>Ab dem Basic-Plan</p>
-        <p style={s.noticeText}>Upgraden kannst du in der Velm-App unter Einstellungen → Mein Abo.</p>
+        <p style={s.noticeTitle}>{t.bookmarklet.planTitle}</p>
+        <p style={s.noticeText}>{t.bookmarklet.planBody}</p>
       </>,
     );
   }
@@ -203,8 +186,8 @@ function BookmarkletSavePage() {
   if (!capture) {
     return notice(
       <>
-        <p style={s.noticeText}>Dieses Fenster öffnet sich über das Velm-Bookmarklet. Markiere Text auf einer Webseite und klick das Lesezeichen.</p>
-        <Link href="/bookmarklet" style={s.link}>Bookmarklet einrichten →</Link>
+        <p style={s.noticeText}>{t.bookmarklet.openedDirectly}</p>
+        <Link href="/bookmarklet" style={s.link}>{t.bookmarklet.setup}</Link>
       </>,
     );
   }
@@ -220,13 +203,13 @@ function BookmarkletSavePage() {
             style={{ animation: 'velm-draw 0.35s 0.25s ease-out forwards' }}
           />
         </svg>
-        <div style={s.savedTitle}>Gespeichert</div>
+        <div style={s.savedTitle}>{t.bookmarklet.saved}</div>
         <div style={s.savedSub}>
           <span style={{ ...s.dot, background: categoryAccent(category) }} />
           {category}
         </div>
         <p style={{ ...s.hint, marginTop: 8 }}>
-          {closeFailed ? 'Du kannst dieses Fenster jetzt schließen.' : 'Fenster schließt sich…'}
+          {closeFailed ? t.bookmarklet.canClose : t.bookmarklet.closing}
         </p>
       </div>
     );
@@ -239,7 +222,7 @@ function BookmarkletSavePage() {
       <main className="velm-scroll" style={s.body}>
         <div className="velm-rise" style={{ animation: 'velm-rise 0.3s ease-out both' }}>
           {capture.host && (
-            <div style={s.source} title={`Wird als Quelle angehängt: ${capture.url}`}>
+            <div style={s.source} title={t.bookmarklet.sourceTip(capture.url)}>
               <span style={s.sourceHost}>{capture.host}</span>
               {capture.pageTitle && <span style={s.sourceTitle}>· {capture.pageTitle}</span>}
             </div>
@@ -247,16 +230,16 @@ function BookmarkletSavePage() {
 
           <input
             className="velm-field" style={s.titleInput} value={title} maxLength={200}
-            placeholder="Titel" onChange={(e) => setTitle(e.target.value)} autoFocus
+            placeholder={t.bookmarklet.titlePh} onChange={(e) => setTitle(e.target.value)} autoFocus
           />
 
           <textarea
             className="velm-field velm-scroll" style={s.textArea} rows={6} value={text}
-            placeholder={capture.url ? 'Eigene Gedanken dazu… (sonst wird nur der Link gespeichert)' : 'Notiz…'}
+            placeholder={capture.url ? t.bookmarklet.textPhLink : t.bookmarklet.textPh}
             onChange={(e) => setText(e.target.value)}
           />
 
-          <div style={s.sectionLabel}>Kategorie</div>
+          <div style={s.sectionLabel}>{t.bookmarklet.category}</div>
           <div style={s.chips}>
             {categories.map((c) => {
               const active = c === category;
@@ -276,24 +259,24 @@ function BookmarkletSavePage() {
           <div style={s.options}>
             <div style={s.optionRow}>
               <div>
-                <div style={s.optionLabel}>KI darf darauf zugreifen</div>
-                <div style={s.optionSub}>Für Threads und Synthese verwenden</div>
+                <div style={s.optionLabel}>{t.bookmarklet.ai}</div>
+                <div style={s.optionSub}>{t.bookmarklet.aiSub}</div>
               </div>
-              <Switch on={feedsThreads} onToggle={() => setFeedsThreads((v) => !v)} label="KI darf darauf zugreifen" />
+              <Switch on={feedsThreads} onToggle={() => setFeedsThreads((v) => !v)} label={t.bookmarklet.ai} />
             </div>
 
             <div style={s.divider} />
 
             <div style={s.optionRow}>
               <div>
-                <div style={s.optionLabel}>Erinnerung</div>
+                <div style={s.optionLabel}>{t.bookmarklet.reminder}</div>
                 <div style={s.optionSub}>
                   {reminderOn && reminderAt
-                    ? new Date(reminderAt).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-                    : 'Benachrichtigung in der App'}
+                    ? new Date(reminderAt).toLocaleString(t.dateLocale, { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                    : t.bookmarklet.reminderSub}
                 </div>
               </div>
-              <Switch on={reminderOn} onToggle={toggleReminder} label="Erinnerung" />
+              <Switch on={reminderOn} onToggle={toggleReminder} label={t.bookmarklet.reminder} />
             </div>
 
             {reminderOn && (
@@ -305,10 +288,10 @@ function BookmarkletSavePage() {
                 <div style={s.segment}>
                   {RECURRENCES.map((r) => (
                     <button
-                      key={r.value} type="button" onClick={() => setRecurrence(r.value)}
-                      style={{ ...s.segmentBtn, ...(recurrence === r.value ? s.segmentActive : {}) }}
+                      key={r} type="button" onClick={() => setRecurrence(r)}
+                      style={{ ...s.segmentBtn, ...(recurrence === r ? s.segmentActive : {}) }}
                     >
-                      {r.label}
+                      {t.noteCreate.recurrence[r]}
                     </button>
                   ))}
                 </div>
@@ -316,18 +299,18 @@ function BookmarkletSavePage() {
             )}
           </div>
 
-          {saveState === 'error' && <div className="velm-rise" style={s.errorBox}>{errorMessage(errorCode)}</div>}
-          {closeFailed && <p style={{ ...s.hint, marginTop: 12 }}>Du kannst dieses Fenster jetzt schließen.</p>}
+          {saveState === 'error' && <div className="velm-rise" style={s.errorBox}>{t.bookmarklet.errors[errorCode ?? ''] ?? t.bookmarklet.errors.default}</div>}
+          {closeFailed && <p style={{ ...s.hint, marginTop: 12 }}>{t.bookmarklet.canClose}</p>}
         </div>
       </main>
 
       <footer style={s.footer}>
-        <span style={s.hint}>Strg + Enter speichert</span>
+        <span style={s.hint}>{t.bookmarklet.shortcut}</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="velm-hover" onClick={closeWindow} style={s.ghostBtn} disabled={saving}>Abbrechen</button>
+          <button type="button" className="velm-hover" onClick={closeWindow} style={s.ghostBtn} disabled={saving}>{t.common.cancel}</button>
           <button type="button" className="velm-primary" onClick={save} style={{ ...s.primaryBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>
             {saving && <span style={s.btnSpinner} />}
-            {saving ? 'Speichert…' : 'Speichern'}
+            {saving ? t.common.saving : t.common.save}
           </button>
         </div>
       </footer>
@@ -397,7 +380,7 @@ const s: Record<string, React.CSSProperties> = {
   chips: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   chip: {
     display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
-    background: 'transparent', border: '1px solid rgba(255,220,160,0.14)',
+    background: 'transparent', borderWidth: 1, borderStyle: 'solid', borderColor: 'rgba(255,220,160,0.14)', // Einzelwerte: aktiv überschreibt nur die Farbe
     color: 'rgba(210,198,184,0.85)', fontSize: 12.5, fontFamily: "'Inter', sans-serif",
   },
   dot: { width: 8, height: 8, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },

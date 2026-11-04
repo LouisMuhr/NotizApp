@@ -51,6 +51,8 @@ export interface GraphSpotlight { similarityId: string; noteIds: [string, string
 export interface GraphHandle {
   zoomBy: (delta: number) => void;
   zoomReset: () => void;
+  /** Fliegt zur Insel des Threads (z. B. aus der Thread-Liste). */
+  focusThread: (id: string) => void;
   /** Springt zum ersten Treffer (Thread-Titel vor Notiz-Titel) und gibt ihn zurück. */
   flyToMatch: (query: string) => GraphMatch | null;
   skipIntro: () => void;
@@ -76,6 +78,8 @@ interface Props {
   onIntro?: (e: IntroEvent) => void;
   /** Hebt eine Verbindung samt der zwei Notizen hervor, aus denen sie entsteht; die Kamera fliegt hin. */
   spotlight?: GraphSpotlight | null;
+  /** Anzeige für Notizen ohne Titel (Sprache der Seite) */
+  untitledLabel?: string;
 }
 
 // ── kleine Helfer ───────────────────────────────────────────────────────────
@@ -86,7 +90,6 @@ function mix(hex: string, bg: string, t: number) {
   return '#' + a.map((v, i) => Math.round(b[i] + (v - b[i]) * t).toString(16).padStart(2, '0')).join('');
 }
 function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) { c.beginPath(); c.roundRect(x, y, w, h, r); }
-const noteTitle = (n: Note) => n.title?.trim() || 'Ohne Titel';
 const islandColor = (t: LThread) => ISLAND_COLORS[t.color % ISLAND_COLORS.length];
 
 /** Schriftfamilien aus next/font (CSS-Variablen am <html>), damit der Canvas dieselben Fonts nutzt. */
@@ -130,6 +133,7 @@ export default function Graph(props: Props) {
     // ── Zustand (lebt nur in diesem Effekt, löst keine Re-Renders aus) ──
     let W = 0, H = 0, DPR = 1, T = 0, raf = 0, lastDraw = 0, lastInput = 0;
     let fonts = fontFamilies();
+    const noteTitle = (n: Note) => n.title?.trim() || propsRef.current.untitledLabel || '—';
     const cam = { x: 0, y: 0, z: 1, tx: 0, ty: 0, tz: 1 };
     const fitCam = { x: 0, y: 0, z: 1 };
     let G: GraphLayout | null = null, layoutData: GraphData | null = null, layoutVer = 0, threadKey = '';
@@ -147,6 +151,8 @@ export default function Graph(props: Props) {
     let camK = CAM_K, fontsOk = false, intro: Intro | null = null, introSeen = 0, spotSeen: string | null = null;
     let morph: { t0: number; from: Map<string, [number, number]>; to: Map<string, [number, number]>; arc: Map<string, number> } | null = null;
     let pendingSpawn: [number, number] | null = null;
+    let viewKey = ''; // Fenstergröße + Insets beim letzten Einpassen
+    let focusT: string | null = null; // Insel, auf die die Kamera zuletzt geflogen ist (bis der Nutzer selbst bewegt)
     const fresh = new Map<string, number>(); // Notiz-ID → Landezeitpunkt (performance.now)
     const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let ambientFrom = 0; // Leerlauf-Bewegung blendet ab hier ein (Seitenstart, Intro-Ende)
@@ -250,28 +256,49 @@ export default function Graph(props: Props) {
     }
 
     /** Kamera, die den Weltausschnitt in den freien Bereich (ohne Insets) einpasst */
-    function frameBox(x0: number, y0: number, x1: number, y1: number, maxZ: number) {
+    function frameBox(x0: number, y0: number, x1: number, y1: number, maxZ: number, minZ = Z_MIN) {
       const ins = propsRef.current.insets ?? DEFAULT_INSETS;
       const left = W > 900 ? ins.left : DEFAULT_INSETS.left; // schmale Bildschirme: Hinweiskarte darf überlappen
       const aw = Math.max(100, W - left - ins.right), ah = Math.max(100, H - ins.top - ins.bottom);
-      const z = Math.max(Z_MIN, Math.min(maxZ, Math.min(aw / (x1 - x0), ah / (y1 - y0))));
+      const z = Math.max(minZ, Math.min(maxZ, Math.min(aw / (x1 - x0), ah / (y1 - y0))));
       return { x: (x0 + x1) / 2 - (left + aw / 2 - W / 2) / z, y: (y0 + y1) / 2 - (ins.top + ah / 2 - H / 2) / z, z };
     }
+    function computeFit() {
+      if (!G || !G.all.length) { Object.assign(fitCam, { x: 0, y: 0, z: 1 }); return; }
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const p of G.all) { x0 = Math.min(x0, p.x - p.hw); x1 = Math.max(x1, p.x + p.hw); y0 = Math.min(y0, p.y - p.hh); y1 = Math.max(y1, p.y + p.hh); }
+      const m = ISLAND_PAD + 10;
+      Object.assign(fitCam, frameBox(x0 - m, y0 - m, x1 + m, y1 + m, 1.2));
+      // Handy hochkant, kleiner Graph (z. B. Demo): lieber nah genug für die Titel, der Rest liegt ein Wischen entfernt.
+      // Große Graphen bleiben in der Übersicht — mit dem Mindest-Zoom sähe man nur noch einen Ausschnitt.
+      const floor = LOD + 0.1;
+      if (W <= 640 && fitCam.z < floor && fitCam.z >= floor / 2.2) Object.assign(fitCam, frameBox(x0 - m, y0 - m, x1 + m, y1 + m, 1.2, floor));
+    }
     function fit(instant = false) {
-      if (!G || !G.all.length) { Object.assign(fitCam, { x: 0, y: 0, z: 1 }); }
-      else {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        for (const p of G.all) { x0 = Math.min(x0, p.x - p.hw); x1 = Math.max(x1, p.x + p.hw); y0 = Math.min(y0, p.y - p.hh); y1 = Math.max(y1, p.y + p.hh); }
-        const m = ISLAND_PAD + 10;
-        Object.assign(fitCam, frameBox(x0 - m, y0 - m, x1 + m, y1 + m, 1.2));
-      }
+      focusT = null;
+      computeFit();
       cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K;
       if (instant) { cam.x = cam.tx; cam.y = cam.ty; cam.z = cam.tz; }
+    }
+    /** Fenstergröße oder Insets geändert: neu einpassen, aber nur, wenn der Nutzer die Kamera nicht selbst bewegt hat */
+    function refit() {
+      const atFit = cam.tx === fitCam.x && cam.ty === fitCam.y && cam.tz === fitCam.z;
+      computeFit(); // auch sonst: „alles zeigen" soll später den neuen Ausschnitt treffen
+      if (intro) return; // das Intro führt die Kamera selbst
+      // Fokussierte Insel (z. B. Leiste unten ging auf): neu einpassen, sie bleibt im freien Bereich
+      const ft = focusT && focusT === propsRef.current.activeThreadId ? G?.byId.get(focusT) : undefined;
+      if (ft) flyToThread(ft);
+      else if (atFit) { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K; }
     }
     function flyTo(x: number, y: number, z: number) {
       cam.tz = Math.max(Z_MIN, Math.min(Z_MAX, z)); cam.tx = x; cam.ty = y; camK = CAM_K;
     }
     function flyToThread(t: LThread) {
+      focusT = t.id;
+      if (W <= 640) { // Handy: Insel in den freien Bereich über der Leiste, nah genug für die Notiz-Titel
+        const m = ISLAND_PAD + 16, c = frameBox(t.x - t.R - m, t.y - t.R - m, t.x + t.R + m, t.y + t.R + m, 1.1, LOD + 0.05);
+        flyTo(c.x, c.y, c.z); return;
+      }
       flyTo(t.x, t.y, Math.min(1.1, Math.min(W - 120, H - 160) / (2 * t.R + 2 * ISLAND_PAD + 80)));
     }
     function zoomAround(sx: number, sy: number, nz: number) {
@@ -730,7 +757,7 @@ export default function Graph(props: Props) {
       lastInput = performance.now();
       if (pointers.size === 2) { // Pinch-Zoom (Touch)
         const [a, b] = [...pointers.values()], [wx, wy] = toWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
-        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: cam.z, wx, wy }; drag = null;
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: cam.z, wx, wy }; drag = null; focusT = null;
         return;
       }
       const h = hit(e.offsetX, e.offsetY);
@@ -747,7 +774,7 @@ export default function Graph(props: Props) {
         return;
       }
       if (drag) {
-        if (!drag.moved && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 4) { drag.moved = true; propsRef.current.onTooltip(null, 0, 0); }
+        if (!drag.moved && Math.hypot(e.offsetX - drag.sx, e.offsetY - drag.sy) > 4) { drag.moved = true; focusT = null; propsRef.current.onTooltip(null, 0, 0); }
         if (!drag.moved) return;
         const [wx, wy] = toWorld(e.offsetX, e.offsetY), dx = wx - drag.last[0], dy = wy - drag.last[1];
         if (drag.node) { // Insel verschieben (nur für diese Sitzung)
@@ -777,7 +804,7 @@ export default function Graph(props: Props) {
       if (h.kind === 'note') p.onNoteClick(h.data);
       else if (h.kind === 'sim') p.onSimilarityClick(h.data);
       else {
-        if (p.activeThreadId === h.id) { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; }
+        if (p.activeThreadId === h.id) { focusT = null; cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; }
         else flyToThread(h);
         p.onThreadClick(h.data);
       }
@@ -785,7 +812,7 @@ export default function Graph(props: Props) {
     function onPointerLeave() { if (!drag) { hover = null; propsRef.current.onTooltip(null, 0, 0); } }
     function onDblClick() { fit(); }
     function onWheel(e: WheelEvent) {
-      e.preventDefault(); lastInput = performance.now();
+      e.preventDefault(); lastInput = performance.now(); focusT = null;
       endIntro('interrupted'); camK = CAM_K;
       // Trackpad: zwei Finger schieben, Pinch (ctrlKey) zoomt. Mausrad (große Schritte) zoomt.
       const trackpadPan = !e.ctrlKey && e.deltaMode === 0 && (Math.abs(e.deltaX) > 0.5 || Math.abs(e.deltaY) < 40);
@@ -814,7 +841,8 @@ export default function Graph(props: Props) {
     const handle = propsRef.current.handleRef;
     if (handle) handle.current = {
       zoomBy: delta => { zoomAround(W / 2, H / 2, cam.tz * (1 + delta)); },
-      zoomReset: () => { cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K; },
+      zoomReset: () => { focusT = null; cam.tx = fitCam.x; cam.ty = fitCam.y; cam.tz = fitCam.z; camK = CAM_K; },
+      focusThread: id => { const t = G?.byId.get(id); if (t) { endIntro('interrupted'); flyToThread(t); } },
       flyToMatch: query => {
         const g = G, q = query.trim().toLowerCase();
         if (!g || !q) return null;
@@ -833,6 +861,9 @@ export default function Graph(props: Props) {
       raf = requestAnimationFrame(frame);
       const now = performance.now();
       const g = ensureLayout();
+      const ins = propsRef.current.insets ?? DEFAULT_INSETS;
+      const vk = `${W}x${H}|${ins.top},${ins.right},${ins.bottom},${ins.left}`;
+      if (vk !== viewKey) { if (viewKey) refit(); viewKey = vk; }
       // Intro erst mit den echten Schriften starten, sonst springt das Layout mittendrin
       const k = propsRef.current.introKey ?? 0;
       if (!k && intro) endIntro('interrupted');

@@ -18,7 +18,7 @@ import {
   markInitialUploadPending, clearInitialUploadPending, isInitialUploadPending,
 } from '../sync/accountState';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
-import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
+import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp, reminderFingerprint } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
@@ -266,6 +266,24 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // Sync: Pull + Merge + Outbox + Realtime
   // ---------------------------------------------------------------------------
 
+  /**
+   * Eingehende Daten (Pull, Realtime) übernehmen. Erinnerungen plant bisher nur der Kaltstart —
+   * eine in der Webapp gesetzte Erinnerung klingelte sonst erst nach dem nächsten Neustart.
+   * Deshalb: ändern sich erinnerungsrelevante Felder, kurz gebündelt neu planen.
+   */
+  const reminderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitRemote = useCallback(async (next: Note[]) => {
+    const before = reminderFingerprint(allRef.current);
+    await commit(next);
+    if (reminderFingerprint(allRef.current) === before) return;
+    if (reminderTimerRef.current) clearTimeout(reminderTimerRef.current);
+    reminderTimerRef.current = setTimeout(() => {
+      reminderTimerRef.current = null;
+      if (!mountedRef.current) return;
+      rescheduleAllRemindersRef.current().catch((e) => console.warn('[sync] reschedule after remote change failed', e));
+    }, 300);
+  }, [commit]);
+
   const subscribeFor = useCallback((uid: string) => {
     if (unsubscribeRef.current) {
       try { unsubscribeRef.current(); } catch {}
@@ -274,15 +292,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     unsubscribeRef.current = subscribeRemote(uid, {
       onUpsert: (incoming) => {
         const next = applyIncoming(allRef.current, incoming, tombstonesRef.current);
-        if (next) commit(next).catch(() => {});
+        if (next) commitRemote(next).catch(() => {});
       },
       onDelete: (id) => {
         if (pendingRef.current.has(id)) return; // lokale Aenderung offen → wird nachgeschickt
         if (!allRef.current.some((n) => n.id === id)) return;
-        commit(allRef.current.filter((n) => n.id !== id)).catch(() => {});
+        commitRemote(allRef.current.filter((n) => n.id !== id)).catch(() => {});
       },
     });
-  }, [commit]);
+  }, [commitRemote]);
 
   const doSync = useCallback(async (uid: string, mode: ResyncMode) => {
     {
@@ -316,7 +334,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           toUpload = result.toUpload;
         }
         for (const n of toUpload) pendingRef.current.add(n.id);
-        await commit(merged);
+        await commitRemote(merged);
         await saveSyncUid(uid);
         try { await flushPending(); } catch (e) { console.warn('[sync] outbox not empty', e); }
       } else {
@@ -327,7 +345,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!mountedRef.current) return;
       subscribeFor(uid);
     }
-  }, [commit, flushPending, subscribeFor]);
+  }, [commitRemote, flushPending, subscribeFor]);
 
   /** Sync-Laeufe serialisieren: ein Resync waehrend des Start-Syncs wartet, statt zu entfallen. */
   const startSync = useCallback((uid: string, mode: ResyncMode) => {
@@ -449,6 +467,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mountedRef.current = false;
+      if (reminderTimerRef.current) clearTimeout(reminderTimerRef.current);
       sub.remove();
       if (unsubscribeRef.current) {
         try { unsubscribeRef.current(); } catch {}

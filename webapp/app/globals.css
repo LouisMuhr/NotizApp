@@ -90,3 +90,6 @@ body {
 .animate-slide-in {
   animation: slide-in 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* Native Auswahllisten: Firefox ignoriert color-scheme bei den Optionen teilweise */
+select option { background: #1E1A16; color: #F2EDE6; }

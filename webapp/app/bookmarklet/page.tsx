@@ -8,8 +8,10 @@ import { fetchTier, hasBookmarklet, type Tier } from '@/lib/tier';
 import VelmIcon from '@/components/VelmIcon';
 import BookmarkletDragDemo from '@/components/BookmarkletDragDemo';
 import LoginView, { AppUser } from '@/components/LoginView';
+import { useI18n } from '@/lib/i18n';
 
 export default function BookmarkletPage() {
+  const { t } = useI18n();
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -46,29 +48,26 @@ export default function BookmarkletPage() {
   return (
     <div style={s.page}>
       <div style={s.card}>
-        <Link href="/" style={s.backLink}>← Zurück zum Graph</Link>
+        <Link href="/" style={s.backLink}>{t.bookmarklet.back}</Link>
         <div style={s.logo}>
           <VelmIcon size={36} radius={9} />
           <div>
-            <div style={s.logoName}>Velm Bookmarklet</div>
-            <div style={s.logoSub}>Text markieren → Notiz speichern</div>
+            <div style={s.logoName}>{t.bookmarklet.name}</div>
+            <div style={s.logoSub}>{t.bookmarklet.sub}</div>
           </div>
         </div>
 
         {user.isDemo ? (
-          <div style={s.warnBox}>Das Bookmarklet braucht ein echtes Velm-Konto. Bitte melde dich mit deinem Konto an.</div>
+          <div style={s.warnBox}>{t.bookmarklet.needsAccount}</div>
         ) : tier === undefined ? (
-          <div style={s.statusRow}><div style={s.spinner} /><span style={s.statusText}>Abo wird geprüft…</span></div>
+          <div style={s.statusRow}><div style={s.spinner} /><span style={s.statusText}>{t.bookmarklet.checkingTier}</span></div>
         ) : tier === null ? (
-          <div style={s.warnBox}>Dein Abo konnte nicht geprüft werden. Bitte lade die Seite neu.</div>
+          <div style={s.warnBox}>{t.bookmarklet.tierUnknown}</div>
         ) : !hasBookmarklet(tier) ? (
-          <div style={s.warnBox}>Das Bookmarklet ist ab dem Basic-Plan verfügbar. Upgraden kannst du in der Velm-App unter Einstellungen → Mein Abo.</div>
+          <div style={s.warnBox}>{t.bookmarklet.tierLocked}</div>
         ) : (
           <>
-            <p style={s.body}>
-              Zieh diesen Button in deine Lesezeichen-Leiste. Markiere danach auf einer Webseite Text und klick ihn —
-              es öffnet sich ein kleines Fenster, in dem du Titel, Kategorie und optional eine Erinnerung festlegst.
-            </p>
+            <p style={s.body}>{t.bookmarklet.intro}</p>
             <div style={s.dragRow}>
               {/* React blockt javascript:-URLs im href-Prop, daher direkt am DOM-Knoten setzen. */}
               <a
@@ -79,10 +78,10 @@ export default function BookmarkletPage() {
               >
                 📝 Velm
               </a>
-              <span style={s.dragHint}>← in die Lesezeichen-Leiste ziehen</span>
+              <span style={s.dragHint}>{t.bookmarklet.dragHint}</span>
               <button
                 type="button"
-                aria-label="Zeigen, wie das Ziehen funktioniert"
+                aria-label={t.bookmarklet.howTo}
                 style={s.help}
                 onMouseEnter={() => setShowDemo(true)}
                 onMouseLeave={() => setShowDemo(false)}
@@ -94,17 +93,12 @@ export default function BookmarkletPage() {
               {showDemo && (
                 <div style={s.demoPopover} role="tooltip">
                   <BookmarkletDragDemo />
-                  <p style={s.demoCaption}>Button mit der Maus greifen und in die Lesezeichen-Leiste ziehen.</p>
+                  <p style={s.demoCaption}>{t.bookmarklet.demoCaption}</p>
                 </div>
               )}
             </div>
-            <p style={s.footnote}>
-              Keine Lesezeichen-Leiste zu sehen? Einblenden mit Strg + Umschalt + B (Mac: ⌘ + Umschalt + B).
-            </p>
-            <p style={s.footnote}>
-              Gespeichert wird mit deinem Login in diesem Browser (angemeldet als {user.email}) — im Lesezeichen
-              steckt kein Schlüssel. Hast du noch ein älteres Velm-Bookmarklet, ersetze es durch dieses.
-            </p>
+            <p style={s.footnote}>{t.bookmarklet.noBar}</p>
+            <p style={s.footnote}>{t.bookmarklet.loginNote(user.email)}</p>
           </>
         )}
       </div>
