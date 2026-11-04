@@ -22,17 +22,18 @@ alter table public.profiles drop column if exists bookmarklet_token_hash;
 -- S2: anonyme Alt-User aus der Zeit vor lokal-first (ohne Notizen/Threads), einmalig.
 delete from auth.users where is_anonymous;
 
--- NOCH NICHT EINGESPIELT (braucht deine Freigabe, laeuft als taeglicher Job):
--- Nie bestaetigte Registrierungen nach 30 Tagen loeschen, wie in der Datenschutzerklaerung zugesagt.
--- Unbestaetigte Konten syncen nie (accountState: nur `secured` hat eine UID) — es gehen keine Inhalte verloren.
---   create extension if not exists pg_cron;
---   select cron.schedule(
---     'delete-unconfirmed-signups',
---     '17 3 * * *',
---     $$delete from auth.users where email_confirmed_at is null and not is_anonymous
---       and created_at < now() - interval '30 days'$$
---   );
---   Rueckweg: select cron.unschedule('delete-unconfirmed-signups');
+-- Zweite Migration `dsgvo_cleanup_unconfirmed_users`, eingespielt 2026-11-04:
+-- Nie bestaetigte E-Mail-Registrierungen (Code nie eingegeben) nach 30 Tagen loeschen, wie in der
+-- Datenschutzerklaerung zugesagt. Betrifft keine anonymen User. Unbestaetigte Konten syncen nie
+-- (accountState: nur `secured` hat eine UID) — es gehen keine Inhalte verloren.
+create extension if not exists pg_cron;
+select cron.schedule(
+  'delete-unconfirmed-signups',
+  '17 3 * * *',
+  $$delete from auth.users where email_confirmed_at is null and not is_anonymous
+    and created_at < now() - interval '30 days'$$
+);
+-- Rueckweg: select cron.unschedule('delete-unconfirmed-signups');
 
 -- Rueckweg, falls noetig:
 --   alter table public.notes drop constraint notes_user_fk,
