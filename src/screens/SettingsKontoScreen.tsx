@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme, Text, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
+import { isPasswordStrongEnough, isWeakPasswordError } from '../utils/passwordPolicy';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { getSupabase } from '../sync/supabaseClient';
@@ -668,8 +669,8 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
       return;
     }
-    if (inputPassword.length < 6) {
-      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
+    if (!isPasswordStrongEnough(inputPassword)) {
+      showToast(t('settingsKonto.toastPasswordWeak'), 'error');
       return;
     }
     const supabase = getSupabase();
@@ -688,7 +689,7 @@ export default function SettingsKontoScreen() {
         options: { data: { locale } },
       });
       if (error) {
-        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
+        showToast(isWeakPasswordError(error) ? t('settingsKonto.toastPasswordWeak') : t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
       // NICHT optimistisch auf `secured` setzen: erst wenn die Bestaetigung
@@ -818,8 +819,8 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
       return;
     }
-    if (inputPassword.length < 6) {
-      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
+    if (!isPasswordStrongEnough(inputPassword)) {
+      showToast(t('settingsKonto.toastPasswordWeak'), 'error');
       return;
     }
     const supabase = getSupabase();
@@ -975,8 +976,8 @@ export default function SettingsKontoScreen() {
       showToast(t('settingsKonto.toastPasswordsMismatch'), 'error');
       return;
     }
-    if (inputPassword.length < 6) {
-      showToast(t('settingsKonto.toastPasswordTooShort'), 'error');
+    if (!isPasswordStrongEnough(inputPassword)) {
+      showToast(t('settingsKonto.toastPasswordWeak'), 'error');
       return;
     }
     const supabase = getSupabase();
@@ -988,7 +989,7 @@ export default function SettingsKontoScreen() {
     try {
       const { error } = await supabase.auth.updateUser({ password: inputPassword });
       if (error) {
-        showToast(t('settingsKonto.toastErrorPrefix') + error.message, 'error');
+        showToast(isWeakPasswordError(error) ? t('settingsKonto.toastPasswordWeak') : t('settingsKonto.toastErrorPrefix') + error.message, 'error');
         return;
       }
       clearFields();
