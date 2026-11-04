@@ -226,6 +226,7 @@ async function runSynthesis(t: ReturnType<typeof useLanguage>['t'], locale: stri
     throw new Error(t(known.includes(code) ? `threads.serverError.${code}` : 'threads.serverError.internal'));
   }
   if (json.message === 'no_feed_notes' || json.message === 'no_new_notes') return { message: t('threads.noNewNotes') };
+  if (json.message === 'nothing_assigned') return { message: t('threads.nothingAssigned') };
   const created = json.threads_created ?? 0;
   const updated = json.threads_updated ?? 0;
   const parts: string[] = [];

@@ -11,6 +11,8 @@ module.exports = {
     // Bridge läuft auf Vercel als ESM und braucht '.js' an relativen Importen;
     // im Test auf die .ts-Quelle umbiegen.
     '^(\\.{1,2}/.*_lib/[^/]+)\\.js$': '$1',
+    // Webapp-Module (webapp/lib) importieren mit dem Next-Alias '@/'; die App selbst nutzt ihn nicht.
+    '^@/(.*)$': '<rootDir>/webapp/$1',
   },
   testPathIgnorePatterns: ['/node_modules/', '/webapp/', '/bridge/node_modules/'],
 };

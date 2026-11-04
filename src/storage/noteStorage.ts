@@ -74,6 +74,22 @@ export async function clearSyncUid(): Promise<void> {
   await AsyncStorage.removeItem(SYNC_UID_KEY);
 }
 
+const ACCOUNT_BOUND_KEY = '@notizapp_account_bound';
+
+/**
+ * Merker: der lokale Bestand stammt aus einem Konto, von dem sich das Geraet
+ * abgemeldet hat. Die Sync-UID ist danach weg, dieser Merker bleibt — damit
+ * die Notizen bei der naechsten Anmeldung nicht als „rein lokal" gelten und in
+ * ein fremdes (leeres) Konto wandern.
+ */
+export async function loadAccountBound(): Promise<boolean> {
+  return (await AsyncStorage.getItem(ACCOUNT_BOUND_KEY)) === '1';
+}
+
+export async function saveAccountBound(): Promise<void> {
+  await AsyncStorage.setItem(ACCOUNT_BOUND_KEY, '1');
+}
+
 // ---------------------------------------------------------------------------
 // Abo-Cache
 // ---------------------------------------------------------------------------

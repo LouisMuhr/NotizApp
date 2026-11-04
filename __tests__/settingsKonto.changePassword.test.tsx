@@ -28,6 +28,7 @@ jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate:
 jest.mock('../src/context/NotesContext', () => ({
   useNotes: () => ({
     resyncForUser: jest.fn(async () => {}),
+    syncAfterSignIn: jest.fn(async () => 'replaced'),
     refreshSubscription: jest.fn(async () => {}),
     flushPending: jest.fn(async () => {}),
     uploadLocalNotes: jest.fn(async () => {}),

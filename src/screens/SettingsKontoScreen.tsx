@@ -228,7 +228,7 @@ export default function SettingsKontoScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const {
-    resyncForUser, refreshSubscription, flushPending,
+    syncAfterSignIn, refreshSubscription, flushPending,
     uploadLocalNotes, initialUploadPending, detachSync,
   } = useNotes();
   const {
@@ -595,6 +595,19 @@ export default function SettingsKontoScreen() {
         password: inputPassword,
       });
       if (error) {
+        // Konto existiert, ist aber unbestaetigt (z. B. im Web registriert): Supabase
+        // lehnt die Anmeldung ab und gibt keinen User heraus. Statt nur eines
+        // Fehlers geht es direkt in die Code-Eingabe — die Bestaetigung per Code
+        // braucht keine Session, nur die Adresse.
+        if (error.code === 'email_not_confirmed' || /not confirmed/i.test(error.message)) {
+          const address = inputEmail.trim();
+          await savePendingEmail(address);
+          setEmail(address);
+          clearFields();
+          setAccountState('pending-confirmation');
+          showToast(t('settingsKonto.toastConfirmBeforeSignIn'), 'info');
+          return;
+        }
         showToast(t('settingsKonto.toastSignInFailed') + error.message, 'error');
         return;
       }
@@ -621,20 +634,22 @@ export default function SettingsKontoScreen() {
       // Wie beim Sichern: erst raus, dann syncen. Ein grosser Kontostand
       // liesse den Nutzer sonst vor dem Konto-Screen warten.
       navigation.navigate('Home', { screen: 'Threads' });
-      // 'replace': eine Anmeldung ist typischerweise ein Zweitgeraet — der
-      // Kontostand gilt. Lokale Notizen wandern nur beim einmaligen Erstupload
-      // nach der Registrierung ins Konto.
+      // Eine Anmeldung ist typischerweise ein Zweitgeraet — der Kontostand gilt.
+      // Ausnahme (`syncAfterSignIn`): Konto leer und die Notizen hier waren rein
+      // lokal (z. B. Konto im Web angelegt) — dann wandern sie hinein.
       // Ab hier ist die Anmeldung durch — ein Sync-Fehler darf nicht als
       // "Anmeldung fehlgeschlagen" erscheinen. Der Sync holt sich beim
       // naechsten Start ohnehin, was liegengeblieben ist.
       try {
         // Sprache am User nachziehen: kuenftige Mails (Reset!) lesen sie aus.
         await syncLocaleToUser();
-        await resyncForUser(newUser.id, 'replace');
+        await syncAfterSignIn(newUser.id);
         await resyncThreadsForUser(newUser.id);
         // Tier-Anzeige (Free/Basic/Pro) für den angemeldeten User aktualisieren.
         await refreshSubscription();
       } catch (syncError) {
+        // Gescheiterte Uebernahme: uploadLocalNotes() hat `initialUploadPending`
+        // gesetzt, daraus leitet der Screen den sichtbaren Retry ab.
         console.warn('[account] post-signin sync failed', syncError);
       }
     } catch (e: any) {
@@ -682,6 +697,16 @@ export default function SettingsKontoScreen() {
       const user = data.user;
       if (user?.email_confirmed_at && data.session) {
         await finishSecuring(user.id, user.email ?? address);
+        return;
+      }
+      // Adresse ist schon ein bestaetigtes Konto (z. B. im Web angelegt): Supabase meldet aus
+      // Enumeration-Schutz keinen Fehler, verschickt aber auch keinen Code (leere identities).
+      // Statt auf eine Mail warten zu lassen, die nie kommt: in die Anmeldung — dort kommen die
+      // Notizen dieses Geraets mit (`syncAfterSignIn`).
+      if (user && user.identities?.length === 0) {
+        switchTab('signin');
+        setInputEmail(address);
+        showToast(t('settingsKonto.toastAccountExists'), 'info');
         return;
       }
       // Ohne Session gaebe es beim naechsten Kaltstart keinen User, aus dem
@@ -852,9 +877,10 @@ export default function SettingsKontoScreen() {
       setEmail(snapshot.email ?? user.email ?? '');
       if (snapshot.state === 'secured' && snapshot.userId) {
         clearUserIdCache();
-        // 'replace' wie bei der Anmeldung: wer sein Passwort zuruecksetzt,
-        // sitzt typischerweise an einem Zweitgeraet — der Kontostand gilt.
-        await resyncForUser(snapshot.userId, 'replace').catch(() => {});
+        // Wie bei der Anmeldung: wer sein Passwort zuruecksetzt, sitzt
+        // typischerweise an einem Zweitgeraet — der Kontostand gilt, ausser das
+        // Konto ist leer und die Notizen hier waren rein lokal.
+        await syncAfterSignIn(snapshot.userId).catch(() => {});
         await resyncThreadsForUser(snapshot.userId).catch(() => {});
         await refreshSubscription().catch(() => {});
       }

@@ -53,7 +53,7 @@ eas build --platform android|ios
 npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
-Bridge (`bridge/`): `vercel dev`, `vercel deploy --prod`. Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
+Bridge: `vercel deploy --prod` **aus dem Repo-Ordner** (Projekt-Root-Directory = `bridge`; `.vercelignore` lädt nur Bridge-Code ohne `.env`/`worker` hoch). Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
@@ -80,10 +80,10 @@ Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDe
   hochladen; nur bestätigte, remote fehlende Notizen bei gleicher UID gelten als gelöscht) → Outbox flushen →
   `subscribeRemote()` (INSERT/UPDATE/DELETE). Archivieren = `archived_at` setzen, nie DELETE; endgültig
   löschen = Tombstone + `deleteRemote()` (Batches à 200).
-- `resyncForUser(uid, mode)`: Default `'replace'` (Anmeldung = Zweitgerät, Kontostand gilt). `'merge'` nur
-  beim Routine-Start eines bestätigten Kontos und beim Erstupload (`uploadLocalNotes`). `detachSync()`
-  schaltet den Sync ab und behält den lokalen Bestand (vorher `flushPending()`; `signOut()`-Fehler bricht
-  ab) — Details unten.
+- `resyncForUser(uid, mode)`: Default `'replace'` (Zweitgerät, Kontostand gilt); `'merge'` nur bei Routine-Start/Erstupload.
+  Anmeldung/Reset: `syncAfterSignIn()` — leeres Konto + lokale Notizen → `uploadLocalNotes`; nur `@notizapp_account_bound`
+  (setzt `detachSync`) hält Reste eines abgemeldeten Kontos raus (A5), die Sync-UID kann in `local` veraltet sein (A8).
+  `deleteAllData` beendet den Sync. „Email not confirmed" → Code-Eingabe; „Konto sichern" mit bestätigter Adresse → Anmelden.
 ### Konto-Zustände (lokal-first)
 `src/sync/accountState.ts` ist die einzige Quelle: `local` → `pending-confirmation` → `secured`, strikt aus
 `user.email_confirmed_at` abgeleitet, nie aus einem lokalen Flag. **Die App legt nie selbst einen
@@ -142,14 +142,12 @@ Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`
 `louismuhr8@gmail.com` (`src/sync/adminAccess.ts`: `isAdminUser`, `useIsAdmin()` → `null` beim Laden). Reines UI-Gating, nur lokale Werkzeuge.
 
 ### i18n (Deutsch/Englisch)
-`src/i18n/index.ts` — i18n-js `I18n` (`de`/`en`), `defaultLocale = 'de'`, `enableFallback = true`; exportiert
-`t()`, `detectDeviceLocale()`, `setI18nLocale()`, Typ `AppLocale`. `locales/de.ts`/`en.ts` — verschachtelte
-Dictionaries, ein Namespace pro Screen (`en.ts` ist `typeof de`-typisiert); Plurale via `_one`/`_other`,
-Interpolation via `%{var}` oder `{{var}}`. `LanguageContext.tsx` → `useLanguage()` = `{ locale, preference,
-setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language`, Umschalter unter Darstellung.
-**Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via
-`locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t` (Default `i18n.t`).
-**Webapp (Insel-Graph)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`); Daten `app/api/graph/route.ts` (ohne archivierte). Ohne Login zeigt `/` den Beispiel-Graphen (`lib/demoData.ts`), Login als Overlay (`LoginView` mit `onClose`; Vollbild-Variante für `/bookmarklet`). Graph: jeder Thread eine Insel, Notizen als Pillen, KI-Verbindungen leise Linien (Brücke + Label erst bei Fokus). Layout `lib/graphLayout.ts` (erst Cluster, dann verteilen; Amber-Töne, Nachbarn verschieden), Zeichnen `components/Graph.tsx` (kein SSR; Detailstufen beim Zoom, Labels ohne Überlappung, Zwischenbild-Cache + 30 fps im Leerlauf — Darstellung nicht ohne Leistungsmessung ändern). Notizen stecken in genau einem Thread; Mehrfach-Zuordnung nur in Altdaten.
+`src/i18n/index.ts` — i18n-js `I18n` (`de`/`en`, Default `de`, Fallback an); exportiert `t()`, `detectDeviceLocale()`, `setI18nLocale()`, `AppLocale`. `locales/de.ts`/`en.ts` (ein Namespace pro Screen, `en` ist `typeof de`), Plurale `_one`/`_other`, Interpolation `%{var}`/`{{var}}`.
+`LanguageContext.tsx` → `useLanguage()` = `{ locale, preference, setPreference, t }`, `preference: 'system'|'de'|'en'` in `@notizapp_language` (Umschalter unter Darstellung).
+**Konventionen**: Routennamen nie übersetzt (nur `options.title`/`tabBarLabel`); Datum/Zeit via `locale === 'en' ? 'en-US' : 'de-DE'`; `timeGrouping.ts` nimmt optionales `t`.
+**Webapp-i18n**: `webapp/lib/i18n.tsx` (`useI18n()` → `{ locale, t }`, typisierte Objekte, Funktionen für Plurale), Sprache = `user_metadata.locale` (setzt die App) > gemerkte (`velm_locale`, auch nach Abmelden) > Browser; Flaggen-Umschalter `components/LangSwitch.tsx` (SVG, Windows kann keine Flaggen-Emojis) schreibt angemeldet ans Konto, die App behält ihre eigene Einstellung. Datenschutzseite + `stressData` bleiben deutsch. Demo-Graph zweisprachig (`demoFor(locale)`), Synthese bekommt `locale`.
+**Webapp-Notiz anlegen**: Regeln in `webapp/lib/noteDraft.ts` (Client + Server), Server-Kern `lib/createNote.ts` (Löschen: `lib/deleteNote.ts`, erst Notiz, dann Thread-Verweise; Client nimmt sofort raus, bei Fehler zurück + Toast), Fehler als Code → `t.noteErrors`/`t.deleteErrors`, Netzfehler (`isNetworkError`) ≠ abgelaufene Anmeldung; Fenster bleibt bei Fehlern offen. Erinnerung wird im Web gesetzt (`reminder_*`-Spalten), klingelt am Handy: `NotesContext.commitRemote` plant nach Pull/Realtime neu, wenn `reminderFingerprint` sich ändert.
+**Webapp (Insel-Graph)**: `webapp/`, eigenständiges Next.js-Projekt (eigene `node_modules`); Daten `app/api/graph/route.ts` (ohne archivierte). Ohne Login zeigt `/` den Beispiel-Graphen (`lib/demoData.ts`), Login als Overlay (`LoginView` mit `onClose`; Vollbild-Variante für `/bookmarklet`). Graph: jeder Thread eine Insel, Notizen als Pillen, KI-Verbindungen leise Linien (Brücke + Label erst bei Fokus). Layout `lib/graphLayout.ts` (erst Cluster, dann verteilen; Amber-Töne, Nachbarn verschieden), Zeichnen `components/Graph.tsx` (kein SSR; Detailstufen beim Zoom, Labels ohne Überlappung, Zwischenbild-Cache + 30 fps im Leerlauf — Darstellung nicht ohne Leistungsmessung ändern). Notizen stecken in genau einem Thread; Mehrfach-Zuordnung nur in Altdaten. Erstbesuch (nur Demo, `velm_intro_seen` in localStorage): Intro lose Notizen → Inseln → Verbindungen (`introKey`/`onIntro`, Karte pro Phase), danach `spotlight` = Kamera zu `DEMO_SPOTLIGHT` + Faden zwischen dessen zwei Notizen; Demo-Verbindungen zeigen auf konkrete Notizen, nicht auf Oberbegriffe. Leerlauf: Insel-Schein (nur Detailstufe) + Lichtpunkte auf Verbindungen als Sprites außerhalb des Zwischenbilds, aus bei reduced-motion. Gast: Hero-Satz links (`.velm-hero`, < 900 px aus), Haupt-CTA „Kostenlos starten" → Registrierung, Chips (`DEMO_TRY_NOTES`) werfen Notizen in die Demo (`spawnFrom`). Datenänderung = weicher Layout-Übergang (`startMorph`), neue Notizen fliegen ein. Konto ohne Threads: nur Text-Hinweis auf die App (bewusst keine Onboarding-Aufgaben im Web); erster Graph mit Threads → Intro einmal pro Konto (`velm_graph_intro_<uid>`, ≤ 80 Notizen). Handy (≤ 640 px, `narrow`): kompakte Topbar, Karte/Thread-Leiste unten (`ThreadPanel variant="sheet"`) werden gemessen und als Inset an den Graphen gegeben (der passt bei Größen-/Inset-Wechsel neu ein, außer der Nutzer hat selbst bewegt), Insel antippen = hinfliegen + Leiste, „☰" = `ThreadList`.
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
@@ -161,10 +159,10 @@ Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Import
 Fenster `webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Es hat das Formular und speichert per Webapp-Login
 → `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, ein eigenes Fenster nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
 
-Synthese läuft **on-demand** (`ThreadsScreen` → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
+Synthese läuft **on-demand** (`ThreadsScreen` bzw. Webapp `lib/synthesis.ts`, Topbar-Button nur mit Threads → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
 rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
-zurückgegeben, nicht bei „keine Notizen". Client zeigt `next_allowed_at` als Uhrzeit
+zurückgegeben, ebenso bei „keine Notizen"; sortiert die KI nichts ein → `nothing_assigned`, nur 10 min Sperre (Pro: zählt). Client zeigt `next_allowed_at` als Uhrzeit
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
 (`computeNextAllowedAt`), 429-Wert des Servers gewinnt. Ergebnis-Schreiben: KI kann Threads Notizen nur **hinzufügen**
 (`note_ids` = Bestand ∪ KI-Liste), nie Status setzen; neuer Thread mit Titel/ID eines aktiven → Notizen dort einhängen. Kein Dormant-Pruning (Modell kennt kein Datum).

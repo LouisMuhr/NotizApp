@@ -1,6 +1,7 @@
 'use client';
 
 import { Similarity, Thread } from '@/types';
+import { useI18n } from '@/lib/i18n';
 
 interface Props {
   similarity: Similarity;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function SimilarityOverlay({ similarity, thread1, thread2, onClose }: Props) {
+  const { t } = useI18n();
   return (
     <div
       style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
@@ -29,7 +31,7 @@ export default function SimilarityOverlay({ similarity, thread1, thread2, onClos
         </button>
 
         <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--amber)', marginBottom: 14 }}>
-          ✦ KI-Verbindung
+          {t.sim.kicker}
         </div>
 
         <h3 style={{ fontFamily: 'var(--font-lora, Lora, serif)', fontSize: 26, fontWeight: 500, color: 'var(--t1)', marginBottom: 16, lineHeight: 1.3, letterSpacing: '-0.01em' }}>
@@ -43,11 +45,11 @@ export default function SimilarityOverlay({ similarity, thread1, thread2, onClos
         </div>
 
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--amber)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
-          Warum diese Verbindung?
+          {t.sim.why}
         </div>
 
         <p style={{ fontSize: 14, lineHeight: 1.75, color: 'rgba(242,237,230,0.5)', fontWeight: 300, whiteSpace: 'pre-wrap' }}>
-          {similarity.explanation || 'Keine Erklärung verfügbar.'}
+          {similarity.explanation || t.sim.noExplanation}
         </p>
       </div>
     </div>

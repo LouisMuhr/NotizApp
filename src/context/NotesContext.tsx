@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   loadNotes, saveNotes, loadCategories, saveCategories, loadArchive, saveArchive,
   loadTombstones, saveTombstones, loadPendingSync, savePendingSync, loadSyncUid, saveSyncUid, clearSyncUid,
+  loadAccountBound, saveAccountBound,
   loadTierCache, saveTierCache, clearTierCache,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
@@ -17,7 +18,7 @@ import {
   markInitialUploadPending, clearInitialUploadPending, isInitialUploadPending,
 } from '../sync/accountState';
 import { pullRemote, subscribeRemote, deleteRemote, upsertRemote } from '../sync/remoteNotes';
-import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp } from '../sync/mergeNotes';
+import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTimestamp, reminderFingerprint } from '../sync/mergeNotes';
 import * as haptics from '../utils/haptics';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
@@ -65,6 +66,14 @@ interface NotesContextType {
    *   ersetzt. Gilt fuer Anmeldung auf einem Zweitgeraet und fuer das Abmelden.
    */
   resyncForUser: (userId: string, mode?: ResyncMode) => Promise<void>;
+  /**
+   * Sync nach einer Anmeldung: wie `resyncForUser(uid, 'replace')`, ausser das
+   * Konto ist leer und die lokalen Notizen gehoerten nie zu einem Konto — dann
+   * wandern sie hinein (`uploadLocalNotes`), statt durch „nichts" ersetzt zu
+   * werden. Typisch: Konto im Web angelegt, App vorher rein lokal genutzt.
+   * Wirft nur im Uebernahme-Fall (wie `uploadLocalNotes`).
+   */
+  syncAfterSignIn: (userId: string) => Promise<'adopted' | 'replaced'>;
   /**
    * Einmaliger Upload der lokalen Notizen bei Erstregistrierung. Wirft bei
    * Fehler, damit der Aufrufer einen sichtbaren Retry anbieten kann.
@@ -257,6 +266,24 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // Sync: Pull + Merge + Outbox + Realtime
   // ---------------------------------------------------------------------------
 
+  /**
+   * Eingehende Daten (Pull, Realtime) übernehmen. Erinnerungen plant bisher nur der Kaltstart —
+   * eine in der Webapp gesetzte Erinnerung klingelte sonst erst nach dem nächsten Neustart.
+   * Deshalb: ändern sich erinnerungsrelevante Felder, kurz gebündelt neu planen.
+   */
+  const reminderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitRemote = useCallback(async (next: Note[]) => {
+    const before = reminderFingerprint(allRef.current);
+    await commit(next);
+    if (reminderFingerprint(allRef.current) === before) return;
+    if (reminderTimerRef.current) clearTimeout(reminderTimerRef.current);
+    reminderTimerRef.current = setTimeout(() => {
+      reminderTimerRef.current = null;
+      if (!mountedRef.current) return;
+      rescheduleAllRemindersRef.current().catch((e) => console.warn('[sync] reschedule after remote change failed', e));
+    }, 300);
+  }, [commit]);
+
   const subscribeFor = useCallback((uid: string) => {
     if (unsubscribeRef.current) {
       try { unsubscribeRef.current(); } catch {}
@@ -265,15 +292,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     unsubscribeRef.current = subscribeRemote(uid, {
       onUpsert: (incoming) => {
         const next = applyIncoming(allRef.current, incoming, tombstonesRef.current);
-        if (next) commit(next).catch(() => {});
+        if (next) commitRemote(next).catch(() => {});
       },
       onDelete: (id) => {
         if (pendingRef.current.has(id)) return; // lokale Aenderung offen → wird nachgeschickt
         if (!allRef.current.some((n) => n.id === id)) return;
-        commit(allRef.current.filter((n) => n.id !== id)).catch(() => {});
+        commitRemote(allRef.current.filter((n) => n.id !== id)).catch(() => {});
       },
     });
-  }, [commit]);
+  }, [commitRemote]);
 
   const doSync = useCallback(async (uid: string, mode: ResyncMode) => {
     {
@@ -307,7 +334,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           toUpload = result.toUpload;
         }
         for (const n of toUpload) pendingRef.current.add(n.id);
-        await commit(merged);
+        await commitRemote(merged);
         await saveSyncUid(uid);
         try { await flushPending(); } catch (e) { console.warn('[sync] outbox not empty', e); }
       } else {
@@ -318,7 +345,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!mountedRef.current) return;
       subscribeFor(uid);
     }
-  }, [commit, flushPending, subscribeFor]);
+  }, [commitRemote, flushPending, subscribeFor]);
 
   /** Sync-Laeufe serialisieren: ein Resync waehrend des Start-Syncs wartet, statt zu entfallen. */
   const startSync = useCallback((uid: string, mode: ResyncMode) => {
@@ -440,6 +467,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mountedRef.current = false;
+      if (reminderTimerRef.current) clearTimeout(reminderTimerRef.current);
       sub.remove();
       if (unsubscribeRef.current) {
         try { unsubscribeRef.current(); } catch {}
@@ -727,6 +755,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       '@notizapp_tombstones',
       '@notizapp_pending_sync',
       '@notizapp_sync_uid',
+      '@notizapp_account_bound',
       '@notizapp_tier_cache',
       '@notizapp_pending_parse',
     ]);
@@ -746,6 +775,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         ]).catch((e) => console.warn('[gdpr] remote delete failed', e));
       }
     }
+    // Sync beenden: sonst lebt die UID des geloeschten Kontos weiter — neue Notizen landen in seiner
+    // Outbox, und der naechste Vordergrund-Sync schreibt sie zurueck nach @notizapp_sync_uid.
+    if (unsubscribeRef.current) {
+      try { unsubscribeRef.current(); } catch {}
+      unsubscribeRef.current = null;
+    }
+    deviceIdRef.current = null;
+    clearUserIdCache();
   }, [publish]);
 
   /**
@@ -807,6 +844,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setInitialUploadPending(false);
   }, [startSync]);
 
+  const syncAfterSignIn = useCallback(async (userId: string): Promise<'adopted' | 'replaced'> => {
+    clearUserIdCache();
+    if (!isSyncConfigured()) return 'replaced';
+    // Nur rein lokale Notizen kommen in Frage: Reste eines abgemeldeten Kontos
+    // gehoeren nicht in das naechste, auch nicht in ein leeres (A5) — das haelt
+    // `@notizapp_account_bound` fest. Die Sync-UID taugt dafuer nicht: im Zustand
+    // `local` kann sie veraltet sein (z. B. nach dem Loeschen eines Kontos, A8).
+    const pureLocal = allRef.current.length > 0 && !(await loadAccountBound().catch(() => true));
+    if (pureLocal) {
+      // Pull scheitert (null) → 'replace' unten behaelt den lokalen Bestand ohnehin.
+      const remote = await pullRemote(userId);
+      if (remote !== null && remote.length === 0) {
+        await uploadLocalNotes(userId);
+        return 'adopted';
+      }
+    }
+    await startSync(userId, 'replace');
+    return 'replaced';
+  }, [startSync, uploadLocalNotes]);
+
   /**
    * Sync abschalten, lokalen Bestand unveraendert behalten. Beim Abmelden geht
    * die App damit zurueck nach `local` — es wird KEIN neuer User erzeugt und
@@ -826,7 +883,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     pendingRef.current = new Set();
     await savePendingSync([]).catch(() => {});
     // Zuletzt gesyncte UID vergessen, damit `identityChanged` beim naechsten
-    // Sync korrekt greift.
+    // Sync korrekt greift. Dass der Bestand aus einem Konto stammt, bleibt
+    // gemerkt (siehe `syncAfterSignIn`).
+    if (await loadSyncUid().catch(() => null)) await saveAccountBound().catch(() => {});
     await clearSyncUid().catch(() => {});
     // Der Tier gehoert zum abgemeldeten Konto. Zurueck auf "unbekannt", damit
     // die UI nichts aus dem alten Konto behauptet.
@@ -861,6 +920,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         deleteCategory,
         rescheduleAllReminders,
         resyncForUser,
+        syncAfterSignIn,
         uploadLocalNotes,
         initialUploadPending,
         detachSync,

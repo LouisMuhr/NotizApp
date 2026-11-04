@@ -147,6 +147,7 @@ const en: typeof de = {
     notSignedIn: 'Not signed in',
     noNewNotes: 'No new notes to process.',
     nothingNew: 'Done — nothing new.',
+    nothingAssigned: 'No thread could be built from your notes yet. Notes with a single word or just a link are skipped. Your run wasn’t used up.',
     threadsCreated: {
       one: '{{count}} thread created',
       other: '{{count}} threads created',
@@ -362,6 +363,8 @@ const en: typeof de = {
     toastEnterEmailPassword: 'Please enter email and password.',
     toastSignInFailed: 'Sign in failed: ',
     toastConfirmEmail: 'Sign-in incomplete. Please confirm your email.',
+    toastAccountExists: 'There’s already an account for this address. Sign in — notes that so far live only on this device come along.',
+    toastConfirmBeforeSignIn: 'Your account isn’t confirmed yet. Enter the code from the email or request a new one.',
     toastPasswordsMismatch: 'Passwords do not match.',
     toastPasswordTooShort: 'Password must be at least 6 characters.',
     toastAccountSecured: 'Account secured. Your notes are now syncing.',

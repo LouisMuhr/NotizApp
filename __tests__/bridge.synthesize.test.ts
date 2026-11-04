@@ -3,7 +3,9 @@
  *
  * Phase-2-Tests fuer den Synthese-Endpoint (Rate-Limit, Claim/Release, Fehlerpfade).
  * Entscheidung 2: Lauf wird zurueckgegeben, wenn der Fehler auf unserer Seite liegt
- * (Netz, DB, unbrauchbare KI-Antwort); NICHT bei "keine Notizen" (User-Seite).
+ * (Netz, DB, unbrauchbare KI-Antwort). Seit 2026-11-01 auch bei "keine Notizen" (kein
+ * KI-Aufruf) und — bis auf 10 Minuten Sperre — wenn die KI keine Notiz einsortiert.
+ * Nur ein geschriebenes Ergebnis verbraucht den Lauf.
  */
 import handler from '../bridge/api/synthesize';
 
@@ -88,6 +90,8 @@ const claimCalls = () => calls.filter((c) => c.method === 'PATCH' && c.url.inclu
 const releaseCalls = () => calls.filter((c) => c.method === 'PATCH' && c.url.includes('/profiles') && !c.url.includes('ai_last_run='));
 
 test('Happy Path: Lauf wird vor dem KI-Call gebucht und nicht zurueckgegeben', async () => {
+  // Erfolg = die KI sortiert mindestens eine Notiz ein (ein leeres Ergebnis gibt den Lauf zurueck, s. E2f)
+  anthropic = () => jsonRes(200, { content: [{ type: 'text', text: JSON.stringify({ new_threads: [{ id: 'neu-1', title: 'Neu', summary: 's', note_ids: ['n1'] }], thread_updates: [], similarities: [] }) }] });
   const res = await run();
   expect(res.statusCode).toBe(200);
   expect(claimCalls()).toHaveLength(1);
@@ -111,12 +115,39 @@ test('E2c: Anthropic antwortet mit HTTP-Fehler → Lauf wird zurueckgegeben', as
   expect(releaseCalls()).toHaveLength(1);
 });
 
-test('E2d: keine Feed-Notizen → Lauf gilt als verbraucht (User-Seite, Entscheidung 2)', async () => {
+test('E2d: keine Feed-Notizen → kein KI-Aufruf, Lauf wird zurueckgegeben', async () => {
+  // Bis 2026-11-01 galt der Lauf hier als verbraucht. In der App ist „In Threads einbeziehen"
+  // standardmaessig aus — ein Missverstaendnis kostete Free-Nutzer eine Woche.
   feedNotes = [];
   const res = await run();
   expect(res.statusCode).toBe(200);
   expect(res.body.message).toBe('no_feed_notes');
-  expect(claimCalls()).toHaveLength(1);
+  expect(calls.some((c) => c.url.startsWith('https://api.anthropic.com'))).toBe(false);
+  expect(releaseCalls()).toHaveLength(1);
+  expect(releaseCalls()[0].body.ai_last_run).toBeNull(); // alter Stand (nie gelaufen)
+});
+
+test('E2f: KI sortiert keine Notiz ein → nichts geschrieben, nur 10 Minuten Sperre', async () => {
+  // Default-Antwort: new_threads/thread_updates leer (z. B. nur Notizen wie "test")
+  const before = Date.now();
+  const res = await run();
+  expect(res.statusCode).toBe(200);
+  expect(res.body.message).toBe('nothing_assigned');
+  expect(insertedThreads).toHaveLength(0);
+  // Verbindungen bleiben unangetastet (kein Loeschen + Neuschreiben)
+  expect(calls.some((c) => c.url.includes('thread_similarities') && c.method === 'DELETE')).toBe(false);
+  const release = releaseCalls();
+  expect(release).toHaveLength(1);
+  // Free: naechster Lauf = ai_last_run + 7 Tage ≈ jetzt + 10 Minuten
+  const nextAllowed = new Date(release[0].body.ai_last_run).getTime() + 7 * 24 * 3600_000;
+  expect(nextAllowed - before).toBeGreaterThan(9 * 60_000);
+  expect(nextAllowed - before).toBeLessThan(11 * 60_000);
+});
+
+test('E2g: Pro — leerer Lauf bleibt gezaehlt (Tageslimit statt Zeitfenster)', async () => {
+  profile = { id: 'u1', tier: 'pro', ai_last_run: null, ai_runs_today: 0, ai_day_reset: null };
+  const res = await run();
+  expect(res.body.message).toBe('nothing_assigned');
   expect(releaseCalls()).toHaveLength(0);
 });
 

@@ -59,6 +59,8 @@ body {
 @keyframes velm-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes velm-pop  { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
 @keyframes velm-draw { to { stroke-dashoffset: 0; } }
+@keyframes velm-pulse { 50% { opacity: 0.45; } }
+.velm-think { animation: velm-pulse 0.9s ease-in-out infinite; }
 
 /* ── Bookmarklet-Speicherfenster: Fokus/Hover, die per Inline-Style nicht gehen ── */
 .velm-field { transition: border-color 0.15s, background 0.15s; }
@@ -70,8 +72,12 @@ body {
 .velm-primary:hover:not(:disabled) { filter: brightness(1.07); }
 .velm-primary:active:not(:disabled) { transform: translateY(1px); }
 .velm-scroll { scrollbar-width: thin; scrollbar-color: rgba(244, 162, 97, 0.15) transparent; }
+/* Startseite: Hero-Satz nur, wenn links neben dem Graphen Platz ist (sonst läge er über den Inseln) */
+@media (max-width: 900px), (max-height: 660px) {
+  .velm-hero { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .velm-rise, .velm-pop, .velm-draw { animation: none !important; }
+  .velm-rise, .velm-pop, .velm-draw, .velm-hero { animation: none !important; }
   .velm-draw { stroke-dashoffset: 0 !important; }
 }
 
@@ -84,3 +90,6 @@ body {
 .animate-slide-in {
   animation: slide-in 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+/* Native Auswahllisten: Firefox ignoriert color-scheme bei den Optionen teilweise */
+select option { background: #1E1A16; color: #F2EDE6; }

@@ -53,7 +53,7 @@ export default function SettingsDatenschutzScreen() {
   const theme = useTheme();
   const navigation = useNavigation<any>();
   const { notes, archivedNotes, deleteAllData } = useNotes();
-  const { threads, clearAllThreads } = useThoughts();
+  const { threads, clearAllThreads, detachSync: detachThreadsSync } = useThoughts();
   const { t } = useLanguage();
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -92,8 +92,10 @@ export default function SettingsDatenschutzScreen() {
         uid = user?.id ?? null;
       }
 
-      // 1. Lokale Daten + per-Tabelle Remote-Daten löschen.
+      // 1. Lokale Daten + per-Tabelle Remote-Daten löschen. Beide Bestände hören danach auf zu
+      //    syncen — sonst arbeiten sie weiter gegen die UID des gelöschten Kontos.
       clearAllThreads();
+      await detachThreadsSync();
       await deleteAllData();
 
       // 2. Auth-User (auth.users) inkl. E-Mail löschen — Cascade räumt den Rest.

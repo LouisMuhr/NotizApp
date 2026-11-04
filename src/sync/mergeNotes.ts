@@ -109,6 +109,18 @@ export function applyIncoming(all: Note[], incoming: Note, tombstones: Set<strin
   return next;
 }
 
+/**
+ * Alles, was eine geplante Erinnerung beeinflusst (Zeitpunkt, Wiederholung, Text, Archiv, Existenz).
+ * Ändert sich das durch eingehende Daten, muss das Gerät neu planen.
+ */
+export function reminderFingerprint(all: Note[]): string {
+  return all
+    .filter((n) => n.reminderAt !== null)
+    .map((n) => [n.id, n.reminderAt, n.reminderRecurrence, n.reminderWeekday, n.reminderDayOfMonth, n.archivedAt ?? '', n.title, n.content].join('\u0001'))
+    .sort()
+    .join('\u0002');
+}
+
 /** Liefert einen Zeitstempel, der garantiert nach `previousIso` liegt. */
 export function nextTimestamp(previousIso?: string | null): string {
   return new Date(Math.max(Date.now(), ts(previousIso) + 1)).toISOString();
