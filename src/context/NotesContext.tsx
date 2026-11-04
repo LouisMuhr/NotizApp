@@ -764,17 +764,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     tombstonesRef.current = new Set();
     pendingRef.current = new Set();
 
-    if (deviceIdRef.current) {
-      const supabase = getSupabase();
-      if (supabase) {
-        const uid = deviceIdRef.current;
-        await Promise.all([
-          supabase.from('notes').delete().eq('user_id', uid),
-          supabase.from('thoughts').delete().eq('user_id', uid),
-          supabase.from('threads').delete().eq('user_id', uid),
-        ]).catch((e) => console.warn('[gdpr] remote delete failed', e));
-      }
-    }
+    // Server-Daten loescht der Aufrufer vorher ueber deleteAccountCompletely(): auth.users
+    // → `on delete cascade` auf notes/thoughts/threads/profiles (Migration 2026-11-04).
     // Sync beenden: sonst lebt die UID des geloeschten Kontos weiter — neue Notizen landen in seiner
     // Outbox, und der naechste Vordergrund-Sync schreibt sie zurueck nach @notizapp_sync_uid.
     if (unsubscribeRef.current) {

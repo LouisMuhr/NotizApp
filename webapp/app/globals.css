@@ -76,6 +76,10 @@ body {
 @media (max-width: 900px), (max-height: 660px) {
   .velm-hero { display: none; }
 }
+/* Handy: unten liegen Karte/Thread-Leiste; Impressum/Datenschutz stehen dort im Konto-Menü bzw. Login */
+@media (max-width: 640px) {
+  .velm-legal { display: none !important; }
+}
 @media (prefers-reduced-motion: reduce) {
   .velm-rise, .velm-pop, .velm-draw, .velm-hero { animation: none !important; }
   .velm-draw { stroke-dashoffset: 0 !important; }

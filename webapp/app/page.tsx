@@ -609,6 +609,10 @@ export default function Home() {
                     <span style={{ fontSize: 12, color: 'var(--t3)' }}>{t.topbar.language}</span>
                     <LangSwitch />
                   </div>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 10, fontSize: 11.5 }}>
+                    <Link href="/impressum" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
+                    <Link href="/privacy" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
+                  </div>
                   <button
                     onClick={() => { setUserMenu(false); handleLogout(); }}
                     className="velm-hover"
@@ -790,6 +794,12 @@ export default function Home() {
         <button onClick={() => graphHandle.current?.zoomBy(-0.2)} style={btnStyle}>−</button>
         <button onClick={() => graphHandle.current?.zoomReset()} style={{ ...btnStyle, fontSize: 13, fontWeight: 500 }}>⊙</button>
         <button onClick={() => graphHandle.current?.zoomBy(0.2)} style={btnStyle}>+</button>
+      </div>
+
+      {/* IMPRESSUM/DATENSCHUTZ: von der Startseite aus immer erreichbar (Handy: Konto-Menü bzw. Login) */}
+      <div className="velm-legal" style={{ position: 'absolute', right: 16, bottom: 10, zIndex: 15, display: 'flex', gap: 12, fontSize: 11, fontFamily: 'Inter, sans-serif' }}>
+        <Link href="/impressum" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
+        <Link href="/privacy" style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
       </div>
 
       {/* RÜCKMELDUNG nach der Synthese */}

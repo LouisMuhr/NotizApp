@@ -86,12 +86,14 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) { setError(t.login.fillAll); return; }
+    if (!email || !password) { setError(t.login.fillAll); return; }
     if (password !== confirmPw)        { setError(t.login.pwMismatch); return; }
     if (password.length < 6)           { setError(t.login.pwShort); return; }
     setLoading(true); setError('');
     // `locale` liest das Mail-Template ({{ .Data.locale }}), wie bei der Registrierung in der App.
-    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim(), locale } } });
+    // Name ist optional (Datenminimierung) — ohne ihn zeigt die Topbar den Teil vor dem @.
+    const meta = name.trim() ? { full_name: name.trim(), locale } : { locale };
+    const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: meta } });
     if (err || !data.user) {
       setError(authErrorText(t, err, t.login.registerFailed));
       setLoading(false); return;
@@ -213,7 +215,7 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
           {isReg && (
             <div>
               <label style={s.label}>{t.login.name}</label>
-              <input type="text" value={name} autoFocus onChange={e => { setName(e.target.value); setError(''); }} style={s.input} placeholder={t.login.namePh} />
+              <input type="text" value={name} autoFocus autoComplete="name" onChange={e => { setName(e.target.value); setError(''); }} style={s.input} placeholder={t.login.namePh} />
             </div>
           )}
           <div>
@@ -259,6 +261,16 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
           }
         </p>
         {!isReg && <p style={s.footnote}>{t.login.footnote}</p>}
+        {isReg && (
+          <p style={s.footnote}>
+            {t.login.privacyHint}{' '}
+            <a href="/privacy" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacyPolicy}</a>.
+          </p>
+        )}
+        <p style={{ ...s.footnote, display: 'flex', gap: 12, justifyContent: 'center' }}>
+          <a href="/impressum" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.imprint}</a>
+          <a href="/privacy" target="_blank" rel="noopener" style={{ color: 'inherit' }}>{t.legal.privacy}</a>
+        </p>
         </>)}
       </div>
     </div>

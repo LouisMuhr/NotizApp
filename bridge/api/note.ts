@@ -136,7 +136,9 @@ export default async function handler(req: any, res: any) {
       body: JSON.stringify(row),
     });
     if (!r.ok) {
-      console.error('[note] insert failed', r.status, await r.text().catch(() => ''));
+      // Nur Status + Fehlercode: PostgREST-Meldungen koennen die Zeile samt Notizinhalt enthalten.
+      const errCode = await r.json().then((b: any) => b?.code).catch(() => undefined);
+      console.error('[note] insert failed', r.status, errCode);
       res.status(500).json({ error: 'internal' });
       return;
     }
