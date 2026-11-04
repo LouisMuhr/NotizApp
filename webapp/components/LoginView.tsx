@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import VelmIcon from '@/components/VelmIcon';
 import { useI18n, type Messages } from '@/lib/i18n';
+import { isPasswordStrongEnough } from '@/lib/passwordPolicy';
 
 /** Supabase-Fehler → verständlicher Text; rohe (englische) Meldungen nie direkt zeigen. */
 function authErrorText(t: Messages, err: { code?: string; status?: number; name?: string; message?: string } | null, fallback: string): string {
   if (!err) return fallback;
   if (err.code === 'invalid_credentials' || /invalid login credentials/i.test(err.message ?? '')) return t.login.invalidCredentials;
+  if (err.code === 'weak_password') return t.login.pwShort;
   if (err.status === 429 || /rate limit/i.test(err.message ?? '')) return t.login.tooMany;
   if (err.name === 'AuthRetryableFetchError' || /fetch/i.test(err.message ?? '')) return t.login.networkError;
   return fallback;
@@ -88,7 +90,7 @@ export default function LoginView({ onLogin, onClose, initialMode = 'login' }: P
     e.preventDefault();
     if (!name || !email || !password) { setError(t.login.fillAll); return; }
     if (password !== confirmPw)        { setError(t.login.pwMismatch); return; }
-    if (password.length < 6)           { setError(t.login.pwShort); return; }
+    if (!isPasswordStrongEnough(password)) { setError(t.login.pwShort); return; }
     setLoading(true); setError('');
     // `locale` liest das Mail-Template ({{ .Data.locale }}), wie bei der Registrierung in der App.
     const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim(), locale } } });
