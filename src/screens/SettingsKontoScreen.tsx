@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme, Text, ActivityIndicator, Portal, Dialog, Button } from 'react-native-paper';
+import { openPrivacyPolicy } from '../utils/legalLinks';
 import { isPasswordStrongEnough, isWeakPasswordError } from '../utils/passwordPolicy';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -1098,6 +1099,13 @@ export default function SettingsKontoScreen() {
                     loading={busyAction === 'upgrade'}
                     disabled={loading || !inputEmail.trim() || !inputPassword || !inputPasswordConfirm}
                   />
+                  {/* Art. 13 DSGVO: Hinweis auf die Datenschutzerklärung bei der Erhebung */}
+                  <Text style={styles.hintText}>
+                    {t('settingsKonto.privacyHint')}{' '}
+                    <Text style={{ textDecorationLine: 'underline' }} onPress={() => openPrivacyPolicy(locale)}>
+                      {t('settingsKonto.privacyLink')}
+                    </Text>.
+                  </Text>
                 </View>
               </>
             )}

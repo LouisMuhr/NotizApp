@@ -566,7 +566,9 @@ export default async function handler(req: any, res: any) {
       });
 
       if (!anthropicRes.ok) {
-        console.error('[synthesize] anthropic', anthropicRes.status, await anthropicRes.text().catch(() => ''));
+        // Nur Status + Fehlertyp: Logs liegen beim Hoster, Notizinhalte haben dort nichts zu suchen.
+        const errType = await anthropicRes.json().then((b: any) => b?.error?.type).catch(() => undefined);
+        console.error('[synthesize] anthropic', anthropicRes.status, errType);
         throw new SynthesisError('ai_unavailable');
       }
 
@@ -576,7 +578,7 @@ export default async function handler(req: any, res: any) {
 
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        console.error('[synthesize] no JSON in AI response', rawText.slice(0, 300));
+        console.error('[synthesize] no JSON in AI response', { length: rawText.length, stop: anthropicData.stop_reason });
         throw new SynthesisError('ai_response_invalid');
       }
 
@@ -584,7 +586,7 @@ export default async function handler(req: any, res: any) {
       try {
         synthesis = JSON.parse(jsonMatch[0]);
       } catch (e: any) {
-        console.error('[synthesize] JSON parse error', e?.message, rawText.slice(0, 300));
+        console.error('[synthesize] JSON parse error', e?.name, { length: rawText.length, stop: anthropicData.stop_reason });
         throw new SynthesisError('ai_response_invalid');
       }
 

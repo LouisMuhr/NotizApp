@@ -10,6 +10,7 @@ import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
 import { clearPendingEmail, clearInitialUploadPending } from '../sync/accountState';
 import { deleteAccountCompletely } from '../sync/deleteAccount';
+import { openImprint, openPrivacyPolicy } from '../utils/legalLinks';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
@@ -54,7 +55,7 @@ export default function SettingsDatenschutzScreen() {
   const navigation = useNavigation<any>();
   const { notes, archivedNotes, deleteAllData } = useNotes();
   const { threads, clearAllThreads, detachSync: detachThreadsSync } = useThoughts();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
@@ -92,16 +93,18 @@ export default function SettingsDatenschutzScreen() {
         uid = user?.id ?? null;
       }
 
-      // 1. Lokale Daten + per-Tabelle Remote-Daten löschen. Beide Bestände hören danach auf zu
-      //    syncen — sonst arbeiten sie weiter gegen die UID des gelöschten Kontos.
-      clearAllThreads();
-      await detachThreadsSync();
-      await deleteAllData();
-
-      // 2. Auth-User (auth.users) inkl. E-Mail löschen — Cascade räumt den Rest.
+      // 1. Zuerst den Auth-User (auth.users) inkl. E-Mail löschen — `on delete cascade` nimmt
+      //    Notizen, Threads und Profil mit. Schlägt das fehl, bleibt auch lokal alles stehen:
+      //    sonst wären die Daten auf dem Gerät weg und auf dem Server noch da.
       if (uid) {
         await deleteAccountCompletely();
       }
+
+      // 2. Lokale Daten löschen. Beide Bestände hören danach auf zu syncen — sonst arbeiten
+      //    sie weiter gegen die UID des gelöschten Kontos.
+      clearAllThreads();
+      await detachThreadsSync();
+      await deleteAllData();
 
       // 3. Session beenden — die App laeuft danach im Zustand `local` weiter.
       //    Es wird KEIN neuer (anonymer) User erzeugt.
@@ -133,6 +136,27 @@ export default function SettingsDatenschutzScreen() {
           <Text style={[styles.cardBody, { color: theme.colors.onSurfaceVariant }]}>
             {t('settingsDatenschutz.dataCardBody')}
           </Text>
+        </View>
+
+        {/* Rechtliches: einzige Fassung liegt in der Webapp */}
+        <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+          {t('settingsDatenschutz.legalSection')}
+        </Text>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+          {[
+            { label: t('settingsDatenschutz.privacyPolicy'), icon: 'shield-lock-outline' as const, onPress: () => openPrivacyPolicy(locale) },
+            { label: t('settingsDatenschutz.imprint'), icon: 'information-outline' as const, onPress: () => openImprint(locale) },
+          ].map((item) => (
+            <Pressable key={item.label} onPress={item.onPress} style={styles.row} accessibilityRole="link">
+              <View style={[styles.rowIcon, { backgroundColor: Tokens.amberDeep }]}>
+                <MaterialCommunityIcons name={item.icon} size={19} color={Tokens.paper} />
+              </View>
+              <Text style={{ flex: 1, color: theme.colors.onSurface, fontSize: 15, fontFamily: Fonts.sansMedium }}>
+                {item.label}
+              </Text>
+              <MaterialCommunityIcons name="open-in-new" size={18} color={theme.colors.onSurfaceVariant} />
+            </Pressable>
+          ))}
         </View>
 
         {/* Export */}
