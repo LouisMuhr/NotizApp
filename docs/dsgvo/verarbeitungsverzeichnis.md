@@ -16,14 +16,16 @@ Dieses Dokument ist intern. Auf Anfrage der Aufsichtsbehörde vorlegen, nicht ve
 
 ## 1. Übersicht der Auftragsverarbeiter
 
-| Dienstleister | Sitz | Leistung | Datenort | Transfergrundlage | AVV abgelegt |
+Die AVV sind Teil der Nutzungsbedingungen des jeweiligen Anbieters. Datierte PDF-Kopien liegen privat unter `Velm/Rechtliches/AVV/`.
+
+| Dienstleister | Sitz | Leistung | Datenort | Transfergrundlage | AVV |
 |---|---|---|---|---|---|
-| Supabase Inc. | USA | Datenbank, Auth, Auth-Mails, Cron | Frankfurt (eu-central-1) | DPF bzw. SCC im DPA | ☐ |
-| Vercel Inc. | USA | Hosting Webapp + Bridge-Funktionen, Logs | Funktionen Frankfurt (fra1), CDN global | DPF bzw. SCC im DPA | ☐ |
-| Anthropic PBC | USA | KI-Synthese, KI-Sprachnotizen (Claude Haiku) | USA | SCC im DPA (Teil der Commercial Terms) | ☐ |
-| 650 Industries, Inc. (Expo) | USA | OTA-App-Updates (EAS Update), Builds | USA | DPF bzw. SCC im DPA | ☐ |
-| Stripe Payments Europe Ltd. / Stripe, Inc. | IE / USA | Zahlungsabwicklung (sobald angebunden) | EU / USA | SCC / DPF | ☐ |
-| Resend (Plus Five Five, Inc.) | USA | Versand der Auth-Mails (Codes) als SMTP von Supabase Auth | USA | DPF + SCC im DPA (Teil der ToS) | ☐ |
+| Supabase Inc. | USA | Datenbank, Auth, Auth-Mails, Cron | Frankfurt (eu-central-1) | DPF bzw. SCC im DPA | https://supabase.com/legal/customer-resources/data-processing-addendum |
+| Vercel Inc. | USA | Hosting Webapp + Bridge-Funktionen, Logs | Funktionen Frankfurt (fra1), CDN global | DPF bzw. SCC im DPA | https://vercel.com/legal/dpa |
+| Anthropic PBC | USA | KI-Synthese, KI-Sprachnotizen (Claude Haiku) | USA | SCC im DPA (Teil der Commercial Terms) | https://www.anthropic.com/legal/data-processing-addendum |
+| Resend (Plus Five Five, Inc.) | USA | Versand der Auth-Mails (Codes) als SMTP von Supabase Auth | USA | DPF + SCC im DPA (Teil der ToS) | https://resend.com/settings/documents (unterschriebenes PDF) |
+| 650 Industries, Inc. (Expo) | USA | OTA-Updates: jede App fragt beim Start `u.expo.dev` nach Updates (IP, App-/Runtime-Version) | USA | DPF bzw. SCC | ☐ auf Anfrage beim Expo-Support |
+| Stripe Payments Europe Ltd. / Stripe, Inc. | IE / USA | Zahlungsabwicklung (sobald angebunden) | EU / USA | SCC / DPF | ☐ bei Anbindung |
 
 Eigenständig Verantwortliche (keine Auftragsverarbeitung): Google (Android-Spracherkennung), Apple (iOS-Spracherkennung,
 App Store), Google Play. Werden in der Datenschutzerklärung genannt.
