@@ -8,10 +8,11 @@ Dieses Dokument ist intern. Auf Anfrage der Aufsichtsbehörde vorlegen, nicht ve
 | | |
 |---|---|
 | Verantwortlicher | Louis Muhr, Velm (Einzelunternehmen) |
-| Anschrift | [Straße Hausnummer, PLZ Ort] – identisch mit `webapp/lib/legal.ts` |
+| Anschrift | Döblergasse 3, 1070 Wien, Österreich – identisch mit `webapp/lib/legal.ts` |
 | Kontakt Datenschutz | louismuhr8@gmail.com |
-| Datenschutzbeauftragter | nicht benannt (keine Pflicht nach § 38 BDSG: < 20 Personen ständig mit Verarbeitung befasst, keine Kerntätigkeit nach Art. 37 Abs. 1 lit. b/c) |
-| Vertreter in der EU | entfällt (Sitz in Deutschland) |
+| Datenschutzbeauftragter | nicht benannt (keine Pflicht nach Art. 37 DSGVO: keine Behörde, keine umfangreiche systematische Überwachung, keine umfangreiche Verarbeitung besonderer Kategorien als Kerntätigkeit; Österreich kennt keine zusätzliche nationale Pflicht) |
+| Aufsichtsbehörde | Österreichische Datenschutzbehörde, Barichgasse 40–42, 1030 Wien |
+| Vertreter in der EU | entfällt (Sitz in Österreich) |
 
 ## 1. Übersicht der Auftragsverarbeiter
 
@@ -117,11 +118,11 @@ App Store), Google Play. Werden in der Datenschutzerklärung genannt.
 | | |
 |---|---|
 | Zweck | Abos abschließen, abrechnen, verwalten; Funktionsumfang nach Tier freischalten |
-| Rechtsgrundlage | Art. 6 Abs. 1 lit. b (Vertrag), lit. c (§ 147 AO, § 257 HGB) |
+| Rechtsgrundlage | Art. 6 Abs. 1 lit. b (Vertrag), lit. c (§ 132 BAO, § 212 UGB) |
 | Daten | Tier, Abo-Status, Stripe-Kunden-ID, Beträge, Rechnungen; Zahlungsdaten nur bei Stripe |
 | Empfänger | Stripe, Steuerberater/Finanzamt |
 | Drittland | Stripe, Inc. USA (SCC/DPF) |
-| Löschung | Abrechnungsbelege 8 Jahre (Buchungsbelege) bzw. 10 Jahre (Bücher); Tier mit Konto |
+| Löschung | Abrechnungsbelege 7 Jahre (§ 132 BAO); Tier mit Konto |
 
 ### V9 – Betrieb, Sicherheit, Server-Logs
 
@@ -161,7 +162,7 @@ App Store), Google Play. Werden in der Datenschutzerklärung genannt.
 | | |
 |---|---|
 | Zweck | Anmeldesitzung halten, Sprache und „Intro gesehen" merken, Graph kurz zwischenspeichern |
-| Rechtsgrundlage | § 25 Abs. 2 Nr. 2 TDDDG, Art. 6 Abs. 1 lit. b DSGVO |
+| Rechtsgrundlage | § 165 Abs. 3 TKG 2021, Art. 6 Abs. 1 lit. b DSGVO |
 | Daten | Supabase-Session (localStorage), `velm_locale`, `velm_intro_seen`, `velm_graph_intro_<uid>`, Graph-Cache (sessionStorage) |
 | Empfänger | keine (nur im Browser) |
 | Löschung | Abmelden / Browserdaten löschen; sessionStorage beim Schließen des Tabs |

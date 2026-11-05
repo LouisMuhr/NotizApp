@@ -14,7 +14,8 @@ const page: React.CSSProperties = {
 const container: React.CSSProperties = { maxWidth: 680, margin: '0 auto', padding: '48px 24px 96px' };
 const h1: React.CSSProperties = { fontSize: '2rem', fontWeight: 700, marginBottom: 8 };
 const meta: React.CSSProperties = { color: '#666', fontSize: '0.9rem', marginBottom: 48 };
-const langLink: React.CSSProperties = { color: '#666', fontSize: '0.9rem', display: 'block', marginBottom: 24 };
+const langSwitch: React.CSSProperties = { color: '#666', fontSize: '0.9rem', display: 'flex', gap: 6, marginBottom: 24 };
+const langActive: React.CSSProperties = { color: '#1a1a1a', fontWeight: 600 };
 const hr: React.CSSProperties = { border: 'none', borderTop: '1px solid #e5e5e5', margin: '48px 0' };
 const footer: React.CSSProperties = { color: '#666', fontSize: '0.85rem', display: 'flex', gap: 16, flexWrap: 'wrap' };
 
@@ -34,8 +35,8 @@ export const LEGAL_ROUTES = {
 } as const;
 
 const LABELS = {
-  de: { updated: 'Zuletzt aktualisiert', imprint: 'Impressum', privacy: 'Datenschutz', other: 'English version' },
-  en: { updated: 'Last updated', imprint: 'Legal notice', privacy: 'Privacy', other: 'Deutsche Fassung' },
+  de: { updated: 'Zuletzt aktualisiert', imprint: 'Impressum', privacy: 'Datenschutz', language: 'Sprache' },
+  en: { updated: 'Last updated', imprint: 'Legal notice', privacy: 'Privacy', language: 'Language' },
 };
 
 export default function LegalPage({ lang, kind, title, updated, children }: {
@@ -47,13 +48,18 @@ export default function LegalPage({ lang, kind, title, updated, children }: {
 }) {
   const l = LABELS[lang];
   const routes = LEGAL_ROUTES[lang];
-  const other = LEGAL_ROUTES[lang === 'de' ? 'en' : 'de'][kind];
+  // Umschalter „DE | EN": die aktuelle Sprache fett und ohne Link, die andere verlinkt auf dieselbe Seite.
+  const switchItem = (code: 'de' | 'en') => code === lang
+    ? <span style={langActive} aria-current="true">{code.toUpperCase()}</span>
+    : <Link style={{ color: '#666' }} href={LEGAL_ROUTES[code][kind]} hrefLang={code}>{code.toUpperCase()}</Link>;
   return (
     <main style={page} lang={lang}>
       <div style={container}>
         <h1 style={h1}>{title}</h1>
         {updated ? <p style={{ ...meta, marginBottom: 8 }}>{l.updated}: {updated}</p> : null}
-        <Link style={langLink} href={other} hrefLang={lang === 'de' ? 'en' : 'de'}>{l.other}</Link>
+        <nav style={langSwitch} aria-label={l.language}>
+          {switchItem('de')}<span aria-hidden>|</span>{switchItem('en')}
+        </nav>
         {children}
         <hr style={hr} />
         <p style={footer}>

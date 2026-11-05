@@ -4,13 +4,15 @@ import { OPERATOR } from '@/lib/legal';
 
 export const metadata: Metadata = {
   title: 'Impressum – Velm',
-  description: 'Anbieterkennzeichnung nach § 5 DDG.',
+  description: 'Informationspflicht nach § 5 ECG und Offenlegung nach § 25 MedienG.',
 };
 
+// Sitz in Österreich: § 5 E-Commerce-Gesetz + § 25 Mediengesetz. Gewerbe-Angaben erscheinen,
+// sobald sie in lib/legal.ts eingetragen sind.
 export default function ImpressumPage() {
   return (
     <LegalPage lang="de" kind="imprint" title="Impressum">
-      <h2 style={legal.h2}>Angaben gemäß § 5 DDG</h2>
+      <h2 style={legal.h2}>Informationspflicht nach § 5 ECG und Offenlegung nach § 25 MedienG</h2>
       <p style={legal.p}>
         {OPERATOR.name}<br />
         {OPERATOR.business.de}<br />
@@ -25,15 +27,27 @@ export default function ImpressumPage() {
         Telefon: {OPERATOR.phone}
       </p>
 
-      {OPERATOR.vatId && (
+      <h2 style={legal.h2}>Unternehmensgegenstand</h2>
+      <p style={legal.p}>{OPERATOR.purpose.de}</p>
+
+      {(OPERATOR.trade.de || OPERATOR.authority || OPERATOR.chamber.de || OPERATOR.vatId) && (
         <>
-          <h2 style={legal.h2}>Umsatzsteuer-ID</h2>
-          <p style={legal.p}>Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: {OPERATOR.vatId}</p>
+          <h2 style={legal.h2}>Gewerberechtliche Angaben</h2>
+          <p style={legal.p}>
+            {OPERATOR.trade.de && <>Gewerbe: {OPERATOR.trade.de}<br /></>}
+            {OPERATOR.authority && <>Gewerbebehörde: {OPERATOR.authority}<br /></>}
+            {OPERATOR.chamber.de && <>Mitglied der {OPERATOR.chamber.de}<br /></>}
+            {OPERATOR.trade.de && <>Anwendbare Rechtsvorschrift: Gewerbeordnung, abrufbar unter{' '}
+              <a style={legal.a} href="https://www.ris.bka.gv.at" target="_blank" rel="noopener noreferrer">www.ris.bka.gv.at</a><br /></>}
+            {OPERATOR.vatId && <>UID-Nummer: {OPERATOR.vatId}</>}
+          </p>
         </>
       )}
 
-      <h2 style={legal.h2}>Verantwortlich für den Inhalt</h2>
-      <p style={legal.p}>{OPERATOR.name}, Anschrift wie oben.</p>
+      <h2 style={legal.h2}>Medieninhaber und Herausgeber</h2>
+      <p style={legal.p}>
+        {OPERATOR.name}, {OPERATOR.city}. Grundlegende Richtung: Informationen über die App Velm und deren Bereitstellung.
+      </p>
 
       <h2 style={legal.h2}>Verbraucherstreitbeilegung</h2>
       <p style={legal.p}>

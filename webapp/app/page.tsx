@@ -768,6 +768,13 @@ export default function Home() {
               {t.guest.replayIntro}
             </button>
           )}
+          {/* Handy: der Footer unten rechts ist dort ausgeblendet (.velm-legal), deshalb in der Karte */}
+          {narrow && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 10, fontSize: 11, fontFamily: 'Inter, sans-serif' }}>
+              <Link href={t.legal.imprintHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.imprint}</Link>
+              <Link href={t.legal.privacyHref} style={{ color: 'var(--t3)', textDecoration: 'none' }}>{t.legal.privacy}</Link>
+            </div>
+          )}
         </div>
       )}
 

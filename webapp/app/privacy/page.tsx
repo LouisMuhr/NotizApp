@@ -124,7 +124,7 @@ export default function PrivacyPage() {
         Die Web-App speichert im Browser (localStorage/sessionStorage) nur, was für den Dienst nötig
         ist: deine Anmeldesitzung, die gewählte Sprache, ob du die Einführung schon gesehen hast, und
         einen kurzfristigen Zwischenspeicher des Graphen. Es werden keine Cookies zu Tracking- oder
-        Werbezwecken gesetzt. Rechtsgrundlage: § 25 Abs. 2 Nr. 2 TDDDG, Art. 6 Abs. 1 lit. b DSGVO.
+        Werbezwecken gesetzt. Rechtsgrundlage: § 165 Abs. 3 TKG 2021, Art. 6 Abs. 1 lit. b DSGVO.
       </p>
 
       <h2 style={h2}>4. Speicherort und Sicherheit</h2>
@@ -163,7 +163,7 @@ export default function PrivacyPage() {
         <li style={li}>Nicht bestätigte Registrierungen: werden beim Abbruch sofort, sonst spätestens nach 30 Tagen gelöscht.</li>
         <li style={li}>KI-Eingaben bei Anthropic: höchstens 30 Tage.</li>
         <li style={li}>Server-Logs: wenige Tage.</li>
-        <li style={li}>Rechnungs- und Zahlungsbelege: 8 bzw. 10 Jahre (§ 147 AO, § 257 HGB), auch nach Löschung des Kontos.</li>
+        <li style={li}>Rechnungs- und Zahlungsbelege: 7 Jahre (§ 132 BAO), auch nach Löschung des Kontos.</li>
       </ul>
 
       <h2 style={h2}>8. Deine Rechte</h2>
@@ -180,7 +180,9 @@ export default function PrivacyPage() {
       <p style={p}>
         Anfragen an <a style={a} href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a>; wir antworten
         innerhalb eines Monats. Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde
-        beschweren (Art. 77 DSGVO), insbesondere in dem Land, in dem du wohnst.
+        beschweren (Art. 77 DSGVO), insbesondere in dem Land, in dem du wohnst. Für uns zuständig ist die
+        Österreichische Datenschutzbehörde, Barichgasse 40–42, 1030 Wien,{' '}
+        <Ext href="https://www.dsb.gv.at">www.dsb.gv.at</Ext>.
       </p>
 
       <h2 style={h2}>9. Pflicht zur Bereitstellung</h2>

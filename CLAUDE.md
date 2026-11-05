@@ -131,7 +131,7 @@ MÜSSEN trotzdem explizit nach `user_id` filtern (Defense-in-Depth, auch in der 
 Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projekte: `supabase-migration-2026-09-17.sql`
 (`notes.archived_at`, `replica identity full`, keine Client-Update-Policy auf `profiles`),
 `supabase-migration-2026-09-24.sql` (`profiles.voice_ai_*`), 2026-10-27 offene `true`-Policies entfernt — **nie wieder `using (true)`**, permissive Policies sind ODER-verknüpft. `supabase/migrations/2026-11-04-dsgvo.sql`: `user_id` → `auth.users` **on delete cascade** („Alles löschen" = erst Server-Konto, dann lokal), kein RPC-Execute auf SECURITY-DEFINER-Funktionen.
-**DSGVO** (`docs/audit/dsgvo-2026-11-04.md`): Vercel in `fra1`, keine Notizinhalte in Logs, Verbindungsprobe `velmnote.com/ping` (nicht Google). DSE + Impressum nur in der Webapp
+**DSGVO** (`docs/audit/dsgvo-2026-11-04.md`): **Sitz Wien → österreichisches Recht** (Impressum § 5 ECG + § 25 MedienG, Browser-Speicher § 165 TKG 2021, Belege 7 J. § 132 BAO, Aufsicht DSB), Vercel in `fra1`, keine Notizinhalte in Logs, Verbindungsprobe `velmnote.com/ping` (nicht Google). DSE + Impressum nur in der Webapp
 (`app/privacy`, `app/impressum`, EN unter `app/en/…`, Anbieterdaten `lib/legal.ts`), App verlinkt je Sprache via `src/utils/legalLinks.ts`. Neuer Dienstleister/Datenfluss → DSE (DE+EN) + `docs/dsgvo/verarbeitungsverzeichnis.md` anpassen.
 
 ### Theme

@@ -114,8 +114,8 @@ export default function PrivacyPageEn() {
       <p style={p}>
         The web app only stores in your browser (localStorage/sessionStorage) what the service needs: your
         sign-in session, your chosen language, whether you have seen the introduction, and a short-lived
-        cache of the graph. No cookies are set for tracking or advertising. Legal basis: Section 25(2) no. 2
-        TDDDG (German Telecommunications Digital Services Data Protection Act), Art. 6(1)(b) GDPR.
+        cache of the graph. No cookies are set for tracking or advertising. Legal basis: Section 165(3)
+        TKG 2021 (Austrian Telecommunications Act), Art. 6(1)(b) GDPR.
       </p>
 
       <h2 style={h2}>4. Location and security</h2>
@@ -154,7 +154,7 @@ export default function PrivacyPageEn() {
         <li style={li}>Unconfirmed registrations: deleted immediately if cancelled, otherwise after 30 days at the latest.</li>
         <li style={li}>AI input at Anthropic: at most 30 days.</li>
         <li style={li}>Server logs: a few days.</li>
-        <li style={li}>Invoices and payment records: 8 or 10 years (Section 147 German Fiscal Code, Section 257 German Commercial Code), also after the account is deleted.</li>
+        <li style={li}>Invoices and payment records: 7 years (Section 132 Austrian Federal Fiscal Code, BAO), also after the account is deleted.</li>
       </ul>
 
       <h2 style={h2}>8. Your rights</h2>
@@ -171,7 +171,9 @@ export default function PrivacyPageEn() {
       <p style={p}>
         Send requests to <a style={a} href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a>; we respond within
         one month. You can also lodge a complaint with a data protection supervisory authority (Art. 77 GDPR),
-        in particular in the country where you live.
+        in particular in the country where you live. The authority responsible for us is the Austrian Data
+        Protection Authority (Datenschutzbehörde), Barichgasse 40–42, 1030 Vienna,{' '}
+        <Ext href="https://www.dsb.gv.at">www.dsb.gv.at</Ext>.
       </p>
 
       <h2 style={h2}>9. Obligation to provide data</h2>
