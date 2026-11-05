@@ -112,7 +112,9 @@ test.each([
   await waitFor(() => expect(enqueuePendingParse).toHaveBeenCalledTimes(1));
   expect(enqueuePendingParse).toHaveBeenCalledWith(
     expect.objectContaining({
-      noteId: 'n1', transcript: DICTATION, title: '', locale: 'de',
+      // Kein `locale` mehr (seit 1038c79): die KI behaelt die Sprache des Diktats, die App-Sprache
+      // spielt fuer parse-note keine Rolle. Stattdessen zaehlt der Aufnahmezeitpunkt fuer Zeitangaben.
+      noteId: 'n1', transcript: DICTATION, title: '', recordedAt: expect.any(String),
       noteUpdatedAt: '2026-10-01T10:00:00.000Z',
     }),
   );

@@ -5,7 +5,7 @@ import { Button, Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { useThoughts } from '../context/ThoughtsContext';
-import { exportNotesAsJson } from '../utils/exportNotes';
+import { exportNotesAsJson, loadAccountExport } from '../utils/exportNotes';
 import { getSupabase } from '../sync/supabaseClient';
 import { clearUserIdCache } from '../sync/userId';
 import { clearPendingEmail, clearInitialUploadPending } from '../sync/accountState';
@@ -70,7 +70,7 @@ export default function SettingsDatenschutzScreen() {
   const handleExport = async () => {
     setExportLoading(true);
     try {
-      await exportNotesAsJson(notes, archivedNotes, threads);
+      await exportNotesAsJson(notes, archivedNotes, threads, await loadAccountExport());
     } catch (e: any) {
       showToast(e?.message ?? t('settingsDatenschutz.toastExportFailed'), 'error');
     } finally {

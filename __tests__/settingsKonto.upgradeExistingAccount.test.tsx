@@ -58,8 +58,9 @@ test('bereits bestaetigte Adresse: kein falsches „Mail gesendet", sondern ab i
 
   render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
   fireEvent.changeText(await screen.findByPlaceholderText(t('settingsKonto.emailPlaceholder')), 'web@example.com');
-  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.passwordPlaceholder')), 'geheim123');
-  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmPasswordPlaceholder')), 'geheim123');
+  // Muss der Passwortregel genuegen (8 Zeichen, Gross-/Kleinbuchstabe, Ziffer), sonst bricht es vorher ab.
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.passwordPlaceholder')), 'Geheim123');
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmPasswordPlaceholder')), 'Geheim123');
   fireEvent.press(screen.getByText(t('settingsKonto.secureNowButton')));
 
   await screen.findByText(t('settingsKonto.toastAccountExists'));
@@ -68,4 +69,17 @@ test('bereits bestaetigte Adresse: kein falsches „Mail gesendet", sondern ab i
   expect(screen.getByDisplayValue('web@example.com')).toBeTruthy();
   expect(screen.queryByText(t('settingsKonto.pendingTitle'))).toBeNull();
   expect(await AsyncStorage.getItem('@notizapp_pending_email')).toBeNull();
+});
+
+// Supabase verlangt min. 8 Zeichen mit Gross-/Kleinbuchstabe und Ziffer. Die App muss das vorher
+// pruefen, sonst kommt die englische Rohmeldung des Servers beim Nutzer an.
+test.each(['geheim123', 'GEHEIM123', 'Geheimnis', 'Gehe1m'])('zu schwaches Passwort „%s" wird vor signUp() abgefangen', async (pw) => {
+  render(<PaperProvider><SettingsKontoScreen /></PaperProvider>);
+  fireEvent.changeText(await screen.findByPlaceholderText(t('settingsKonto.emailPlaceholder')), 'neu@example.com');
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.passwordPlaceholder')), pw);
+  fireEvent.changeText(screen.getByPlaceholderText(t('settingsKonto.confirmPasswordPlaceholder')), pw);
+  fireEvent.press(screen.getByText(t('settingsKonto.secureNowButton')));
+
+  await screen.findByText(t('settingsKonto.toastPasswordWeak'));
+  expect(mockSignUp).not.toHaveBeenCalled();
 });
