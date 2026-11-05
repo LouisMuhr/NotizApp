@@ -53,7 +53,7 @@ eas build --platform android|ios
 npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
-Bridge: `vercel deploy --prod` **aus dem Repo-Ordner** (Projekt-Root-Directory = `bridge`; `.vercelignore` lädt nur Bridge-Code ohne `.env`/`worker` hoch). Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
+Bridge: `vercel deploy --prod` **aus dem Repo-Ordner** (Projekt-Root-Directory = `bridge`). Die Root-`.vercelignore` gilt für **beide** Vercel-Projekte (bridge + velm-webapp) — wer dort etwas ausschließt, prüft danach die Route-Liste im Webapp-Build (leer = 404 live). Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
 
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
