@@ -1,7 +1,14 @@
-# Bridge-Deploy (Vercel-Projekt „bridge", Root Directory = bridge, deployt aus diesem Ordner):
-# nur den Bridge-Code hochladen — keine .env-Dateien, keine lokalen CLI-Helfer, nichts aus App/Webapp.
+# Gilt für BEIDE Vercel-Projekte, die aus diesem Repo bauen: Vercel liest die .vercelignore im
+# Repo-Root auch dann, wenn das Projekt ein eigenes Root Directory hat.
+#   „bridge"      (Root Directory = bridge)
+#   „velm-webapp" (Root Directory = webapp) — fehlte hier, dadurch bauten Deploys ab PR #57 eine leere Seite (404).
+# Hochgeladen wird nur Bridge- und Webapp-Code — keine .env-Dateien, keine lokalen CLI-Helfer, nichts aus der App.
 /*
 !/bridge
+!/webapp
 /bridge/.env*
 /bridge/worker
 /bridge/node_modules
+/webapp/.env*
+/webapp/node_modules
+/webapp/.next
