@@ -41,14 +41,28 @@ export const REENGAGEMENT_CHANNEL_ID = 'velm-reengagement-v2';
 const LEGACY_CHANNEL_IDS = ['reengagement'];
 const CHANNEL_ID = REENGAGEMENT_CHANNEL_ID;
 
+/**
+ * Alle Planungs-/Stornierschritte laufen nacheinander. Sonst kann eine schon laufende normale
+ * Neuplanung (z. B. vom App-Start, die auf den Kontostatus wartet) ihre Stufe 1 NACH einem
+ * Teststart einplanen — gleicher Identifier, der 3-Minuten-Test-Hinweis wäre ersetzt.
+ */
+let chain: Promise<unknown> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(fn, fn);
+  chain = run.catch(() => {});
+  return run;
+}
+
 export async function loadReengagementEnabled(): Promise<boolean> {
   const v = await AsyncStorage.getItem(REENGAGEMENT_ENABLED_KEY).catch(() => null);
   return v !== 'false'; // Default an
 }
 
-export async function saveReengagementEnabled(enabled: boolean): Promise<void> {
-  await AsyncStorage.setItem(REENGAGEMENT_ENABLED_KEY, enabled ? 'true' : 'false');
-  if (!enabled) await cancelReengagement();
+export function saveReengagementEnabled(enabled: boolean): Promise<void> {
+  return serialized(async () => {
+    await AsyncStorage.setItem(REENGAGEMENT_ENABLED_KEY, enabled ? 'true' : 'false');
+    if (!enabled) await cancelReengagement();
+  });
 }
 
 export async function markAppOpened(now: Date = new Date()): Promise<void> {
@@ -70,9 +84,11 @@ export async function cancelReengagement(): Promise<void> {
 }
 
 /** Für "Alles löschen": stornieren und alle Keys entfernen (Schalter fällt auf Default zurück). */
-export async function clearReengagement(): Promise<void> {
-  await cancelReengagement().catch(() => {});
-  await AsyncStorage.multiRemove(REENGAGEMENT_KEYS).catch(() => {});
+export function clearReengagement(): Promise<void> {
+  return serialized(async () => {
+    await cancelReengagement().catch(() => {});
+    await AsyncStorage.multiRemove(REENGAGEMENT_KEYS).catch(() => {});
+  });
 }
 
 export interface RefreshOptions {
@@ -90,7 +106,11 @@ export interface RefreshOptions {
  * Ist der Schalter aus, wird nur storniert. Läuft ein Admin-Test, passiert nichts — sonst
  * würde jedes Öffnen/Vordergrund (Bootstrap) die Testplanung durch die echte ersetzen.
  */
-export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
+export function refreshReengagement(opts: RefreshOptions): Promise<void> {
+  return serialized(() => refreshNow(opts));
+}
+
+async function refreshNow(opts: RefreshOptions): Promise<void> {
   const now = opts.now ?? new Date();
   if (opts.test) return startTest(opts, now);
   if (await isReengagementTestActive(now)) return;
@@ -130,9 +150,11 @@ async function startTest(opts: RefreshOptions, now: Date): Promise<void> {
 }
 
 /** Admin-Test beenden: Test-Hinweise stornieren, danach wieder normal planen (Aufrufer). */
-export async function endReengagementTest(): Promise<void> {
-  await AsyncStorage.removeItem(REENGAGEMENT_TEST_UNTIL_KEY);
-  await cancelReengagement();
+export function endReengagementTest(): Promise<void> {
+  return serialized(async () => {
+    await AsyncStorage.removeItem(REENGAGEMENT_TEST_UNTIL_KEY);
+    await cancelReengagement();
+  });
 }
 
 async function schedulePlan(

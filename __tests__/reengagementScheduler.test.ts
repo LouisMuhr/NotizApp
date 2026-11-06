@@ -170,3 +170,27 @@ describe('Android-Kanal', () => {
     expect(req.content.channelId).toBeUndefined();
   });
 });
+
+describe('Nebenläufigkeit', () => {
+  test('Teststart während eine normale Neuplanung läuft: Stufe 1 bleibt der 3-Minuten-Test-Hinweis', async () => {
+    // Die normale Planung (z. B. vom App-Start) hängt kurz in getAllScheduledNotificationsAsync,
+    // währenddessen startet der Admin den Test.
+    const getAll = Notifications.getAllScheduledNotificationsAsync as jest.Mock;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    getAll.mockImplementationOnce(async () => { await gate; return scheduled.slice(); });
+
+    await markAppOpened(NOW);
+    const normal = refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: NOW });
+    await new Promise((r) => setTimeout(r, 0));
+    const test = refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: NOW, test: true });
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await Promise.all([normal, test]);
+
+    const calls = (Notifications.scheduleNotificationAsync as jest.Mock).mock.calls.map((c) => c[0]);
+    const lastStage1 = calls.filter((c) => c.identifier === 'velm-reengagement-1').at(-1);
+    expect((lastStage1.trigger.date.getTime() - NOW.getTime()) / 60_000).toBe(3);
+    expect(scheduled.filter((n) => n.identifier.startsWith('velm-reengagement-')).length).toBe(3);
+  });
+});
