@@ -16,6 +16,7 @@ jest.mock('expo-notifications', () => ({
     return identifier;
   }),
   setNotificationChannelAsync: jest.fn(async () => {}),
+  deleteNotificationChannelAsync: jest.fn(async () => {}),
   AndroidImportance: { DEFAULT: 3, HIGH: 4 },
   SchedulableTriggerInputTypes: { DATE: 'date', DAILY: 'daily', WEEKLY: 'weekly', MONTHLY: 'monthly' },
 }));
@@ -23,6 +24,7 @@ jest.mock('expo-device', () => ({ isDevice: true }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import { cancelAllReminders } from '../src/utils/notifications';
 import {
   refreshReengagement,
@@ -147,5 +149,24 @@ describe('Admin-Testmodus', () => {
     await refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: NOW, test: true });
     await clearReengagement();
     expect(await AsyncStorage.getItem(REENGAGEMENT_TEST_UNTIL_KEY)).toBeNull();
+  });
+});
+
+describe('Android-Kanal', () => {
+  const realOS = Platform.OS;
+  beforeEach(() => { (Platform as { OS: string }).OS = 'android'; });
+  afterEach(() => { (Platform as { OS: string }).OS = realOS; });
+
+  test('hohe Wichtigkeit unter neuer ID, alter DEFAULT-Kanal wird gelöscht, channelId steht im Trigger', async () => {
+    await refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: NOW });
+    expect(Notifications.deleteNotificationChannelAsync).toHaveBeenCalledWith('reengagement');
+    expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+      'velm-reengagement-v2',
+      expect.objectContaining({ importance: Notifications.AndroidImportance.HIGH }),
+    );
+    const req = (Notifications.scheduleNotificationAsync as jest.Mock).mock.calls[0][0];
+    // SDK 54: channelId im content wird ignoriert → muss im Trigger stehen
+    expect(req.trigger).toMatchObject({ type: 'date', channelId: 'velm-reengagement-v2' });
+    expect(req.content.channelId).toBeUndefined();
   });
 });

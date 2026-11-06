@@ -33,7 +33,13 @@ export async function isReengagementTestActive(now: Date = new Date()): Promise<
   await AsyncStorage.removeItem(REENGAGEMENT_TEST_UNTIL_KEY).catch(() => {});
   return false;
 }
-const CHANNEL_ID = 'reengagement';
+/**
+ * Android-Kanal. Die Wichtigkeit eines angelegten Kanals lässt Android nicht mehr ändern —
+ * deshalb neue ID statt 'reengagement' (war DEFAULT: kein Banner, nur in der Leiste).
+ */
+export const REENGAGEMENT_CHANNEL_ID = 'velm-reengagement-v2';
+const LEGACY_CHANNEL_IDS = ['reengagement'];
+const CHANNEL_ID = REENGAGEMENT_CHANNEL_ID;
 
 export async function loadReengagementEnabled(): Promise<boolean> {
   const v = await AsyncStorage.getItem(REENGAGEMENT_ENABLED_KEY).catch(() => null);
@@ -134,9 +140,11 @@ async function schedulePlan(
   t: RefreshOptions['t'],
 ): Promise<void> {
   if (Platform.OS === 'android' && plan.length > 0) {
+    for (const old of LEGACY_CHANNEL_IDS) await Notifications.deleteNotificationChannelAsync(old).catch(() => {});
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: t('reengagement.channelName'),
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
     }).catch(() => {});
   }
 
@@ -148,9 +156,13 @@ async function schedulePlan(
         title,
         body,
         data: { kind: REENGAGEMENT_DATA_KIND, stage: p.stage, target: p.target },
-        ...(Platform.OS === 'android' && { channelId: CHANNEL_ID }),
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: p.date },
+      // SDK 54: channelId gehört in den Trigger — im content wird er ignoriert (Fallback-Kanal).
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: p.date,
+        ...(Platform.OS === 'android' ? { channelId: CHANNEL_ID } : {}),
+      },
     });
   }
 }
