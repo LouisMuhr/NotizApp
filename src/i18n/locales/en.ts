@@ -324,6 +324,9 @@ const en: typeof de = {
     allowExactAlarms: 'Allow exact alarms',
     disableBatteryOpt: 'Disable battery optimization',
     opensSettings: 'Opens system settings',
+    reengagementSection: 'Comeback nudges',
+    reengagementLabel: 'Nudge me when I have been away',
+    reengagementSublabel: 'At most once a week, never at night. Numbers only, no note content.',
   },
   settingsTestBenachrichtigungen: {
     testSection: 'Test',
@@ -546,6 +549,21 @@ const en: typeof de = {
     v3List1: 'End-to-end encrypted',
     v3List2: 'AI processing only when you trigger it',
     v3List3: 'Export to Markdown — anytime',
+  },
+  reengagement: {
+    channelName: 'Comeback nudges',
+    unthreadedTitle: 'New thoughts are waiting',
+    unthreadedBody: {
+      one: '{{count}} new note is not in a thread yet.',
+      other: '{{count}} new notes are not in a thread yet.',
+    },
+    openChecklistTitle: 'Still open',
+    openChecklistBody: {
+      one: '{{count}} checklist item is still open.',
+      other: '{{count}} checklist items are still open.',
+    },
+    genericTitle: 'Velm',
+    genericBody: 'What has been on your mind since last time? Jot it down.',
   },
 };
 

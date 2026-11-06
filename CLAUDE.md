@@ -3,10 +3,8 @@
 > **Meta:** After every significant code change, update this file; keep it under 200 lines (compress/merge).
 
 ## Project Overview
-NotizApp (Velm) is a German-language note-taking app in React Native / Expo: Notizen mit Checklisten,
-Kategorien, Erinnerungen, Pinning, Archiv und optionalem Supabase-Sync. Daneben „Thoughts/Brainstorm"
-(atomare Gedanken → Threads). Dazu eine **bridge** (Vercel serverless API + Browser-Bookmarklet) und eine
-**webapp** (Next.js Graph-Visualizer).
+NotizApp (Velm) is a German-language note-taking app in React Native / Expo: Notizen mit Checklisten, Kategorien, Erinnerungen, Pinning, Archiv und optionalem Supabase-Sync. Daneben „Thoughts/Brainstorm"
+(atomare Gedanken → Threads). Dazu eine **bridge** (Vercel serverless API + Browser-Bookmarklet) und eine **webapp** (Next.js Graph-Visualizer).
 
 ## Repository Layout
 ```
@@ -63,8 +61,7 @@ Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, op
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 ## Architecture Notes
 ### Provider tree (App.tsx) & Navigation
-GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer →
-NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator).
+GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer → NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator).
 Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDetail, Editor, ThreadDetail.
 
 ### Data flow (Notizen)
@@ -123,6 +120,10 @@ entsperrten Gerät das Konto. Mail-Templates: `supabase/templates/`, Code vor de
 `{{ if eq .Data.locale "en" }}`; `signUp()` legt `locale` in den user_metadata ab, `setPreference()` zieht
 sie nach — der Versand kennt keine Sprache, sie muss vorher am User stehen.
 
+### Rückkehr-Benachrichtigungen (lokal, getrennt von Erinnerungen)
+Reine Logik `src/utils/reengagement.ts` (`planReengagement`), OS/Storage `reengagementScheduler.ts`, Auslöser `components/ReengagementBootstrap.tsx` (Start + Vordergrund: `@notizapp_reengagement_last_opened` setzen, alles stornieren, neu planen; Stand-Änderung → entprellt nachplanen). Stufen +3/+7/+14 Tage, **≥ 7 Tage Abstand** (auch zur zuletzt ausgelieferten, `@notizapp_reengagement_planned`) → effektiv Tag 3/10/17; Ruhezeit 21–9 Uhr (→ 18:00 bzw. 10:00); Tag mit Notiz-Erinnerung (auch täglich/wöchentlich/monatlich) → nächster freier Tag (max. 7, sonst entfällt die Stufe).
+Text nur Zahlen (Notizen ohne Thread der letzten 7 Tage — nur wenn Threads erreichbar — bzw. offene Checklisten-Punkte), i18n `reengagement.*`; generisch nur Stufe 1. IDs `velm-reengagement-<n>` + `data.kind = 'reengagement'`: **`cancelAllReminders()` lässt sie stehen**, Tap → `Home`/`Threads` bzw. `Notizen`. Schalter in Einstellungen → Benachrichtigungen (`@notizapp_reengagement_enabled`, Default an); `deleteAllData` storniert + löscht die Keys (plant erst beim nächsten Öffnen), `detachSync` storniert.
+
 ### Supabase schema
 Tables: `notes`, `thoughts`, `threads`, `thought_threads`, `thread_similarities`, `profiles`.
 Jede Zeile gehört einem `auth.users`-User via `user_id` (Ausnahme `thought_threads`:
@@ -136,8 +137,7 @@ Schema source: `supabase-schema.sql` (frisch) bzw. Deltas für bestehende Projek
 
 ### Theme
 `src/theme/theme.ts` — MD3LightTheme, Papier-Stil: cremige OKLCH-Surfaces, Espresso-Tinte, Amber als einzige
-Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`. Kategorien: Hue-Rotation via
-`categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
+Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`. Kategorien: Hue-Rotation via `categoryAccents.ts` — **keine LinearGradient-Importe in `src/`**.
 **App-Icon (Velm)**: „Bleistift schreibt V" auf Velm-Gradient (`#F4A261→#E8874A→#C05C20`), Spec `Velm Icon - Final.html`
 (gitignored). PNGs: `node scripts/generate-icons.mjs` → `assets/*.png`. Komponenten: `VelmLogo.tsx`, `webapp/components/VelmIcon.tsx`.
 **Admin**: Einstellungen → Abschnitt „Admin" (Onboarding zurücksetzen, `SettingsTestBenachrichtigungen`) nur für das **bestätigte** Konto

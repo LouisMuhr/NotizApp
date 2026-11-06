@@ -11,6 +11,7 @@ import {
   loadTierCache, saveTierCache, clearTierCache,
 } from '../storage/noteStorage';
 import { scheduleReminder, cancelReminder, cancelAllReminders } from '../utils/notifications';
+import { cancelReengagement, clearReengagement } from '../utils/reengagementScheduler';
 import { isSyncConfigured, getSupabase } from '../sync/supabaseClient';
 import { getUserId, clearUserIdCache } from '../sync/userId';
 import { signOutLegacyAnonymous } from '../sync/legacyAnon';
@@ -748,6 +749,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const deleteAllData = useCallback(async () => {
     await cancelAllReminders();
+    // Rückkehr-Benachrichtigungen stornieren + Keys weg; neu geplant wird erst beim nächsten Öffnen.
+    try { await clearReengagement(); } catch {}
     await AsyncStorage.multiRemove([
       '@notizapp_notes',
       '@notizapp_categories',
@@ -883,6 +886,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await clearTierCache().catch(() => {});
     // Diktate der Warteschlange gehoeren zum abgemeldeten Konto.
     await clearPendingParses();
+    // Rückkehr-Benachrichtigungen stornieren; der naechste Vordergrund plant sie neu.
+    try { await cancelReengagement(); } catch {}
     serverTierSeenRef.current = false;
     setTier(null);
     setNextAllowedAt(null);

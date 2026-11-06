@@ -25,6 +25,8 @@ import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme, Tokens } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import ShareHandler from './src/components/ShareHandler';
+import ReengagementBootstrap from './src/components/ReengagementBootstrap';
+import { isReengagementNotification } from './src/utils/reengagement';
 import OnboardingScreen, { ONBOARDING_KEY } from './src/screens/onboarding';
 import { requestNotificationPermissions } from './src/utils/notifications';
 import { useNotes } from './src/context/NotesContext';
@@ -70,13 +72,24 @@ function NotificationBootstrap() {
     requestNotificationPermissions();
 
     function handleTap(response: Notifications.NotificationResponse) {
-      const noteId = response.notification.request.content.data?.noteId as string | undefined;
-      if (!noteId) return;
-      const tryNav = () => {
-        if (navigationRef.isReady()) { (navigationRef as any).navigate('NoteDetail', { noteId }); }
-        else { setTimeout(tryNav, 100); }
+      const { identifier, content } = response.notification.request;
+      const data = content.data as Record<string, unknown> | undefined;
+      const navigate = (fn: () => void) => {
+        const tryNav = () => {
+          if (navigationRef.isReady()) fn();
+          else setTimeout(tryNav, 100);
+        };
+        tryNav();
       };
-      tryNav();
+      // Rückkehr-Benachrichtigung: App öffnen, bei 'Notizen ohne Thread' direkt in den Threads-Tab.
+      if (isReengagementNotification(identifier, data)) {
+        const screen = data?.target === 'Threads' ? 'Threads' : 'Notizen';
+        navigate(() => (navigationRef as any).navigate('Home', { screen }));
+        return;
+      }
+      const noteId = data?.noteId as string | undefined;
+      if (!noteId) return;
+      navigate(() => (navigationRef as any).navigate('NoteDetail', { noteId }));
     }
 
     const tapSub = Notifications.addNotificationResponseReceivedListener(handleTap);
@@ -163,6 +176,7 @@ export default function App() {
                   <ThoughtsProvider>
                     <SplashGate />
                     <NotificationBootstrap />
+                    <ReengagementBootstrap />
                     <ShareHandler />
                     <AppNavigator />
                     <StatusBar style="dark" />

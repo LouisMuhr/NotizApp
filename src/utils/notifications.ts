@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Linking } from 'react-native';
 import { ReminderRecurrence } from '../models/Note';
+import { isReengagementNotification } from './reengagement';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -147,8 +148,17 @@ export async function cancelReminder(notificationId: string): Promise<void> {
   );
 }
 
+/**
+ * Storniert alle Notiz-Erinnerungen (und Test-Benachrichtigungen), aber keine
+ * Rückkehr-Benachrichtigungen — die verwaltet `reengagementScheduler.ts` selbst.
+ */
 export async function cancelAllReminders(): Promise<void> {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    all
+      .filter((n) => !isReengagementNotification(n.identifier, n.content?.data))
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
+  );
 }
 
 export async function scheduleTestNotification(): Promise<void> {

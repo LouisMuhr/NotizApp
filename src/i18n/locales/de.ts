@@ -323,6 +323,9 @@ export default {
     allowExactAlarms: 'Genaue Alarme erlauben',
     disableBatteryOpt: 'Akkuoptimierung deaktivieren',
     opensSettings: 'Öffnet die Systemeinstellungen',
+    reengagementSection: 'Rückkehr-Hinweise',
+    reengagementLabel: 'Erinnern, wenn ich länger weg war',
+    reengagementSublabel: 'Höchstens einmal pro Woche, nie nachts. Nur Zahlen, keine Notizinhalte.',
   },
   settingsTestBenachrichtigungen: {
     testSection: 'Test',
@@ -545,5 +548,20 @@ export default {
     v3List1: 'Ende-zu-Ende verschlüsselt',
     v3List2: 'KI-Verarbeitung nur, wenn du es anstößt',
     v3List3: 'Export zu Markdown — jederzeit',
+  },
+  reengagement: {
+    channelName: 'Rückkehr-Hinweise',
+    unthreadedTitle: 'Neue Gedanken warten',
+    unthreadedBody: {
+      one: '{{count}} neue Notiz steckt noch in keinem Thread.',
+      other: '{{count}} neue Notizen stecken noch in keinem Thread.',
+    },
+    openChecklistTitle: 'Noch offen',
+    openChecklistBody: {
+      one: '{{count}} Checklisten-Punkt ist noch offen.',
+      other: '{{count}} Checklisten-Punkte sind noch offen.',
+    },
+    genericTitle: 'Velm',
+    genericBody: 'Was ist dir seit letztem Mal durch den Kopf gegangen? Halt es kurz fest.',
   },
 };
