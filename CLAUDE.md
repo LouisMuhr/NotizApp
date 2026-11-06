@@ -61,8 +61,8 @@ Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, op
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 ## Architecture Notes
 ### Provider tree (App.tsx) & Navigation
-GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer → NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator).
-Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDetail, Editor, ThreadDetail.
+GestureHandlerRootView → SafeAreaProvider → ThemeProvider → PaperProvider → NavigationContainer → NotesProvider → ThoughtsProvider → (ShareHandler, AppNavigator). Bottom tabs: Threads, Notizen (HomeScreen), Archiv, Einstellungen. Stack: NoteDetail, Editor, ThreadDetail.
+**Splash**: nur über `src/utils/splash.ts` (`useSplashHide(ready)`, `hideSplashOnce`): Notbremse 8 s **ab App-Mount** (greift auch, wenn Schriften/Onboarding-Flag hängen), Onboarding-Pfad blendet aus, sobald gerendert — nie an `onLayout` hängen (kam in Expo Go nicht an → Logo für immer).
 
 ### Data flow (Notizen)
 - `NotesContext` hält aktive **und** archivierte Notizen als einen Bestand (`allRef`); `archivedAt`

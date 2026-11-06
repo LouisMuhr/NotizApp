@@ -29,6 +29,7 @@ import ReengagementBootstrap from './src/components/ReengagementBootstrap';
 import { isReengagementNotification } from './src/utils/reengagement';
 import OnboardingScreen, { ONBOARDING_KEY } from './src/screens/onboarding';
 import { requestNotificationPermissions } from './src/utils/notifications';
+import { useSplashHide } from './src/utils/splash';
 import { useNotes } from './src/context/NotesContext';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
@@ -52,14 +53,7 @@ const navigationRef = createNavigationContainerRef();
 
 function SplashGate() {
   const { loading } = useNotes();
-  useEffect(() => {
-    if (!loading) SplashScreen.hideAsync().catch(() => {});
-  }, [loading]);
-  // Notbremse: der Splash darf nie dauerhaft haengen bleiben.
-  useEffect(() => {
-    const id = setTimeout(() => { SplashScreen.hideAsync().catch(() => {}); }, 8000);
-    return () => clearTimeout(id);
-  }, []);
+  useSplashHide(!loading);
   return null;
 }
 
@@ -126,8 +120,16 @@ export default function App() {
   const pendingNavigate = useRef<string | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY).then((val) => setOnboardingDone(val === 'true'));
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((val) => setOnboardingDone(val === 'true'))
+      .catch(() => setOnboardingDone(true));
   }, []);
+
+  // Startbildschirm: im Onboarding-Pfad ausblenden, sobald es gerendert werden kann (der normale
+  // Pfad wartet in SplashGate auf die Notizen). Die Notbremse läuft hier ab Mount — sie greift also
+  // auch, wenn Schriften oder Onboarding-Flag hängen. Früher hing das am onLayout der Root-View,
+  // das in Expo Go (SDK 54, New Architecture) nicht ankam: Logo blieb für immer stehen.
+  useSplashHide(fontsLoaded && onboardingDone === false);
 
   function handleOnboardingDone(navigateTo?: string) {
     if (navigateTo) pendingNavigate.current = navigateTo;
@@ -141,7 +143,6 @@ export default function App() {
     return (
       <GestureHandlerRootView
         style={{ flex: 1 }}
-        onLayout={() => { SplashScreen.hideAsync().catch(() => {}); }}
       >
         <SafeAreaProvider>
           <LanguageProvider>
