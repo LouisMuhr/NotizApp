@@ -69,6 +69,14 @@ export function nextMonthlyOccurrences(
   return result;
 }
 
+/**
+ * Android-Kanal für Erinnerungen. SDK 54: channelId gehört in den TRIGGER — im content wird er
+ * ignoriert (Erinnerung landete sonst im Fallback-Kanal ohne Banner).
+ */
+function reminderChannel(): { channelId?: string } {
+  return Platform.OS === 'android' ? { channelId: 'reminders' } : {};
+}
+
 export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
   const { noteId, title, body, triggerDate, recurrence, weekday, dayOfMonth } = opts;
 
@@ -76,7 +84,6 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     title: `Erinnerung: ${title}`,
     body: body.substring(0, 100) || 'Notiz-Erinnerung',
     data: { noteId },
-    ...(Platform.OS === 'android' && { channelId: 'reminders' }),
   };
 
   const hour = triggerDate.getHours();
@@ -88,6 +95,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     case 'daily':
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        ...reminderChannel(),
         hour,
         minute,
       };
@@ -96,6 +104,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     case 'weekly':
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+        ...reminderChannel(),
         weekday: weekday ?? 2, // Default Montag
         hour,
         minute,
@@ -109,7 +118,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
         for (const date of dates) {
           ids.push(await Notifications.scheduleNotificationAsync({
             content: notifContent,
-            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date, ...reminderChannel() },
           }));
         }
         // Mehrere Einträge, eine notificationId an der Notiz → kommagetrennt, cancelReminder trennt wieder.
@@ -117,6 +126,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       }
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.MONTHLY,
+        ...reminderChannel(),
         day: dayOfMonth ?? 1,
         hour,
         minute,
@@ -129,6 +139,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: triggerDate,
+        ...reminderChannel(),
       };
       break;
     }
@@ -166,11 +177,11 @@ export async function scheduleTestNotification(): Promise<void> {
     content: {
       title: 'Test-Erinnerung',
       body: 'Benachrichtigungen funktionieren!',
-      ...(Platform.OS === 'android' && { channelId: 'reminders' }),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: new Date(Date.now() + 15_000),
+      ...reminderChannel(),
     },
   });
 }
