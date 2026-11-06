@@ -87,14 +87,15 @@ test('Alles löschen: storniert und räumt alle Keys ab', async () => {
   expect(keys.filter((k) => k.startsWith('@notizapp_reengagement'))).toEqual([]);
 });
 
-test('Wiederholtes Öffnen kurz nach einer Auslieferung hält die 7-Tage-Grenze', async () => {
+test('Erneutes Öffnen plant exakt ab dem neuen Öffnen (kein Mindestabstand zu früheren)', async () => {
   await markAppOpened(NOW);
   await refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: NOW });
-  // Stufe 1 ging am 13.3. raus, am 14.3. wird die App wieder geöffnet
+  // Stufe 1 ging am 13.3. raus, am 14.3. um 12:00 wird die App wieder geöffnet
   const later = new Date(2027, 2, 14, 12, 0);
   await markAppOpened(later);
   await refreshReengagement({ notes: [], threads: [], t, threadsAvailable: true, now: later });
   const call = (Notifications.scheduleNotificationAsync as jest.Mock).mock.calls.at(-1)[0];
-  const date: Date = call.trigger.date;
-  expect(date.getTime()).toBeGreaterThanOrEqual(new Date(2027, 2, 13, 14, 30).getTime() + 7 * 24 * 3600 * 1000);
+  expect(call.identifier).toBe('velm-reengagement-1');
+  expect(call.trigger.date).toEqual(new Date(2027, 2, 17, 12, 0));
+  expect(scheduled.filter((n) => n.identifier.startsWith('velm-reengagement-')).length).toBe(1);
 });

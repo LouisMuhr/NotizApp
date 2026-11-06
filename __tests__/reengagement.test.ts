@@ -3,7 +3,7 @@ import {
   planReengagement,
   computeStats,
   moveOutOfQuietHours,
-  hasReminderOnDay,
+  reminderTimesOnDay,
   renderText,
   isQuietTime,
   REENGAGEMENT_ID_PREFIX,
@@ -65,18 +65,12 @@ describe('Stufen', () => {
     expect(plan[0].identifier).toBe(`${REENGAGEMENT_ID_PREFIX}1`);
   });
 
-  test('mit Anlass: drei Stufen ab dem letzten Öffnen, je ≥ 7 Tage auseinander', () => {
+  test('mit Anlass: drei Stufen exakt 3 / 7 / 14 Tage nach dem letzten Öffnen, gleiche Uhrzeit', () => {
     const notes = [note({ checklist: [{ id: 'c', text: 'x', checked: false }] }), note()];
     const plan = planReengagement(input({ notes }));
     expect(plan.map((p) => p.stage)).toEqual([1, 2, 3]);
-    expect(ymd(plan[0].date)).toBe('2027-3-13'); // Tag 3
-    // Stufe 2 (Tag 7) liegt nur 4 Tage nach Stufe 1 → auf Stufe 1 + 7 Tage geschoben (Tag 10)
-    expect(ymd(plan[1].date)).toBe('2027-3-20');
-    // Stufe 3 (Tag 14) → Stufe 2 + 7 Tage (Tag 17)
-    expect(ymd(plan[2].date)).toBe('2027-3-27');
-    for (let i = 1; i < plan.length; i++) {
-      expect(plan[i].date.getTime() - plan[i - 1].date.getTime()).toBeGreaterThanOrEqual(7 * DAY - 2 * 60 * 60 * 1000);
-    }
+    expect(plan.map((p) => ymd(p.date))).toEqual(['2027-3-13', '2027-3-17', '2027-3-24']);
+    expect(plan.map((p) => hm(p.date))).toEqual(['14:30', '14:30', '14:30']);
   });
 
   test('Basis ist "zuletzt geöffnet", nicht die Planungszeit', () => {
@@ -84,13 +78,6 @@ describe('Stufen', () => {
     const plan = planReengagement(input({ lastOpenedAt }));
     expect(ymd(plan[0].date)).toBe('2027-3-12');
     expect(hm(plan[0].date)).toBe('11:00');
-  });
-
-  test('7-Tage-Grenze gilt auch gegenüber einer schon ausgelieferten Benachrichtigung', () => {
-    const delivered = new Date(2027, 2, 8, 15, 0); // vor 2 Tagen
-    const plan = planReengagement(input({ previouslyDelivered: [delivered] }));
-    expect(plan[0].date.getTime()).toBeGreaterThanOrEqual(delivered.getTime() + 7 * DAY);
-    expect(ymd(plan[0].date)).toBe('2027-3-15');
   });
 
   test('Schalter aus → nichts geplant', () => {
@@ -134,50 +121,78 @@ describe('Ruhezeit 21:00–9:00', () => {
   });
 });
 
-describe('Kollision mit Notiz-Erinnerung', () => {
-  test('einmalige Erinnerung am Stufen-Tag → nächster freier Tag', () => {
+describe('Notiz-Erinnerungen (Abstand ≥ 2 h am selben Tag)', () => {
+  const checklistNote = () => note({ checklist: [{ id: 'c', text: 'x', checked: false }] });
+
+  test('Erinnerung am Stufen-Tag, aber weit weg → keine Verschiebung', () => {
     const notes = [note({ reminderAt: new Date(2027, 2, 13, 8, 0).toISOString() })];
-    const plan = planReengagement(input({ notes }));
-    expect(ymd(plan[0].date)).toBe('2027-3-14');
+    const d = planReengagement(input({ notes }))[0].date;
+    expect(ymd(d)).toBe('2027-3-13');
+    expect(hm(d)).toBe('14:30');
   });
 
-  test('mehrere belegte Tage hintereinander werden übersprungen', () => {
+  test('Erinnerung 1 h nach dem Zeitpunkt → auf 2 h davor geschoben (nächstgelegener Punkt)', () => {
+    const notes = [note({ reminderAt: new Date(2027, 2, 13, 15, 30).toISOString() })];
+    const d = planReengagement(input({ notes }))[0].date;
+    expect(ymd(d)).toBe('2027-3-13');
+    expect(hm(d)).toBe('13:30');
+  });
+
+  test('Erinnerung 30 min vor dem Zeitpunkt → auf 2 h danach geschoben', () => {
+    const notes = [note({ reminderAt: new Date(2027, 2, 13, 14, 0).toISOString() })];
+    const d = planReengagement(input({ notes }))[0].date;
+    expect(hm(d)).toBe('16:00');
+  });
+
+  test('tägliche Erinnerung blockiert keinen Tag, nur ihre Uhrzeit wird umgangen', () => {
     const notes = [
-      note({ reminderAt: new Date(2027, 2, 13, 8, 0).toISOString() }),
-      note({ reminderAt: new Date(2027, 2, 14, 19, 0).toISOString() }),
+      checklistNote(), note(),
+      note({ reminderAt: new Date(2027, 2, 1, 14, 0).toISOString(), reminderRecurrence: 'daily' }),
     ];
-    expect(ymd(planReengagement(input({ notes }))[0].date)).toBe('2027-3-15');
+    const plan = planReengagement(input({ notes }));
+    expect(plan.map((p) => ymd(p.date))).toEqual(['2027-3-13', '2027-3-17', '2027-3-24']);
+    for (const p of plan) expect(hm(p.date)).toBe('16:00');
   });
 
-  test('wöchentliche Erinnerung belegt ihren Wochentag (13.3.2027 = Samstag)', () => {
-    const notes = [note({
+  test('Verschiebung bleibt außerhalb der Ruhezeit (früh morgens nicht vor 9:00)', () => {
+    const lastOpenedAt = new Date(2027, 2, 10, 7, 5); // → 10:00
+    const notes = [note({ reminderAt: new Date(2027, 2, 13, 10, 30).toISOString() })];
+    const d = planReengagement(input({ now: lastOpenedAt, lastOpenedAt, notes }))[0].date;
+    expect(ymd(d)).toBe('2027-3-13');
+    expect(hm(d)).toBe('12:30'); // 8:30 läge in der Ruhezeit
+    expect(isQuietTime(d)).toBe(false);
+  });
+
+  test('kein Tagespunkt mit ≥ 2 h Abstand → trotzdem zum ursprünglichen Zeitpunkt senden', () => {
+    const notes: Note[] = [];
+    for (let h = 9; h <= 21; h += 2) {
+      notes.push(note({ reminderAt: new Date(2027, 2, 1, h, 0).toISOString(), reminderRecurrence: 'daily' }));
+    }
+    // Erinnerungs-Notizen selbst sind kein Anlass (Threads nicht erreichbar) → nur Stufe 1 generisch
+    const plan = planReengagement(input({ notes, threadsAvailable: false }));
+    expect(plan.length).toBe(1);
+    expect(ymd(plan[0].date)).toBe('2027-3-13');
+    expect(hm(plan[0].date)).toBe('14:30');
+  });
+
+  test('Erinnerungszeiten: wöchentlich am Wochentag, monatlich am 31. = letzter Monatstag', () => {
+    const weekly = note({
       reminderAt: new Date(2027, 2, 6, 9, 0).toISOString(),
-      reminderRecurrence: 'weekly', reminderWeekday: 7,
-    })];
-    expect(hasReminderOnDay(notes, new Date(2027, 2, 13))).toBe(true);
-    expect(ymd(planReengagement(input({ notes }))[0].date)).toBe('2027-3-14');
-  });
-
-  test('monatliche Erinnerung am 31. belegt den letzten Monatstag', () => {
-    const notes = [note({
+      reminderRecurrence: 'weekly', reminderWeekday: 7, // Samstag
+    });
+    expect(reminderTimesOnDay([weekly], new Date(2027, 2, 13)).map(hm)).toEqual(['9:00']);
+    expect(reminderTimesOnDay([weekly], new Date(2027, 2, 14))).toEqual([]);
+    const monthly = note({
       reminderAt: new Date(2027, 0, 31, 9, 0).toISOString(),
       reminderRecurrence: 'monthly', reminderDayOfMonth: 31,
-    })];
-    expect(hasReminderOnDay(notes, new Date(2027, 3, 30))).toBe(true);
-    expect(hasReminderOnDay(notes, new Date(2027, 3, 29))).toBe(false);
+    });
+    expect(reminderTimesOnDay([monthly], new Date(2027, 3, 30)).length).toBe(1);
+    expect(reminderTimesOnDay([monthly], new Date(2027, 3, 29))).toEqual([]);
   });
 
-  test('archivierte Notizen und vergangene Einmal-Erinnerungen an anderen Tagen zählen nicht', () => {
-    const notes = [
-      note({ reminderAt: new Date(2027, 2, 13, 8, 0).toISOString(), archivedAt: NOW.toISOString() }),
-      note({ reminderAt: new Date(2027, 2, 1, 8, 0).toISOString() }),
-    ];
-    expect(ymd(planReengagement(input({ notes }))[0].date)).toBe('2027-3-13');
-  });
-
-  test('tägliche Erinnerung belegt jeden Tag → keine Rückkehr-Benachrichtigung', () => {
-    const notes = [note({ reminderAt: new Date(2027, 2, 1, 8, 0).toISOString(), reminderRecurrence: 'daily' })];
-    expect(planReengagement(input({ notes }))).toEqual([]);
+  test('archivierte Notizen zählen nicht', () => {
+    const notes = [note({ reminderAt: new Date(2027, 2, 13, 15, 0).toISOString(), archivedAt: NOW.toISOString() })];
+    expect(hm(planReengagement(input({ notes }))[0].date)).toBe('14:30');
   });
 });
 

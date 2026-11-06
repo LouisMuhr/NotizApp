@@ -326,7 +326,7 @@ const en: typeof de = {
     opensSettings: 'Opens system settings',
     reengagementSection: 'Comeback nudges',
     reengagementLabel: 'Nudge me when I have been away',
-    reengagementSublabel: 'At most once a week, never at night. Numbers only, no note content.',
+    reengagementSublabel: 'After 3, 7 and 14 days without opening the app, never at night. Numbers only, no note content.',
   },
   settingsTestBenachrichtigungen: {
     testSection: 'Test',

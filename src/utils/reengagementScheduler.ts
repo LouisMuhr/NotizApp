@@ -14,12 +14,9 @@ import {
 
 export const REENGAGEMENT_ENABLED_KEY = '@notizapp_reengagement_enabled';
 export const REENGAGEMENT_LAST_OPENED_KEY = '@notizapp_reengagement_last_opened';
-/** ISO-Zeitpunkte der zuletzt geplanten Stufen — vergangene gelten als ausgeliefert (7-Tage-Grenze). */
-export const REENGAGEMENT_PLANNED_KEY = '@notizapp_reengagement_planned';
 export const REENGAGEMENT_KEYS = [
   REENGAGEMENT_ENABLED_KEY,
   REENGAGEMENT_LAST_OPENED_KEY,
-  REENGAGEMENT_PLANNED_KEY,
 ];
 const CHANNEL_ID = 'reengagement';
 
@@ -57,17 +54,6 @@ export async function clearReengagement(): Promise<void> {
   await AsyncStorage.multiRemove(REENGAGEMENT_KEYS).catch(() => {});
 }
 
-function parseDates(raw: string | null): Date[] {
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.map((s) => new Date(s)).filter((d) => Number.isFinite(d.getTime()));
-  } catch {
-    return [];
-  }
-}
-
 export interface RefreshOptions {
   notes: Note[];
   threads: Thread[];
@@ -82,13 +68,11 @@ export interface RefreshOptions {
  */
 export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
   const now = opts.now ?? new Date();
-  const [enabled, lastOpenedRaw, plannedRaw] = await Promise.all([
+  const [enabled, lastOpenedRaw] = await Promise.all([
     loadReengagementEnabled(),
     AsyncStorage.getItem(REENGAGEMENT_LAST_OPENED_KEY),
-    AsyncStorage.getItem(REENGAGEMENT_PLANNED_KEY),
   ]);
   await cancelReengagement();
-  const previouslyDelivered = parseDates(plannedRaw).filter((d) => d.getTime() <= now.getTime());
   const lastOpened = lastOpenedRaw ? new Date(lastOpenedRaw) : null;
   const plan = planReengagement({
     enabled,
@@ -96,7 +80,6 @@ export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
     lastOpenedAt: lastOpened && Number.isFinite(lastOpened.getTime()) ? lastOpened : null,
     notes: opts.notes,
     threads: opts.threads,
-    previouslyDelivered,
     threadsAvailable: opts.threadsAvailable,
   });
 
@@ -120,9 +103,4 @@ export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: p.date },
     });
   }
-
-  // Die letzte ausgelieferte bleibt gemerkt, auch wenn der neue Plan leer ist.
-  const lastDelivered = previouslyDelivered.sort((a, b) => b.getTime() - a.getTime())[0];
-  const remembered = [...(lastDelivered ? [lastDelivered] : []), ...plan.map((p) => p.date)];
-  await AsyncStorage.setItem(REENGAGEMENT_PLANNED_KEY, JSON.stringify(remembered.map((d) => d.toISOString())));
 }

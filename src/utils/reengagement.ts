@@ -6,9 +6,11 @@
 //
 // Regeln:
 // - Stufen 3 / 7 / 14 Tage nach dem letzten Öffnen, danach nichts mehr bis zum nächsten Öffnen.
-// - Höchstens eine pro 7 Tage (auch gegenüber einer schon ausgelieferten aus der letzten Planung).
+// - Exakt ab dem letzten Öffnen (keine Mindestabstände zwischen Stufen oder zu früheren).
 // - Nie zwischen 21:00 und 9:00 Ortszeit (21–24 Uhr → 18:00 desselben Tages, 0–9 Uhr → 10:00).
-// - Nicht am Kalendertag einer geplanten Notiz-Erinnerung → nächster freier Tag.
+// - Notiz-Erinnerungen blockieren keinen Tag. Liegt eine näher als 2 h am Zeitpunkt, wird
+//   innerhalb desselben Tages (außerhalb der Ruhezeit) auf ≥ 2 h Abstand geschoben; geht das
+//   nicht, wird trotzdem zum ursprünglichen Zeitpunkt gesendet.
 // - Text nur aus Zahlen (nie Titel/Inhalte), Stufe 1 hat eine generische Variante, 2/3 nicht.
 
 import type { Note } from '../models/Note';
@@ -22,15 +24,14 @@ export const REENGAGEMENT_ID_PREFIX = 'velm-reengagement-';
 export const REENGAGEMENT_DATA_KIND = 'reengagement';
 
 export const STAGE_OFFSETS_DAYS: Record<ReengagementStage, number> = { 1: 3, 2: 7, 3: 14 };
-export const MIN_GAP_DAYS = 7;
 export const QUIET_START_HOUR = 21;
 export const QUIET_END_HOUR = 9;
 /** Ziel bei Verschiebung aus dem späten Abend (21–24 Uhr). */
 export const EVENING_FALLBACK_HOUR = 18;
 /** Ziel bei Verschiebung aus der Nacht (0–9 Uhr). */
 export const MORNING_FALLBACK_HOUR = 10;
-/** Wie viele Tage höchstens wegen Erinnerungs-Kollision geschoben wird, bevor die Stufe entfällt. */
-export const MAX_COLLISION_SHIFT_DAYS = 7;
+/** Mindestabstand zu einer Notiz-Erinnerung am selben Tag. */
+export const REMINDER_GAP_MS = 2 * 60 * 60 * 1000;
 /** Fenster für "neue Notizen ohne Thread". */
 export const RECENT_WINDOW_DAYS = 7;
 
@@ -64,11 +65,6 @@ export interface PlanInput {
   notes: Note[];
   threads: Thread[];
   /**
-   * Zeitpunkte, zu denen bereits Rückkehr-Benachrichtigungen ausgeliefert wurden (bzw. geplant
-   * waren und in der Vergangenheit liegen). Sichert die 7-Tage-Grenze über Neuplanungen hinweg.
-   */
-  previouslyDelivered?: Date[];
-  /**
    * Ob Threads für den Nutzer erreichbar sind (Synthese braucht ein bestätigtes Konto).
    * Ohne Threads ist "Notizen ohne Thread" kein sinnvoller Anlass.
    */
@@ -97,44 +93,47 @@ export function computeStats(notes: Note[], threads: Thread[], now: Date): Reeng
 }
 
 // ---------------------------------------------------------------------------
-// Kalender: Erinnerungstage
+// Kalender: Erinnerungszeitpunkte
 // ---------------------------------------------------------------------------
 
-function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
 /**
- * Hat an diesem Kalendertag eine aktive Notiz eine Erinnerung? Wiederholungen zählen an jedem
- * passenden Tag (täglich = jeder Tag, wöchentlich = Wochentag, monatlich = Monatstag, ab dem 29.
- * auf die Monatslänge begrenzt — wie `nextMonthlyOccurrences`). Nur ab dem ersten Termin.
+ * Alle Zeitpunkte, zu denen an diesem Kalendertag eine Notiz-Erinnerung (aktive Notiz) klingelt.
+ * Wiederholungen zählen an jedem passenden Tag ab dem ersten Termin (täglich = jeder Tag,
+ * wöchentlich = Wochentag, monatlich = Monatstag, ab dem 29. auf die Monatslänge begrenzt —
+ * wie `nextMonthlyOccurrences`).
  */
-export function hasReminderOnDay(notes: Note[], day: Date): boolean {
+export function reminderTimesOnDay(notes: Note[], day: Date): Date[] {
   const endOfDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+  const result: Date[] = [];
   for (const n of notes) {
     if (n.archivedAt || !n.reminderAt) continue;
     const first = new Date(n.reminderAt);
     if (!Number.isFinite(first.getTime())) continue;
+    const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), first.getHours(), first.getMinutes());
     switch (n.reminderRecurrence) {
       case 'daily':
-        if (first.getTime() < endOfDay) return true;
+        if (first.getTime() < endOfDay) result.push(at);
         break;
       case 'weekly': {
         const weekday = n.reminderWeekday ?? 2; // Expo: 1=So … 7=Sa, Default Montag (wie scheduleReminder)
-        if (first.getTime() < endOfDay && day.getDay() + 1 === weekday) return true;
+        if (first.getTime() < endOfDay && day.getDay() + 1 === weekday) result.push(at);
         break;
       }
       case 'monthly': {
         const dom = n.reminderDayOfMonth ?? 1;
         const lastDay = new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate();
-        if (first.getTime() < endOfDay && day.getDate() === Math.min(dom, lastDay)) return true;
+        if (first.getTime() < endOfDay && day.getDate() === Math.min(dom, lastDay)) result.push(at);
         break;
       }
       default:
-        if (sameDay(first, day)) return true;
+        if (sameDay(first, day)) result.push(first);
     }
   }
-  return false;
+  return result;
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 // ---------------------------------------------------------------------------
@@ -167,16 +166,28 @@ export function moveOutOfQuietHours(d: Date, notBefore: Date): Date {
 }
 
 /**
- * Platziert eine Stufe: Ruhezeit + Mindestzeitpunkt, dann bei Erinnerungs-Kollision tageweise
- * weiter (Uhrzeit bleibt, liegt ja schon im Fenster). Null, wenn kein freier Tag gefunden wird.
+ * Platziert eine Stufe: erst aus der Ruhezeit (nie vor `notBefore`), dann — falls eine
+ * Notiz-Erinnerung näher als 2 h liegt — auf den nächstgelegenen Zeitpunkt desselben Tages mit
+ * ≥ 2 h Abstand zu allen Erinnerungen, außerhalb der Ruhezeit und nicht vor `notBefore`.
+ * Gibt es keinen, bleibt es beim Zeitpunkt aus Schritt 1 (wird trotzdem gesendet).
  */
-export function placeStage(target: Date, notBefore: Date, notes: Note[]): Date | null {
-  let d = moveOutOfQuietHours(target, notBefore);
-  for (let i = 0; i <= MAX_COLLISION_SHIFT_DAYS; i++) {
-    if (!hasReminderOnDay(notes, d)) return d;
-    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, d.getHours(), d.getMinutes(), 0, 0);
+export function placeStage(target: Date, notBefore: Date, notes: Note[]): Date {
+  const base = moveOutOfQuietHours(target, notBefore);
+  const reminders = reminderTimesOnDay(notes, base).map((d) => d.getTime());
+  const ok = (ms: number) => reminders.every((r) => Math.abs(r - ms) >= REMINDER_GAP_MS);
+  if (ok(base.getTime())) return base;
+
+  const dayStart = atHour(base, QUIET_END_HOUR).getTime();
+  const dayEnd = atHour(base, QUIET_START_HOUR).getTime() - 60_000; // 20:59
+  const earliest = Math.max(dayStart, notBefore.getTime());
+  const candidates = [earliest, dayEnd];
+  for (const r of reminders) candidates.push(r - REMINDER_GAP_MS, r + REMINDER_GAP_MS);
+  let best: number | null = null;
+  for (const c of candidates) {
+    if (c < earliest || c > dayEnd || !ok(c)) continue;
+    if (best === null || Math.abs(c - base.getTime()) < Math.abs(best - base.getTime())) best = c;
   }
-  return null;
+  return best === null ? base : new Date(best);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,12 +232,7 @@ export function planReengagement(input: PlanInput): PlannedReengagement[] {
   const stats = computeStats(notes, threads, now);
   const threadsAvailable = input.threadsAvailable ?? true;
 
-  // Frühester erlaubter Zeitpunkt: nach jetzt und ≥ 7 Tage nach der letzten ausgelieferten.
-  let notBefore = new Date(now.getTime() + 60_000);
-  for (const d of input.previouslyDelivered ?? []) {
-    const t = d.getTime() + MIN_GAP_DAYS * DAY_MS;
-    if (Number.isFinite(t) && d.getTime() <= now.getTime() && t > notBefore.getTime()) notBefore = new Date(t);
-  }
+  const notBefore = new Date(now.getTime() + 60_000);
 
   const plan: PlannedReengagement[] = [];
   for (const stage of [1, 2, 3] as ReengagementStage[]) {
@@ -234,7 +240,6 @@ export function planReengagement(input: PlanInput): PlannedReengagement[] {
     if (!content) continue;
     const target = new Date(base.getTime() + STAGE_OFFSETS_DAYS[stage] * DAY_MS);
     const date = placeStage(target, notBefore, notes);
-    if (!date) continue;
     plan.push({
       stage,
       identifier: `${REENGAGEMENT_ID_PREFIX}${stage}`,
@@ -242,7 +247,6 @@ export function planReengagement(input: PlanInput): PlannedReengagement[] {
       ...content,
       ...textKeys(content.kind),
     });
-    notBefore = new Date(date.getTime() + MIN_GAP_DAYS * DAY_MS);
   }
   return plan;
 }

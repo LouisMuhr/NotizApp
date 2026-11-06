@@ -325,7 +325,7 @@ export default {
     opensSettings: 'Öffnet die Systemeinstellungen',
     reengagementSection: 'Rückkehr-Hinweise',
     reengagementLabel: 'Erinnern, wenn ich länger weg war',
-    reengagementSublabel: 'Höchstens einmal pro Woche, nie nachts. Nur Zahlen, keine Notizinhalte.',
+    reengagementSublabel: 'Nach 3, 7 und 14 Tagen ohne Öffnen, nie nachts. Nur Zahlen, keine Notizinhalte.',
   },
   settingsTestBenachrichtigungen: {
     testSection: 'Test',
