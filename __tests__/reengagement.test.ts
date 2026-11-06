@@ -264,3 +264,25 @@ describe('Inhalt', () => {
     }
   });
 });
+
+describe('Testmodus (msPerDay / test)', () => {
+  test('msPerDay = 1 min → Stufen nach 3, 7, 14 Minuten', () => {
+    const notes = [note({ checklist: [{ id: 'c', text: 'x', checked: false }] }), note()];
+    const plan = planReengagement(input({ notes, msPerDay: 60_000, test: true }));
+    expect(plan.map((p) => (p.date.getTime() - NOW.getTime()) / 60_000)).toEqual([3, 7, 14]);
+  });
+
+  test('Testmodus ignoriert Ruhezeit und 2-h-Abstand, füllt fehlende Stufen generisch', () => {
+    const late = new Date(2027, 2, 10, 22, 50);
+    const notes = [note({ reminderAt: new Date(2027, 2, 10, 22, 55).toISOString(), createdAt: new Date(2027, 1, 1).toISOString() })];
+    const plan = planReengagement(input({ now: late, lastOpenedAt: late, notes, msPerDay: 60_000, test: true }));
+    expect(plan.map((p) => p.stage)).toEqual([1, 2, 3]);
+    expect(plan.map((p) => p.kind)).toEqual(['generic', 'generic', 'generic']);
+    expect(plan.map((p) => hm(p.date))).toEqual(['22:53', '22:57', '23:04']);
+  });
+
+  test('ohne Testmodus bleibt der Default 24 h', () => {
+    const plan = planReengagement(input());
+    expect(plan[0].date.getTime() - NOW.getTime()).toBe(3 * DAY);
+  });
+});

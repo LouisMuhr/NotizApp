@@ -69,6 +69,13 @@ export interface PlanInput {
    * Ohne Threads ist "Notizen ohne Thread" kein sinnvoller Anlass.
    */
   threadsAvailable?: boolean;
+  /** Länge eines "Tages" für die Stufen-Offsets (Default 24 h). Testmodus: 60 000 = 1 Tag → 1 Minute. */
+  msPerDay?: number;
+  /**
+   * Testmodus (Admin): Ruhezeit und 2-h-Abstand zu Erinnerungen ignorieren und Stufen ohne
+   * konkreten Anlass generisch füllen, damit alle drei Stufen sichtbar werden.
+   */
+  test?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,10 +243,11 @@ export function planReengagement(input: PlanInput): PlannedReengagement[] {
 
   const plan: PlannedReengagement[] = [];
   for (const stage of [1, 2, 3] as ReengagementStage[]) {
-    const content = chooseContent(stage, stats, threadsAvailable);
+    const content = chooseContent(stage, stats, threadsAvailable)
+      ?? (input.test ? { kind: 'generic' as const, count: 0, target: 'Notizen' as const } : null);
     if (!content) continue;
-    const target = new Date(base.getTime() + STAGE_OFFSETS_DAYS[stage] * DAY_MS);
-    const date = placeStage(target, notBefore, notes);
+    const target = new Date(base.getTime() + STAGE_OFFSETS_DAYS[stage] * (input.msPerDay ?? DAY_MS));
+    const date = input.test ? target : placeStage(target, notBefore, notes);
     plan.push({
       stage,
       identifier: `${REENGAGEMENT_ID_PREFIX}${stage}`,

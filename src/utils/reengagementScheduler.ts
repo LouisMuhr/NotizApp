@@ -14,10 +14,25 @@ import {
 
 export const REENGAGEMENT_ENABLED_KEY = '@notizapp_reengagement_enabled';
 export const REENGAGEMENT_LAST_OPENED_KEY = '@notizapp_reengagement_last_opened';
+/** Admin-Testmodus: ISO-Zeitpunkt der letzten Test-Stufe. Bis dahin wird nicht normal neu geplant. */
+export const REENGAGEMENT_TEST_UNTIL_KEY = '@notizapp_reengagement_test_until';
 export const REENGAGEMENT_KEYS = [
   REENGAGEMENT_ENABLED_KEY,
   REENGAGEMENT_LAST_OPENED_KEY,
+  REENGAGEMENT_TEST_UNTIL_KEY,
 ];
+/** Testmodus-Zeitraffer: 1 Tag = 1 Minute (Stufen nach 3, 7, 14 Minuten). */
+export const TEST_MS_PER_DAY = 60_000;
+
+/** Läuft gerade ein Admin-Test (letzte Test-Stufe noch nicht vorbei)? */
+export async function isReengagementTestActive(now: Date = new Date()): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(REENGAGEMENT_TEST_UNTIL_KEY).catch(() => null);
+  if (!raw) return false;
+  const until = new Date(raw).getTime();
+  if (Number.isFinite(until) && until > now.getTime()) return true;
+  await AsyncStorage.removeItem(REENGAGEMENT_TEST_UNTIL_KEY).catch(() => {});
+  return false;
+}
 const CHANNEL_ID = 'reengagement';
 
 export async function loadReengagementEnabled(): Promise<boolean> {
@@ -60,14 +75,19 @@ export interface RefreshOptions {
   t: (key: string, options?: Record<string, unknown>) => string;
   threadsAvailable: boolean;
   now?: Date;
+  /** Admin-Testmodus: Zeitraffer, alle drei Stufen, Ruhezeit/2-h-Abstand ignoriert. */
+  test?: boolean;
 }
 
 /**
  * Storniert alle Rückkehr-Benachrichtigungen und plant sie aus dem aktuellen Stand neu.
- * Ist der Schalter aus, wird nur storniert.
+ * Ist der Schalter aus, wird nur storniert. Läuft ein Admin-Test, passiert nichts — sonst
+ * würde jedes Öffnen/Vordergrund (Bootstrap) die Testplanung durch die echte ersetzen.
  */
 export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
   const now = opts.now ?? new Date();
+  if (opts.test) return startTest(opts, now);
+  if (await isReengagementTestActive(now)) return;
   const [enabled, lastOpenedRaw] = await Promise.all([
     loadReengagementEnabled(),
     AsyncStorage.getItem(REENGAGEMENT_LAST_OPENED_KEY),
@@ -82,16 +102,46 @@ export async function refreshReengagement(opts: RefreshOptions): Promise<void> {
     threads: opts.threads,
     threadsAvailable: opts.threadsAvailable,
   });
+  await schedulePlan(plan, opts.t);
+}
 
+/** Admin-Test: echte Textauswahl/Kennung/Kanal, Stufen nach 3, 7, 14 Minuten ab jetzt. */
+async function startTest(opts: RefreshOptions, now: Date): Promise<void> {
+  await cancelReengagement();
+  const plan = planReengagement({
+    enabled: true,
+    now,
+    lastOpenedAt: now,
+    notes: opts.notes,
+    threads: opts.threads,
+    threadsAvailable: opts.threadsAvailable,
+    msPerDay: TEST_MS_PER_DAY,
+    test: true,
+  });
+  const last = plan[plan.length - 1];
+  if (last) await AsyncStorage.setItem(REENGAGEMENT_TEST_UNTIL_KEY, last.date.toISOString());
+  await schedulePlan(plan, opts.t);
+}
+
+/** Admin-Test beenden: Test-Hinweise stornieren, danach wieder normal planen (Aufrufer). */
+export async function endReengagementTest(): Promise<void> {
+  await AsyncStorage.removeItem(REENGAGEMENT_TEST_UNTIL_KEY);
+  await cancelReengagement();
+}
+
+async function schedulePlan(
+  plan: ReturnType<typeof planReengagement>,
+  t: RefreshOptions['t'],
+): Promise<void> {
   if (Platform.OS === 'android' && plan.length > 0) {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: opts.t('reengagement.channelName'),
+      name: t('reengagement.channelName'),
       importance: Notifications.AndroidImportance.DEFAULT,
     }).catch(() => {});
   }
 
   for (const p of plan) {
-    const { title, body } = renderText(p, opts.t);
+    const { title, body } = renderText(p, t);
     await Notifications.scheduleNotificationAsync({
       identifier: p.identifier,
       content: {

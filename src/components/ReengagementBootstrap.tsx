@@ -14,10 +14,12 @@ export function useRefreshReengagement() {
   const stateRef = useRef({ notes, threads, t });
   stateRef.current = { notes, threads, t };
 
-  return useCallback(async () => {
+  return useCallback(async (opts?: { test?: boolean }) => {
     const { notes: n, threads: th, t: tr } = stateRef.current;
     const uid = await getSyncUserId().catch(() => null);
-    await refreshReengagement({ notes: n, threads: th, t: tr, threadsAvailable: th.length > 0 || uid !== null });
+    await refreshReengagement({
+      notes: n, threads: th, t: tr, threadsAvailable: th.length > 0 || uid !== null, test: opts?.test,
+    });
   }, []);
 }
 
@@ -35,6 +37,7 @@ export default function ReengagementBootstrap() {
   const ready = !loading && !threadsLoading;
   const openedRef = useRef(false);
 
+  // Läuft ein Admin-Test, überspringt refreshReengagement das Neuplanen selbst.
   const onOpen = useCallback(async () => {
     await markAppOpened();
     await refresh();
