@@ -20,6 +20,10 @@ außerhalb des Codes, in dieser Reihenfolge.
 1. Projekt anlegen → App „Play Store", Paketname `com.velm.app`.
 2. Service-Account-JSON aus der Google Cloud mit Rechten in der Play Console hinterlegen
    (Anleitung im RevenueCat-Dashboard; Freischaltung dauert bei Google bis zu 36 h).
+   Im Cloud-Projekt des Dienstkontos **drei** APIs aktivieren: Google Play Android Developer API,
+   Google Play Developer Reporting API, **Cloud Pub/Sub API** (sonst lehnt RevenueCat das JSON ab).
+   Rollen am Dienstkonto: Pub/Sub-Administrator, Monitoring-Betrachter. Play-Console-Rechte: App-Infos ansehen,
+   Finanzdaten ansehen, Bestellungen und Abos verwalten.
 3. Produkte importieren: `velm_basic:monthly`, `velm_pro:monthly`.
 4. Entitlements: `basic` → `velm_basic:monthly`, `pro` → `velm_pro:monthly`. **IDs exakt so**, die Bridge
    mappt sie in `bridge/api/_lib/billing.ts` (`ENTITLEMENT_TIER`).
