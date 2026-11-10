@@ -603,9 +603,9 @@ export default {
     v1Caption: 'Text, Stimme oder Liste — die Notiz passt sich an, nicht du.',
     v2Body: 'Was du an verschiedenen Tagen geschrieben hast, findet zueinander — als Faden, den du jederzeit wieder lesen kannst.',
     v3Eyebrow: '— Eine Sache noch.',
-    v3List1: 'Ende-zu-Ende verschlüsselt',
+    v3List1: 'Bleibt auf deinem Gerät, Sync nur mit Konto (Server in Frankfurt)',
     v3List2: 'KI-Verarbeitung nur, wenn du es anstößt',
-    v3List3: 'Export zu Markdown — jederzeit',
+    v3List3: 'Export all deiner Daten als Datei — jederzeit',
   },
   reengagement: {
     channelName: 'Rückkehr-Hinweise',

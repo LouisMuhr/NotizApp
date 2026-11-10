@@ -604,9 +604,9 @@ const en: typeof de = {
     v1Caption: 'Text, voice or list — the note adapts to you, not the other way around.',
     v2Body: 'What you wrote on different days finds its way together — as a thread you can revisit anytime.',
     v3Eyebrow: '— One more thing.',
-    v3List1: 'End-to-end encrypted',
+    v3List1: 'Stays on your device, synced only with an account (servers in Frankfurt)',
     v3List2: 'AI processing only when you trigger it',
-    v3List3: 'Export to Markdown — anytime',
+    v3List3: 'Export all your data as a file — anytime',
   },
   reengagement: {
     channelName: 'Comeback nudges',
