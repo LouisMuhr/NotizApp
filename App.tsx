@@ -25,8 +25,11 @@ import { ThoughtsProvider } from './src/context/ThoughtsContext';
 import { AppTheme, Tokens } from './src/theme/theme';
 import AppNavigator from './src/navigation/AppNavigator';
 import ShareHandler from './src/components/ShareHandler';
+import ReengagementBootstrap from './src/components/ReengagementBootstrap';
+import { isReengagementNotification } from './src/utils/reengagement';
 import OnboardingScreen, { ONBOARDING_KEY } from './src/screens/onboarding';
 import { requestNotificationPermissions } from './src/utils/notifications';
+import { useSplashHide } from './src/utils/splash';
 import { useNotes } from './src/context/NotesContext';
 import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
@@ -50,14 +53,7 @@ const navigationRef = createNavigationContainerRef();
 
 function SplashGate() {
   const { loading } = useNotes();
-  useEffect(() => {
-    if (!loading) SplashScreen.hideAsync().catch(() => {});
-  }, [loading]);
-  // Notbremse: der Splash darf nie dauerhaft haengen bleiben.
-  useEffect(() => {
-    const id = setTimeout(() => { SplashScreen.hideAsync().catch(() => {}); }, 8000);
-    return () => clearTimeout(id);
-  }, []);
+  useSplashHide(!loading);
   return null;
 }
 
@@ -70,13 +66,24 @@ function NotificationBootstrap() {
     requestNotificationPermissions();
 
     function handleTap(response: Notifications.NotificationResponse) {
-      const noteId = response.notification.request.content.data?.noteId as string | undefined;
-      if (!noteId) return;
-      const tryNav = () => {
-        if (navigationRef.isReady()) { (navigationRef as any).navigate('NoteDetail', { noteId }); }
-        else { setTimeout(tryNav, 100); }
+      const { identifier, content } = response.notification.request;
+      const data = content.data as Record<string, unknown> | undefined;
+      const navigate = (fn: () => void) => {
+        const tryNav = () => {
+          if (navigationRef.isReady()) fn();
+          else setTimeout(tryNav, 100);
+        };
+        tryNav();
       };
-      tryNav();
+      // Rückkehr-Benachrichtigung: App öffnen, bei 'Notizen ohne Thread' direkt in den Threads-Tab.
+      if (isReengagementNotification(identifier, data)) {
+        const screen = data?.target === 'Threads' ? 'Threads' : 'Notizen';
+        navigate(() => (navigationRef as any).navigate('Home', { screen }));
+        return;
+      }
+      const noteId = data?.noteId as string | undefined;
+      if (!noteId) return;
+      navigate(() => (navigationRef as any).navigate('NoteDetail', { noteId }));
     }
 
     const tapSub = Notifications.addNotificationResponseReceivedListener(handleTap);
@@ -113,8 +120,16 @@ export default function App() {
   const pendingNavigate = useRef<string | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY).then((val) => setOnboardingDone(val === 'true'));
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((val) => setOnboardingDone(val === 'true'))
+      .catch(() => setOnboardingDone(true));
   }, []);
+
+  // Startbildschirm: im Onboarding-Pfad ausblenden, sobald es gerendert werden kann (der normale
+  // Pfad wartet in SplashGate auf die Notizen). Die Notbremse läuft hier ab Mount — sie greift also
+  // auch, wenn Schriften oder Onboarding-Flag hängen. Früher hing das am onLayout der Root-View,
+  // das in Expo Go (SDK 54, New Architecture) nicht ankam: Logo blieb für immer stehen.
+  useSplashHide(fontsLoaded && onboardingDone === false);
 
   function handleOnboardingDone(navigateTo?: string) {
     if (navigateTo) pendingNavigate.current = navigateTo;
@@ -128,7 +143,6 @@ export default function App() {
     return (
       <GestureHandlerRootView
         style={{ flex: 1 }}
-        onLayout={() => { SplashScreen.hideAsync().catch(() => {}); }}
       >
         <SafeAreaProvider>
           <LanguageProvider>
@@ -163,6 +177,7 @@ export default function App() {
                   <ThoughtsProvider>
                     <SplashGate />
                     <NotificationBootstrap />
+                    <ReengagementBootstrap />
                     <ShareHandler />
                     <AppNavigator />
                     <StatusBar style="dark" />

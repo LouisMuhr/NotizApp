@@ -1,6 +1,6 @@
 {
   "name": "notizapp",
-  "version": "1.4.8",
+  "version": "1.7.1",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",

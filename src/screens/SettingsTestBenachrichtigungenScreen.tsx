@@ -13,6 +13,8 @@ import { ReminderRecurrence } from '../models/Note';
 import { useLanguage } from '../context/LanguageContext';
 import { useIsAdmin } from '../sync/adminAccess';
 import SettingsActionRow from '../components/SettingsActionRow';
+import { useRefreshReengagement } from '../components/ReengagementBootstrap';
+import { endReengagementTest, isReengagementTestActive } from '../utils/reengagementScheduler';
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -30,10 +32,26 @@ export default function SettingsTestBenachrichtigungenScreen() {
   const { t, locale } = useLanguage();
   const isAdmin = useIsAdmin();
   const [scheduled, setScheduled] = useState<ScheduledReminderInfo[]>([]);
+  const refreshReengagement = useRefreshReengagement();
+  const [reengagementTestActive, setReengagementTestActive] = useState(false);
 
   const loadScheduled = useCallback(() => {
     getScheduledReminders().then(setScheduled).catch(() => setScheduled([]));
+    isReengagementTestActive().then(setReengagementTestActive).catch(() => {});
   }, []);
+
+  async function startReengagementTest() {
+    try { await refreshReengagement({ test: true }); } catch (e) { console.warn('[reengagement] test failed', e); }
+    loadScheduled();
+  }
+
+  async function stopReengagementTest() {
+    try {
+      await endReengagementTest();
+      await refreshReengagement();
+    } catch (e) { console.warn('[reengagement] end test failed', e); }
+    loadScheduled();
+  }
 
   useFocusEffect(loadScheduled);
 
@@ -80,6 +98,30 @@ export default function SettingsTestBenachrichtigungenScreen() {
       </View>
       <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
         {t('settingsTestBenachrichtigungen.testRecurrenceHint')}
+      </Text>
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsTestBenachrichtigungen.reengagementSection')}
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <SettingsActionRow
+          icon="timer-sand"
+          label={t('settingsTestBenachrichtigungen.reengagementStart')}
+          sublabel={t('settingsTestBenachrichtigungen.reengagementStartSub')}
+          onPress={startReengagementTest}
+        />
+        <SettingsActionRow
+          icon="stop-circle-outline"
+          label={t('settingsTestBenachrichtigungen.reengagementStop')}
+          sublabel={reengagementTestActive
+            ? t('settingsTestBenachrichtigungen.reengagementRunning')
+            : t('settingsTestBenachrichtigungen.reengagementIdle')}
+          showDivider={false}
+          onPress={stopReengagementTest}
+        />
+      </View>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsTestBenachrichtigungen.reengagementHint')}
       </Text>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>

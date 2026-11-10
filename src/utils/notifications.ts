@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform, Linking } from 'react-native';
 import { ReminderRecurrence } from '../models/Note';
+import { isReengagementNotification } from './reengagement';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -68,6 +69,14 @@ export function nextMonthlyOccurrences(
   return result;
 }
 
+/**
+ * Android-Kanal für Erinnerungen. SDK 54: channelId gehört in den TRIGGER — im content wird er
+ * ignoriert (Erinnerung landete sonst im Fallback-Kanal ohne Banner).
+ */
+function reminderChannel(): { channelId?: string } {
+  return Platform.OS === 'android' ? { channelId: 'reminders' } : {};
+}
+
 export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
   const { noteId, title, body, triggerDate, recurrence, weekday, dayOfMonth } = opts;
 
@@ -75,7 +84,6 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     title: `Erinnerung: ${title}`,
     body: body.substring(0, 100) || 'Notiz-Erinnerung',
     data: { noteId },
-    ...(Platform.OS === 'android' && { channelId: 'reminders' }),
   };
 
   const hour = triggerDate.getHours();
@@ -87,6 +95,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     case 'daily':
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        ...reminderChannel(),
         hour,
         minute,
       };
@@ -95,6 +104,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
     case 'weekly':
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+        ...reminderChannel(),
         weekday: weekday ?? 2, // Default Montag
         hour,
         minute,
@@ -108,7 +118,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
         for (const date of dates) {
           ids.push(await Notifications.scheduleNotificationAsync({
             content: notifContent,
-            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date, ...reminderChannel() },
           }));
         }
         // Mehrere Einträge, eine notificationId an der Notiz → kommagetrennt, cancelReminder trennt wieder.
@@ -116,6 +126,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       }
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.MONTHLY,
+        ...reminderChannel(),
         day: dayOfMonth ?? 1,
         hour,
         minute,
@@ -128,6 +139,7 @@ export async function scheduleReminder(opts: ScheduleOptions): Promise<string> {
       trigger = {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: triggerDate,
+        ...reminderChannel(),
       };
       break;
     }
@@ -147,8 +159,17 @@ export async function cancelReminder(notificationId: string): Promise<void> {
   );
 }
 
+/**
+ * Storniert alle Notiz-Erinnerungen (und Test-Benachrichtigungen), aber keine
+ * Rückkehr-Benachrichtigungen — die verwaltet `reengagementScheduler.ts` selbst.
+ */
 export async function cancelAllReminders(): Promise<void> {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  const all = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    all
+      .filter((n) => !isReengagementNotification(n.identifier, n.content?.data))
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
+  );
 }
 
 export async function scheduleTestNotification(): Promise<void> {
@@ -156,11 +177,11 @@ export async function scheduleTestNotification(): Promise<void> {
     content: {
       title: 'Test-Erinnerung',
       body: 'Benachrichtigungen funktionieren!',
-      ...(Platform.OS === 'android' && { channelId: 'reminders' }),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: new Date(Date.now() + 15_000),
+      ...reminderChannel(),
     },
   });
 }
@@ -234,4 +255,9 @@ export async function openBatteryOptimizationSettings(): Promise<void> {
   } catch {
     await Linking.openSettings();
   }
+}
+
+/** App-Infoseite von Velm (dort liegen bei Xiaomi, Oppo, Vivo, Samsung Autostart/Akku-Einstellungen). */
+export async function openAppSettings(): Promise<void> {
+  await Linking.openSettings();
 }

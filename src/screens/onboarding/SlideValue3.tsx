@@ -43,11 +43,11 @@ export default function SlideValue3({ onNext, onSkip, scrollX, index, slideWidth
         <View style={{ marginTop: 40 }}>
           <Text style={styles.eyebrow}>{t('onboarding.v3Eyebrow')}</Text>
           <Text style={styles.headline}>
-            Was du{'\n'}schreibst,{'\n'}
+            {t('onboarding.v3Head1')}{'\n'}
             <Text style={{ fontFamily: Fonts.serifItalic, color: Tokens.amberDeep }}>
-              liest niemand
+              {t('onboarding.v3HeadAccent')}
             </Text>
-            {'\n'}außer dir.
+            {'\n'}{t('onboarding.v3Head2')}
           </Text>
         </View>
 

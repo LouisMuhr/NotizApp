@@ -1,16 +1,47 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { useTheme, Text } from 'react-native-paper';
+import { useTheme, Text, Switch } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { withAlpha } from '../utils/categoryColors';
+import { loadReengagementEnabled, saveReengagementEnabled } from '../utils/reengagementScheduler';
+import { useRefreshReengagement } from '../components/ReengagementBootstrap';
 import {
   openExactAlarmSettings,
   openBatteryOptimizationSettings,
+  openAppSettings,
 } from '../utils/notifications';
+import { currentBackgroundVendor } from '../utils/deviceVendor';
 import { useLanguage } from '../context/LanguageContext';
 import SettingsActionRow from '../components/SettingsActionRow';
 
 export default function SettingsBenachrichtigungenScreen() {
   const theme = useTheme();
   const { t } = useLanguage();
+  const refreshReengagement = useRefreshReengagement();
+  // null = noch nicht geladen (Schalter bleibt solange gesperrt)
+  const [reengagementOn, setReengagementOn] = useState<boolean | null>(null);
+  // Hersteller mit eigener Hintergrund-Sperre → Schritt-Anleitung; reines Android/iOS → keine.
+  const vendor = useMemo(currentBackgroundVendor, []);
+  const vendorSteps = vendor === 'other'
+    ? []
+    : t(`settingsBenachrichtigungen.vendorSteps.${vendor}`).split('\n');
+
+  useEffect(() => {
+    let alive = true;
+    loadReengagementEnabled().then((v) => { if (alive) setReengagementOn(v); });
+    return () => { alive = false; };
+  }, []);
+
+  async function toggleReengagement(next: boolean) {
+    setReengagementOn(next);
+    try {
+      // Aus = alle Rückkehr-Benachrichtigungen stornieren (saveReengagementEnabled), an = sofort planen.
+      await saveReengagementEnabled(next);
+      if (next) await refreshReengagement();
+    } catch (e) {
+      console.warn('[reengagement] toggle failed', e);
+    }
+  }
 
   return (
     <ScrollView
@@ -22,8 +53,69 @@ export default function SettingsBenachrichtigungenScreen() {
         {' & '}
         <Text style={{ color: theme.colors.onSurface, fontWeight: '600' }}>{t('settingsBenachrichtigungen.hintBatteryOpt')}</Text>
         {'. '}
-        {t('settingsBenachrichtigungen.hintXiaomi')}
+        {t('settingsBenachrichtigungen.hintGeneric')}
       </Text>
+
+      {vendor !== 'other' ? (
+        <>
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+            {t('settingsBenachrichtigungen.deviceSection', {
+              vendor: t(`settingsBenachrichtigungen.vendorName.${vendor}`),
+            })}
+          </Text>
+          <View testID="vendor-guide" style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+            <View style={styles.guide}>
+              <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, lineHeight: 19 }}>
+                {t('settingsBenachrichtigungen.deviceIntro')}
+              </Text>
+              {vendorSteps.map((step, i) => (
+                <View key={i} style={styles.step}>
+                  <View style={[styles.stepNum, { backgroundColor: withAlpha(theme.colors.primary, 0.12) }]}>
+                    <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: '700' }}>{i + 1}</Text>
+                  </View>
+                  <Text style={{ flex: 1, color: theme.colors.onSurface, fontSize: 14, lineHeight: 20 }}>{step}</Text>
+                </View>
+              ))}
+              <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12 }}>
+                {t('settingsBenachrichtigungen.deviceNamesVary')}
+              </Text>
+            </View>
+            <SettingsActionRow
+              icon="cog-outline"
+              label={t('settingsBenachrichtigungen.openAppSettings')}
+              sublabel={t('settingsBenachrichtigungen.opensSettings')}
+              showDivider={false}
+              onPress={() => openAppSettings()}
+            />
+          </View>
+        </>
+      ) : null}
+
+      <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
+        {t('settingsBenachrichtigungen.reengagementSection')}
+      </Text>
+      <View style={[styles.card, { backgroundColor: theme.colors.surface }]}>
+        <View style={styles.row}>
+          <View style={[styles.rowIcon, { backgroundColor: withAlpha(theme.colors.primary, 0.12) }]}>
+            <MaterialCommunityIcons name="bell-ring-outline" size={18} color={theme.colors.primary} />
+          </View>
+          <View style={styles.rowText}>
+            <Text style={{ color: theme.colors.onSurface, fontSize: 15, fontWeight: '500' }}>
+              {t('settingsBenachrichtigungen.reengagementLabel')}
+            </Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12, marginTop: 1 }}>
+              {t('settingsBenachrichtigungen.reengagementSublabel')}
+            </Text>
+          </View>
+          <Switch
+            testID="reengagement-switch"
+            value={reengagementOn ?? false}
+            disabled={reengagementOn === null}
+            onValueChange={toggleReengagement}
+            color={theme.colors.primary}
+          />
+        </View>
+      </View>
 
       <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
         {t('settingsBenachrichtigungen.permissionsSection')}
@@ -64,4 +156,10 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   card: { borderRadius: 20, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  rowIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  rowText: { flex: 1 },
+  guide: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, gap: 10 },
+  step: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  stepNum: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginTop: -1 },
 });

@@ -36,10 +36,10 @@ export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth
 
         <View style={{ marginTop: 28 }}>
           {[
-            { txt: 'Eine', italic: false, color: Tokens.ink, indent: 0 },
-            { txt: 'Notiz', italic: true, color: Tokens.amberDeep, indent: 60 },
-            { txt: 'ist ein', italic: false, color: Tokens.ink, indent: 0 },
-            { txt: 'Anfang.', italic: true, color: Tokens.ink, indent: 0 },
+            { txt: t('onboarding.v1Line1'), italic: false, color: Tokens.ink, indent: 0 },
+            { txt: t('onboarding.v1Line2'), italic: true, color: Tokens.amberDeep, indent: 60 },
+            { txt: t('onboarding.v1Line3'), italic: false, color: Tokens.ink, indent: 0 },
+            { txt: t('onboarding.v1Line4'), italic: true, color: Tokens.ink, indent: 0 },
           ].map((row, i) => (
             <Text
               key={i}
@@ -56,18 +56,18 @@ export default function SlideValue1({ onNext, onSkip, scrollX, index, slideWidth
 
         <View style={{ marginTop: 26, marginHorizontal: -4 }}>
           <View style={styles.noteCard}>
-            <Text style={styles.noteDate}>Dienstag · 12. Mai</Text>
-            <Text style={styles.noteTitle}>Toskana — die ersten Gedanken</Text>
+            <Text style={styles.noteDate}>{t('onboarding.v1NoteDate')}</Text>
+            <Text style={styles.noteTitle}>{t('onboarding.v1NoteTitle')}</Text>
             <Text style={styles.noteBody} numberOfLines={2}>
-              Florenz früh am Morgen, dann Pienza. Vielleicht den ganzen Mai dort bleiben.
+              {t('onboarding.v1NoteBody')}
             </Text>
             <View style={{ flexDirection: 'row', gap: 5, marginTop: 12 }}>
-              <View style={shared.tag}><Text style={shared.tagText}>Reise</Text></View>
-              <View style={shared.tag}><Text style={shared.tagText}>Italien</Text></View>
+              <View style={shared.tag}><Text style={shared.tagText}>{t('onboarding.v1Tag1')}</Text></View>
+              <View style={shared.tag}><Text style={shared.tagText}>{t('onboarding.v1Tag2')}</Text></View>
             </View>
           </View>
           <View style={styles.noteCardBehind}>
-            <Text style={styles.noteCardBehindText}>Sauerteig — Hydration zu hoch…</Text>
+            <Text style={styles.noteCardBehindText}>{t('onboarding.v1Behind')}</Text>
           </View>
         </View>
 
