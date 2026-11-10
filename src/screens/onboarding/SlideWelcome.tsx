@@ -19,10 +19,10 @@ interface Props {
 }
 
 const HERO_ROWS = [
-  { txt: 'Schreib', italic: false, align: 'flex-start' as const, dim: false },
-  { txt: 'frei.', italic: true, align: 'flex-end' as const, dim: false },
-  { txt: 'Verbinde', italic: false, align: 'flex-start' as const, dim: true },
-  { txt: 'später.', italic: true, align: 'flex-end' as const, dim: true },
+  { key: 'onboarding.welcome1', italic: false, align: 'flex-start' as const, dim: false },
+  { key: 'onboarding.welcome2', italic: true, align: 'flex-end' as const, dim: false },
+  { key: 'onboarding.welcome3', italic: false, align: 'flex-start' as const, dim: true },
+  { key: 'onboarding.welcome4', italic: true, align: 'flex-end' as const, dim: true },
 ];
 
 export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideWidth }: Props) {
@@ -70,7 +70,7 @@ export default function SlideWelcome({ onSignup, onLogin, scrollX, index, slideW
               { alignSelf: row.align, opacity: row.dim ? 0.55 : 1 },
             ]}
           >
-            {row.txt}
+            {t(row.key)}
           </Text>
         ))}
 

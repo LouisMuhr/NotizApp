@@ -13,7 +13,8 @@ i18n.enableFallback = true;
 
 export function detectDeviceLocale(): AppLocale {
   const tag = Localization.getLocales()[0]?.languageCode;
-  return tag === 'en' ? 'en' : DEFAULT_LOCALE;
+  // Deutsch nur bei deutschem System, jede andere (oder unbekannte) Sprache → Englisch.
+  return tag === 'de' ? 'de' : 'en';
 }
 
 export function setI18nLocale(locale: AppLocale) {

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, ScrollView, Platform } from 'react-native';
-import * as Device from 'expo-device';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { useTheme, Text, Switch } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { withAlpha } from '../utils/categoryColors';
@@ -11,7 +10,7 @@ import {
   openBatteryOptimizationSettings,
   openAppSettings,
 } from '../utils/notifications';
-import { getBackgroundVendor } from '../utils/deviceVendor';
+import { currentBackgroundVendor } from '../utils/deviceVendor';
 import { useLanguage } from '../context/LanguageContext';
 import SettingsActionRow from '../components/SettingsActionRow';
 
@@ -22,10 +21,7 @@ export default function SettingsBenachrichtigungenScreen() {
   // null = noch nicht geladen (Schalter bleibt solange gesperrt)
   const [reengagementOn, setReengagementOn] = useState<boolean | null>(null);
   // Hersteller mit eigener Hintergrund-Sperre → Schritt-Anleitung; reines Android/iOS → keine.
-  const vendor = useMemo(
-    () => (Platform.OS === 'android' ? getBackgroundVendor(Device.manufacturer, Device.brand) : 'other'),
-    [],
-  );
+  const vendor = useMemo(currentBackgroundVendor, []);
   const vendorSteps = vendor === 'other'
     ? []
     : t(`settingsBenachrichtigungen.vendorSteps.${vendor}`).split('\n');

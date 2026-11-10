@@ -1,6 +1,9 @@
 // Hersteller-Gruppen mit eigenen Hintergrund-Sperren (Autostart, App-Start-Verwaltung, Tiefschlaf).
 // Auf solchen Geräten kommt ein pünktlich ausgelöster Alarm sonst nie als Benachrichtigung an:
 // das System startet die App nicht, um sie anzuzeigen (auf Xiaomi im Log: "proc frequent died").
+import { Platform } from 'react-native';
+import * as Device from 'expo-device';
+
 export type BackgroundVendor = 'xiaomi' | 'huawei' | 'oppo' | 'vivo' | 'samsung' | 'other';
 
 const VENDOR_PATTERNS: [BackgroundVendor, RegExp][] = [
@@ -21,4 +24,9 @@ export function getBackgroundVendor(
     if (pattern.test(haystack)) return vendor;
   }
   return 'other';
+}
+
+/** Gruppe des laufenden Geräts; außerhalb von Android immer 'other' (iOS kennt die Sperren nicht). */
+export function currentBackgroundVendor(): BackgroundVendor {
+  return Platform.OS === 'android' ? getBackgroundVendor(Device.manufacturer, Device.brand) : 'other';
 }

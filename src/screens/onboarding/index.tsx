@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
   Animated,
   Dimensions,
+  Platform,
   View,
   ViewToken,
 } from 'react-native';
@@ -12,21 +13,28 @@ import SlideValue1 from './SlideValue1';
 import SlideValue2 from './SlideValue2';
 import SlideValue3 from './SlideValue3';
 import SlideWelcome from './SlideWelcome';
+import SlideSetup from './SlideSetup';
+import { currentBackgroundVendor } from '../../utils/deviceVendor';
 
 export { ONBOARDING_KEY };
 
 const { width: W } = Dimensions.get('window');
 
 // Hintergrundfarben pro Slide — interpoliert während des Wischens
-const BG_COLORS = [
-  '#F0E9D6', // v1 — Cream (oklch(0.95 0.045 75) als Hex)
-  '#F0E9D6', // v2 — Cream
-  '#F0E9D6', // v3 — Cream
-  '#9C5F1F', // welcome — AmberDeep
-];
+const CREAM_BG = '#F0E9D6'; // oklch(0.95 0.045 75) als Hex
+const BG_BY_SLIDE: Record<SlideKey, string> = {
+  v1: CREAM_BG,
+  v2: CREAM_BG,
+  v3: CREAM_BG,
+  setup: CREAM_BG,
+  welcome: '#9C5F1F', // AmberDeep
+};
 
-type SlideKey = 'v1' | 'v2' | 'v3' | 'welcome';
-const SLIDES: SlideKey[] = ['v1', 'v2', 'v3', 'welcome'];
+type SlideKey = 'v1' | 'v2' | 'v3' | 'setup' | 'welcome';
+// Einrichtung nur auf Android: dort entscheiden exakte Alarme/Akku/Autostart, ob Erinnerungen ankommen.
+function buildSlides(): SlideKey[] {
+  return Platform.OS === 'android' ? ['v1', 'v2', 'v3', 'setup', 'welcome'] : ['v1', 'v2', 'v3', 'welcome'];
+}
 
 interface Props {
   onDone: () => void;
@@ -35,6 +43,8 @@ interface Props {
 }
 
 export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
+  const SLIDES = useMemo(buildSlides, []);
+  const vendor = useMemo(currentBackgroundVendor, []);
   const scrollX = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<Animated.FlatList<SlideKey>>(null);
   const activeIndexRef = useRef(0);
@@ -42,7 +52,7 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
   // Hintergrundfarbe interpoliert zwischen den Slides
   const backgroundColor = scrollX.interpolate({
     inputRange: SLIDES.map((_, i) => i * W),
-    outputRange: BG_COLORS,
+    outputRange: SLIDES.map((k) => BG_BY_SLIDE[k]),
     extrapolate: 'clamp',
   });
 
@@ -73,8 +83,11 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
     }
   }
 
+  // "Überspringen" springt über die Erklär-Slides, aber nie über die Einrichtung.
   function goToLast() {
-    (flatListRef.current as any)?.scrollToIndex({ index: SLIDES.length - 1, animated: true });
+    const setup = SLIDES.indexOf('setup');
+    const target = setup >= 0 ? setup : SLIDES.length - 1;
+    (flatListRef.current as any)?.scrollToIndex({ index: target, animated: true });
   }
 
   function renderSlide({ item, index }: { item: SlideKey; index: number }) {
@@ -88,6 +101,8 @@ export default function OnboardingScreen({ onDone, onSignup, onLogin }: Props) {
           return <SlideValue2 onNext={goToNext} onSkip={goToLast} {...parallaxProps} />;
         case 'v3':
           return <SlideValue3 onNext={goToNext} onSkip={goToLast} {...parallaxProps} />;
+        case 'setup':
+          return <SlideSetup vendor={vendor} onNext={goToNext} {...parallaxProps} />;
         case 'welcome':
           return (
             <SlideWelcome

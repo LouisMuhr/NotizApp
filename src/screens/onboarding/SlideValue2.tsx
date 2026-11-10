@@ -17,9 +17,9 @@ interface Props {
 }
 
 const NODES = [
-  { left: 14, top: 16, t: 'Florenz, Caffè Gilli', tag: 'Reise', rot: '-2deg' },
-  { left: 188, top: 96, t: 'Pienza vs. Montalcino', tag: 'Italien', rot: '1.5deg' },
-  { left: 36, top: 174, t: 'Caffè-Notizen', tag: 'Kaffee', rot: '-1deg' },
+  { left: 14, top: 16, key: '1', rot: '-2deg' },
+  { left: 188, top: 96, key: '2', rot: '1.5deg' },
+  { left: 36, top: 174, key: '3', rot: '-1deg' },
 ];
 
 export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth }: Props) {
@@ -65,9 +65,9 @@ export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth
                 { position: 'absolute', left: n.left, top: n.top, transform: [{ rotate: n.rot }] },
               ]}
             >
-              <Text style={styles.threadCardText}>{n.t}</Text>
+              <Text style={styles.threadCardText}>{t(`onboarding.v2Node${n.key}`)}</Text>
               <View style={[shared.tag, { marginTop: 6 }]}>
-                <Text style={shared.tagText}>{n.tag}</Text>
+                <Text style={shared.tagText}>{t(`onboarding.v2Tag${n.key}`)}</Text>
               </View>
             </View>
           ))}
@@ -75,7 +75,7 @@ export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth
 
         <View style={styles.pill}>
           <Text style={styles.pillIcon}>✦</Text>
-          <Text style={styles.pillLabel}>Toskana — Mai-Trip</Text>
+          <Text style={styles.pillLabel}>{t('onboarding.v2Pill')}</Text>
         </View>
 
         <View style={{ flex: 1 }} />
@@ -83,8 +83,8 @@ export default function SlideValue2({ onNext, onSkip, scrollX, index, slideWidth
         <View style={{ paddingBottom: 25 }}>
           <Text style={shared.kapitel}>{t('onboarding.chapter02')}</Text>
           <Text style={styles.headline}>
-            Die KI webt deine Notizen{'\n'}
-            <Text style={{ fontFamily: Fonts.serifItalic }}>zu Threads.</Text>
+            {t('onboarding.v2Headline1')}{'\n'}
+            <Text style={{ fontFamily: Fonts.serifItalic }}>{t('onboarding.v2Headline2')}</Text>
           </Text>
           <Text style={styles.body}>
             {t('onboarding.v2Body')}
