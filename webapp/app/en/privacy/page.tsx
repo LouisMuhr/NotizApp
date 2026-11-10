@@ -94,10 +94,13 @@ export default function PrivacyPageEn() {
 
       <h3 style={h3}>3.6 Paid plans</h3>
       <p style={p}>
-        If you take out a paid subscription, Stripe processes the payment. You enter payment details
-        (e.g. card number) directly with Stripe; we only receive subscription status, amount, date and a
-        customer ID. Legal bases: Art. 6(1)(b) GDPR (contract) and (c) (retention obligations under tax
-        and commercial law).
+        In the Android app you subscribe via Google Play. Google acts as the seller and processes the
+        payment; you only enter payment details with Google. We use RevenueCat to manage subscriptions:
+        it receives the purchase receipt from Google (product, purchase and expiry date, order ID) and
+        links it to your Velm account ID so your plan works on all your devices. From this we only store
+        your plan and its expiry date. If Velm later offers subscriptions on the web, Stripe will process
+        those payments; we then only receive subscription status, amount, date and a customer ID. Legal
+        bases: Art. 6(1)(b) GDPR (contract) and (c) (retention obligations under tax and commercial law).
       </p>
 
       <h3 style={h3}>3.7 Technical data on access</h3>
@@ -132,7 +135,9 @@ export default function PrivacyPageEn() {
         <li style={li}><strong>Vercel Inc.</strong> (USA; functions in Frankfurt) – hosting of the web app and server interfaces. <Ext href="https://vercel.com/legal/privacy-policy">Privacy</Ext></li>
         <li style={li}><strong>Anthropic PBC</strong> (USA) – AI processing as described in section 3.3. <Ext href="https://www.anthropic.com/legal/privacy">Privacy</Ext></li>
         <li style={li}><strong>650 Industries, Inc. (Expo)</strong> (USA) – delivery of app updates. <Ext href="https://expo.dev/privacy">Privacy</Ext></li>
-        <li style={li}><strong>Stripe</strong> (Stripe Payments Europe Ltd., Ireland, and Stripe, Inc., USA) – payment processing for subscriptions. <Ext href="https://stripe.com/privacy">Privacy</Ext></li>
+        <li style={li}><strong>Google</strong> (Google Commerce Ltd., Ireland) – sale and payment of subscriptions in the Android app, as an independent controller. <Ext href="https://policies.google.com/privacy">Privacy</Ext></li>
+        <li style={li}><strong>RevenueCat, Inc.</strong> (USA) – management of store subscriptions as described in section 3.6. <Ext href="https://www.revenuecat.com/privacy">Privacy</Ext></li>
+        <li style={li}><strong>Stripe</strong> (Stripe Payments Europe Ltd., Ireland, and Stripe, Inc., USA) – payment processing for web subscriptions, once offered. <Ext href="https://stripe.com/privacy">Privacy</Ext></li>
       </ul>
       <p style={p}>
         Where these providers act on our behalf, we have data processing agreements with them (Art. 28 GDPR).

@@ -102,10 +102,14 @@ export default function PrivacyPage() {
 
       <h3 style={h3}>3.6 Bezahlte Abos</h3>
       <p style={p}>
-        Schließt du ein kostenpflichtiges Abo ab, wickelt Stripe die Zahlung ab. Zahlungsdaten
-        (z. B. Kartennummer) gibst du direkt bei Stripe ein; wir erhalten nur Abo-Status, Betrag,
-        Datum und eine Kunden-Kennung. Rechtsgrundlagen: Art. 6 Abs. 1 lit. b DSGVO (Vertrag) und
-        lit. c (steuer- und handelsrechtliche Aufbewahrungspflichten).
+        In der Android-App schließt du Abos über Google Play ab. Google ist dabei Verkäufer und
+        wickelt die Zahlung ab; Zahlungsdaten gibst du nur bei Google ein. Zur Verwaltung der Abos
+        nutzen wir RevenueCat: Es erhält von Google den Kaufbeleg (Produkt, Kauf- und Ablaufdatum,
+        Bestell-Kennung) und ordnet ihn deiner Velm-Konto-Kennung zu, damit dein Plan auf all deinen
+        Geräten gilt. Wir speichern daraus nur deinen Plan und dessen Ablaufdatum. Bietet Velm Abos
+        künftig auch im Web an, wickelt Stripe diese Zahlungen ab; wir erhalten dann nur Abo-Status,
+        Betrag, Datum und eine Kunden-Kennung. Rechtsgrundlagen: Art. 6 Abs. 1 lit. b DSGVO (Vertrag)
+        und lit. c (steuer- und handelsrechtliche Aufbewahrungspflichten).
       </p>
 
       <h3 style={h3}>3.7 Technische Daten beim Aufruf</h3>
@@ -141,7 +145,9 @@ export default function PrivacyPage() {
         <li style={li}><strong>Vercel Inc.</strong> (USA; Funktionen in Frankfurt) – Hosting der Web-App und der Server-Schnittstellen. <Ext href="https://vercel.com/legal/privacy-policy">Datenschutz</Ext></li>
         <li style={li}><strong>Anthropic PBC</strong> (USA) – KI-Verarbeitung nach Abschnitt 3.3. <Ext href="https://www.anthropic.com/legal/privacy">Datenschutz</Ext></li>
         <li style={li}><strong>650 Industries, Inc. (Expo)</strong> (USA) – Auslieferung von App-Updates. <Ext href="https://expo.dev/privacy">Datenschutz</Ext></li>
-        <li style={li}><strong>Stripe</strong> (Stripe Payments Europe Ltd., Irland, und Stripe, Inc., USA) – Zahlungsabwicklung bei Abos. <Ext href="https://stripe.com/de/privacy">Datenschutz</Ext></li>
+        <li style={li}><strong>Google</strong> (Google Commerce Ltd., Irland) – Verkauf und Zahlung von Abos in der Android-App, als eigenständig Verantwortlicher. <Ext href="https://policies.google.com/privacy">Datenschutz</Ext></li>
+        <li style={li}><strong>RevenueCat, Inc.</strong> (USA) – Verwaltung der Store-Abos nach Abschnitt 3.6. <Ext href="https://www.revenuecat.com/privacy">Datenschutz</Ext></li>
+        <li style={li}><strong>Stripe</strong> (Stripe Payments Europe Ltd., Irland, und Stripe, Inc., USA) – Zahlungsabwicklung bei Abos im Web, sobald angeboten. <Ext href="https://stripe.com/de/privacy">Datenschutz</Ext></li>
       </ul>
       <p style={p}>
         Mit diesen Dienstleistern bestehen Verträge zur Auftragsverarbeitung (Art. 28 DSGVO), soweit sie

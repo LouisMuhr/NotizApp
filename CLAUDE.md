@@ -56,7 +56,7 @@ npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstes
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
 `EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle). Webapp-URL fest: `https://www.velmnote.com`.
-Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`).
+Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`). App: `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_BRIDGE_URL`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 ## Architecture Notes
@@ -183,7 +183,7 @@ Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler →
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
 **`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
 `SettingsAbo`, Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf `free`
-zurück; `detachSync`/`deleteAllData` räumen den Cache. `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
+zurück; `detachSync`/`deleteAllData` räumen den Cache (+ `logOutBilling()`). **Abos (Google Play via RevenueCat)**, Setup `docs/billing-setup.md`: `src/sync/billing.ts` kauft nur Android + bestätigtes Konto, `appUserID` = Supabase-UID, Basic→Pro ersetzt das Google-Abo; Ergebnis als Paper-Dialog (`dialogFor`). Der Tier kommt **nie** vom Client/Webhook-Inhalt: `/api/billing-sync` (nach Kauf) und `/api/billing-webhook` fragen RevenueCat (`_lib/billing.ts`), Entitlements `basic`/`pro`, Pakete `basic_monthly`/`pro_monthly`. `profiles.tier_source` (`manual`|`revenuecat`): Hand-Tiers setzt der Store nie herunter. iOS: „noch nicht verfügbar". `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
 
 ## Code Conventions
 - **Language**: German UI strings; English code identifiers.
