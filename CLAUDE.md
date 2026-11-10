@@ -39,7 +39,7 @@ c:/NotizApp/
 | Device | expo-notifications, expo-haptics |
 | IDs | uuid v13 + react-native-get-random-values |
 | Bridge API | Vercel serverless (ESM TypeScript) |
-| Share-Target | `expo-share-extension` (iOS) + `react-native-receive-sharing-intent` (Android) |
+| Share-Target | nur Android: `react-native-receive-sharing-intent` (iOS-Pod via `react-native.config.js` aus) |
 | i18n | i18n-js v4 + expo-localization (DE/EN, Geräte-Sprache + manueller Override) |
 | Webapp | Next.js 16, React 19, Tailwind CSS 4, Supabase JS v2 |
 
@@ -51,6 +51,7 @@ eas build --platform android|ios
 npx tsc --noEmit        # static check
 npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstests (Soll-Verhalten)
 ```
+**iOS**: EAS Cloud-Build (kein Mac), `ios.runtimeVersion` = appVersion getrennt von Android; Teilen auf iOS fehlt bewusst (`expo-share-extension` entfernt: bräuchte `index.share.tsx`, Metro-Wrapper, App Group, `scheme`).
 Bridge: `vercel deploy --prod` **aus dem Repo-Ordner** (Projekt-Root-Directory = `bridge`). Die Root-`.vercelignore` gilt für **beide** Vercel-Projekte (bridge + velm-webapp) — wer dort etwas ausschließt, prüft danach die Route-Liste im Webapp-Build (leer = 404 live). Webapp (`webapp/`): `npm run dev` (localhost:3000, `/?stress=40` = 40 generierte Threads, nur dev), `npm run build`.
 
 ## Environment Variables

@@ -1,6 +1,6 @@
 // ShareHandler — reagiert auf eingehende Share-Intents.
 // Android: liest ACTION_SEND Intent-Extras via react-native-receive-sharing-intent
-// iOS:     liest Daten aus der Share Extension (expo-share-extension Plugin)
+// iOS:     noch kein Teilen (Share Extension fehlt) — NativeModule fehlt dort, Komponente kehrt sofort zurück.
 //
 // Rendert kein UI — rein logische Komponente.
 
