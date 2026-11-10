@@ -15,7 +15,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.velm.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -59,16 +65,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "NotizApp möchte dein Mikrofon für die Sprachaufnahme nutzen.",
-          "speechRecognitionPermission": "NotizApp möchte deine Sprache erkennen, um Gedanken aufzunehmen."
-        }
-      ],
-      [
-        "expo-share-extension",
-        {
-          "iosActivationRules": {
-            "NSExtensionActivationSupportsText": true
-          }
+          "microphonePermission": "Velm nutzt das Mikrofon, damit du Notizen diktieren kannst.",
+          "speechRecognitionPermission": "Velm wandelt deine Sprache in Text um, damit du Notizen diktieren kannst."
         }
       ],
       "expo-font",

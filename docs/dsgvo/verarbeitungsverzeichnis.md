@@ -25,7 +25,8 @@ Die AVV sind Teil der Nutzungsbedingungen des jeweiligen Anbieters. Datierte PDF
 | Anthropic PBC | USA | KI-Synthese, KI-Sprachnotizen (Claude Haiku) | USA | SCC im DPA (Teil der Commercial Terms) | https://www.anthropic.com/legal/data-processing-addendum |
 | Resend (Plus Five Five, Inc.) | USA | Versand der Auth-Mails (Codes) als SMTP von Supabase Auth | USA | DPF + SCC im DPA (Teil der ToS) | https://resend.com/settings/documents (unterschriebenes PDF) |
 | 650 Industries, Inc. (Expo) | USA | OTA-Updates: jede App fragt beim Start `u.expo.dev` nach Updates (IP, App-/Runtime-Version) | USA | DPF bzw. SCC | ☐ auf Anfrage beim Expo-Support |
-| Stripe Payments Europe Ltd. / Stripe, Inc. | IE / USA | Zahlungsabwicklung (sobald angebunden) | EU / USA | SCC / DPF | ☐ bei Anbindung |
+| RevenueCat, Inc. | USA | Verwaltung der Google-Play-Abos: Kaufbelege, Abo-Status je Supabase-UID, Webhook an die Bridge | USA | DPF bzw. SCC im DPA | ☐ DPA im RevenueCat-Dashboard akzeptieren |
+| Stripe Payments Europe Ltd. / Stripe, Inc. | IE / USA | Zahlungsabwicklung im Web (sobald angebunden) | EU / USA | SCC / DPF | ☐ bei Anbindung |
 
 Eigenständig Verantwortliche (keine Auftragsverarbeitung): Google (Android-Spracherkennung), Apple (iOS-Spracherkennung,
 App Store), Google Play. Werden in der Datenschutzerklärung genannt.
@@ -115,15 +116,15 @@ App Store), Google Play. Werden in der Datenschutzerklärung genannt.
 | Drittland | wie V3 |
 | Löschung | wie V3 |
 
-### V8 – Abo-Verwaltung und Zahlungen (ab Stripe-Anbindung)
+### V8 – Abo-Verwaltung und Zahlungen (Google Play über RevenueCat; Web später Stripe)
 
 | | |
 |---|---|
 | Zweck | Abos abschließen, abrechnen, verwalten; Funktionsumfang nach Tier freischalten |
 | Rechtsgrundlage | Art. 6 Abs. 1 lit. b (Vertrag), lit. c (§ 132 BAO, § 212 UGB) |
-| Daten | Tier, Abo-Status, Stripe-Kunden-ID, Beträge, Rechnungen; Zahlungsdaten nur bei Stripe |
-| Empfänger | Stripe, Steuerberater/Finanzamt |
-| Drittland | Stripe, Inc. USA (SCC/DPF) |
+| Daten | Tier, `tier_source`, Ablaufdatum (`profiles`); bei RevenueCat: Supabase-UID, Google-Kaufbeleg (Produkt, Bestell-ID, Kauf-/Ablaufdatum); Zahlungsdaten nur bei Google bzw. Stripe |
+| Empfänger | RevenueCat (Auftragsverarbeiter), Google (eigenständig Verantwortlicher als Verkäufer), Stripe (Web, später), Steuerberater/Finanzamt |
+| Drittland | RevenueCat, Inc. USA; Stripe, Inc. USA (SCC/DPF) |
 | Löschung | Abrechnungsbelege 7 Jahre (§ 132 BAO); Tier mit Konto |
 
 ### V9 – Betrieb, Sicherheit, Server-Logs

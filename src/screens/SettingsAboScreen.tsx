@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
-import { useTheme, Text } from 'react-native-paper';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking } from 'react-native';
+import { useTheme, Text, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
-import { subscriptionService, Tier } from '../sync/subscriptionService';
+import { subscriptionService, Tier, UpgradeResult, RestoreResult } from '../sync/subscriptionService';
+import { getStorePrices, isBillingAvailable, MANAGE_SUBSCRIPTIONS_URL, PaidTier } from '../sync/billing';
+import { getSyncUserId } from '../sync/accountState';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
 import { useLanguage } from '../context/LanguageContext';
@@ -31,7 +33,9 @@ interface PlanMeta {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-function getPlans(t: Translate): Record<Tier, PlanMeta> {
+type StorePrices = Partial<Record<PaidTier, string>>;
+
+function getPlans(t: Translate, prices: StorePrices = {}): Record<Tier, PlanMeta> {
   return {
     free: {
       label: t('settingsAbo.plans.free.label'),
@@ -50,7 +54,7 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
       label: t('settingsAbo.plans.basic.label'),
       icon: 'star-half-full',
       color: Tokens.amber,
-      price: t('settingsAbo.plans.basic.price'),
+      price: prices.basic ?? t('settingsAbo.plans.basic.price'),
       priceDetail: t('settingsAbo.plans.basic.priceDetail'),
       features: [
         { icon: 'check-circle-outline', text: t('settingsAbo.plans.basic.features.0') },
@@ -64,7 +68,7 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
       label: t('settingsAbo.plans.pro.label'),
       icon: 'star',
       color: Tokens.amberDeep,
-      price: t('settingsAbo.plans.pro.price'),
+      price: prices.pro ?? t('settingsAbo.plans.pro.price'),
       priceDetail: t('settingsAbo.plans.pro.priceDetail'),
       features: [
         { icon: 'check-circle-outline', text: t('settingsAbo.plans.pro.features.0') },
@@ -79,15 +83,80 @@ function getPlans(t: Translate): Record<Tier, PlanMeta> {
 }
 
 
+interface DialogState {
+  title: string;
+  body: string;
+  /** Zusaetzlicher Knopf zum Konto-Screen (Kauf braucht ein bestaetigtes Konto). */
+  toAccount?: boolean;
+}
+
+/** Ergebnis → Dialog. null = nichts anzeigen (z. B. Nutzer hat im Store abgebrochen). */
+export function dialogFor(result: UpgradeResult | RestoreResult, t: Translate): DialogState | null {
+  switch (result.kind) {
+    case 'cancelled': return null;
+    case 'unavailable': return { title: t('subscription.unavailableTitle'), body: t('subscription.unavailableBody') };
+    case 'needs_account':
+      return { title: t('subscription.needsAccountTitle'), body: t('subscription.needsAccountBody'), toAccount: true };
+    case 'purchased':
+    case 'already_owned':
+      return {
+        title: t('subscription.purchasedTitle'),
+        body: result.synced ? t('subscription.purchasedBody') : t('subscription.purchasedDelayedBody'),
+      };
+    case 'restored':
+      return {
+        title: t('subscription.restoreTitle'),
+        body: result.synced ? t('subscription.restoredBody') : t('subscription.purchasedDelayedBody'),
+      };
+    case 'nothing': return { title: t('subscription.restoreTitle'), body: t('subscription.nothingBody') };
+    case 'pending': return { title: t('subscription.pendingTitle'), body: t('subscription.pendingBody') };
+    case 'network': return { title: t('subscription.errorTitle'), body: t('subscription.networkBody') };
+    case 'no_product': return { title: t('subscription.errorTitle'), body: t('subscription.noProductBody') };
+    case 'not_allowed': return { title: t('subscription.errorTitle'), body: t('subscription.notAllowedBody') };
+    default: return { title: t('subscription.errorTitle'), body: t('subscription.storeErrorBody') };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
 
-export default function SettingsAboScreen() {
+export default function SettingsAboScreen({ navigation }: { navigation?: any }) {
   const theme = useTheme();
-  const { tier, nextAllowedAt } = useNotes();
+  const { tier, nextAllowedAt, refreshSubscription } = useNotes();
   const { t, locale } = useLanguage();
-  const PLANS = getPlans(t);
+  const [prices, setPrices] = useState<StorePrices>({});
+  const [busy, setBusy] = useState<PaidTier | 'restore' | null>(null);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
+  const PLANS = getPlans(t, prices);
+  const billing = isBillingAvailable();
+
+  // Store-Preise sind die verbindlichen (Waehrung/Steuer je Land); i18n-Preise nur als Fallback.
+  useEffect(() => {
+    if (!billing) return;
+    let alive = true;
+    getSyncUserId()
+      .catch(() => null)
+      .then((uid) => getStorePrices(uid))
+      .then((p) => { if (alive) setPrices(p); });
+    return () => { alive = false; };
+  }, [billing]);
+
+  const run = async (what: PaidTier | 'restore') => {
+    if (busy) return;
+    setBusy(what);
+    try {
+      const result = what === 'restore'
+        ? await subscriptionService.restorePurchases()
+        : await subscriptionService.openUpgradeFlow(what);
+      if (result.synced) await refreshSubscription().catch(() => {});
+      setDialog(dialogFor(result, t));
+    } catch {
+      setDialog({ title: t('subscription.errorTitle'), body: t('subscription.storeErrorBody') });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const nextRunText: string = (() => {
     if (!nextAllowedAt || nextAllowedAt <= new Date()) return t('settingsAbo.nextRunAvailable');
@@ -173,20 +242,84 @@ export default function SettingsAboScreen() {
             {t('settingsAbo.upgrade')}
           </Text>
           {(tier === 'free' ? (['basic', 'pro'] as const) : (['pro'] as const)).map((targetTier) => (
-            <UpgradePlanCard key={targetTier} targetTier={targetTier} />
+            <UpgradePlanCard
+              key={targetTier}
+              targetTier={targetTier}
+              prices={prices}
+              busy={busy === targetTier}
+              disabled={busy !== null}
+              onPress={() => run(targetTier)}
+            />
           ))}
+          {billing && (
+            <Text style={[styles.renewalNote, { color: theme.colors.onSurfaceVariant }]}>
+              {t('subscription.renewalNote')}
+            </Text>
+          )}
         </>
+      )}
+
+      {/* Abo verwalten (Kuendigen geht nur im Store) */}
+      {billing && tier !== 'free' && (
+        <Pressable
+          style={[styles.card, styles.infoRow, { backgroundColor: theme.colors.surface }]}
+          onPress={() => Linking.openURL(MANAGE_SUBSCRIPTIONS_URL).catch(() => {})}
+          accessibilityRole="link"
+        >
+          <MaterialCommunityIcons name="google-play" size={18} color={theme.colors.onSurfaceVariant} style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoLabel, { color: theme.colors.onSurface }]}>{t('subscription.manage')}</Text>
+            <Text style={[styles.infoValue, { color: theme.colors.onSurfaceVariant }]}>{t('subscription.manageSub')}</Text>
+          </View>
+          <MaterialCommunityIcons name="open-in-new" size={16} color={theme.colors.onSurfaceVariant} />
+        </Pressable>
       )}
 
       {/* Restore */}
       <Pressable
         style={styles.restoreBtn}
-        onPress={() => subscriptionService.restorePurchases()}
+        onPress={() => run('restore')}
+        disabled={busy !== null}
       >
-        <Text style={[styles.restoreText, { color: theme.colors.onSurfaceVariant }]}>
-          {t('settingsAbo.restorePurchases')}
-        </Text>
+        {busy === 'restore'
+          ? <ActivityIndicator size="small" color={theme.colors.onSurfaceVariant} />
+          : (
+            <Text style={[styles.restoreText, { color: theme.colors.onSurfaceVariant }]}>
+              {t('settingsAbo.restorePurchases')}
+            </Text>
+          )}
       </Pressable>
+
+      {/* Portal erst bei Bedarf: braucht den Paper-Provider (fehlt in reinen Render-Tests). */}
+      {dialog && (
+      <Portal>
+        <Dialog
+          visible
+          onDismiss={() => setDialog(null)}
+          style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
+        >
+          <Dialog.Title style={{ color: theme.colors.onSurface }}>{dialog?.title}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>{dialog?.body}</Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setDialog(null)} textColor={theme.colors.onSurfaceVariant}>
+              {t('common.ok')}
+            </Button>
+            {dialog?.toAccount && (
+              <Button
+                mode="contained"
+                buttonColor={theme.colors.primary}
+                style={{ borderRadius: 12 }}
+                onPress={() => { setDialog(null); navigation?.navigate('SettingsKonto'); }}
+              >
+                {t('subscription.needsAccountCta')}
+              </Button>
+            )}
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+      )}
     </ScrollView>
   );
 }
@@ -195,14 +328,24 @@ export default function SettingsAboScreen() {
 // UpgradePlanCard
 // ---------------------------------------------------------------------------
 
-function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
+interface UpgradePlanCardProps {
+  targetTier: PaidTier;
+  prices: StorePrices;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+function UpgradePlanCard({ targetTier, prices, busy, disabled, onPress }: UpgradePlanCardProps) {
   const theme = useTheme();
   const { t } = useLanguage();
-  const plan = getPlans(t)[targetTier];
+  const plan = getPlans(t, prices)[targetTier];
 
   return (
     <Pressable
-      onPress={() => subscriptionService.openUpgradeFlow(targetTier)}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ busy, disabled }}
       style={({ pressed }) => [
         styles.upgradePlanCard,
         { backgroundColor: theme.colors.surface, borderColor: plan.color + '50' },
@@ -235,8 +378,14 @@ function UpgradePlanCard({ targetTier }: { targetTier: 'basic' | 'pro' }) {
 
       {/* CTA */}
       <View style={[styles.upgradeCTA, { backgroundColor: plan.color }]}>
-        <Text style={styles.upgradeCTAText}>{t('settingsAbo.upgradeCta', { plan: plan.label })}</Text>
-        <MaterialCommunityIcons name="arrow-right" size={15} color={Tokens.paper} />
+        {busy ? (
+          <ActivityIndicator size="small" color={Tokens.paper} />
+        ) : (
+          <>
+            <Text style={styles.upgradeCTAText}>{t('settingsAbo.upgradeCta', { plan: plan.label })}</Text>
+            <MaterialCommunityIcons name="arrow-right" size={15} color={Tokens.paper} />
+          </>
+        )}
       </View>
     </Pressable>
   );
@@ -250,6 +399,8 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 100, gap: 6 },
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  dialog: { borderRadius: 24 },
+  renewalNote: { fontSize: 12, lineHeight: 17, textAlign: 'center', paddingHorizontal: 12, marginTop: 4 },
 
   heroBadge: {
     flexDirection: 'row',

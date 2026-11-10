@@ -23,6 +23,7 @@ import { mergeLocalStores, mergeWithRemote, applyIncoming, splitArchive, nextTim
 import * as haptics from '../utils/haptics';
 import { structuredToNote } from '../utils/structuredNote';
 import { parseNoteRemote } from '../sync/parseNote';
+import { logOutBilling } from '../sync/billing';
 import { resolveAccountState } from '../sync/accountState';
 import { isProbablyOnline } from '../utils/connectivity';
 import { loadPendingParses, removePendingParse, clearPendingParses, sameTimestamp, recordFailedAttempt, decideAfterError, MAX_AGE_MS } from '../sync/pendingParse';
@@ -748,6 +749,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [categories]);
 
   const deleteAllData = useCallback(async () => {
+    await logOutBilling();
     await cancelAllReminders();
     // Rückkehr-Benachrichtigungen stornieren + Keys weg; neu geplant wird erst beim nächsten Öffnen.
     try { await clearReengagement(); } catch {}
@@ -777,6 +779,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
     deviceIdRef.current = null;
     clearUserIdCache();
+    await logOutBilling();
   }, [publish]);
 
   /**

@@ -1,6 +1,14 @@
-import { Alert } from 'react-native';
 import { getSupabase } from './supabaseClient';
-import { t } from '../i18n';
+import { getSyncUserId } from './accountState';
+import {
+  isBillingAvailable,
+  PaidTier,
+  purchaseTier,
+  PurchaseOutcome,
+  restoreStorePurchases,
+  RestoreOutcome,
+  syncTierWithServer,
+} from './billing';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,8 +25,20 @@ export interface ProfileRow {
   created_at: string;
 }
 
+/** Ergebnis eines Kauf-/Wiederherstellungs-Versuchs; die UI zeigt dazu den passenden Dialog. */
+export type BillingPrecondition = 'unavailable' | 'needs_account';
+export interface UpgradeResult {
+  kind: BillingPrecondition | PurchaseOutcome;
+  /** true = Bridge hat den neuen Tier schon bestaetigt; false = kommt mit dem Webhook nach. */
+  synced?: boolean;
+}
+export interface RestoreResult {
+  kind: BillingPrecondition | RestoreOutcome;
+  synced?: boolean;
+}
+
 // ---------------------------------------------------------------------------
-// Abstract interface — swap out implementation when RevenueCat/Stripe arrives
+// Abstract interface
 // ---------------------------------------------------------------------------
 
 export interface SubscriptionService {
@@ -34,15 +54,11 @@ export interface SubscriptionService {
   /** Fetches both tier and nextAllowedAt in one Supabase round-trip. */
   getStatus(): Promise<{ tier: Tier; nextAllowedAt: Date | null }>;
 
-  /** Opens the upgrade flow for the given tier. Placeholder for now. */
-  openUpgradeFlow(targetTier: 'basic' | 'pro'): Promise<void>;
+  /** Startet den Store-Kauf (Google Play via RevenueCat) und gleicht danach den Tier ab. */
+  openUpgradeFlow(targetTier: PaidTier): Promise<UpgradeResult>;
 
-  /**
-   * Restores previously purchased subscriptions.
-   * Required by the App Store for auto-renewable subscriptions.
-   * Placeholder until a payment provider is wired up.
-   */
-  restorePurchases(): Promise<void>;
+  /** Stellt Store-Abos wieder her (Geraetewechsel, Neuinstallation) und gleicht den Tier ab. */
+  restorePurchases(): Promise<RestoreResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,24 +146,34 @@ export class SupabaseOnlySubscription implements SubscriptionService {
     };
   }
 
-  async openUpgradeFlow(targetTier: 'basic' | 'pro'): Promise<void> {
-    const label = targetTier === 'basic' ? 'Basic' : 'Pro';
-    Alert.alert(
-      t('subscription.upgradeTitle', { tier: label }),
-      t('subscription.upgradeBody'),
-      [{ text: t('common.ok') }],
-    );
+  /** Bestaetigtes Konto + Session, sonst null. Abos haengen an der Supabase-UID. */
+  private async billingUser(): Promise<{ uid: string; token: string } | null> {
+    const uid = await getSyncUserId();
+    const supabase = getSupabase();
+    if (!uid || !supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || session.user.id !== uid) return null;
+    return { uid, token: session.access_token };
   }
 
-  async restorePurchases(): Promise<void> {
-    // Noch kein Payment-Provider angebunden — es gibt nichts wiederherzustellen.
-    // Sobald RevenueCat/StoreKit steht, hier die echte Restore-Logik einsetzen
-    // und danach refreshSubscription() im NotesContext ausloesen.
-    Alert.alert(
-      t('subscription.restoreTitle'),
-      t('subscription.restoreBody'),
-      [{ text: t('common.ok') }],
-    );
+  async openUpgradeFlow(targetTier: PaidTier): Promise<UpgradeResult> {
+    if (!isBillingAvailable()) return { kind: 'unavailable' };
+    const user = await this.billingUser();
+    if (!user) return { kind: 'needs_account' };
+    const outcome = await purchaseTier(user.uid, targetTier);
+    if (outcome !== 'purchased' && outcome !== 'already_owned') return { kind: outcome };
+    const tier = await syncTierWithServer(user.token);
+    return { kind: outcome, synced: tier !== null };
+  }
+
+  async restorePurchases(): Promise<RestoreResult> {
+    if (!isBillingAvailable()) return { kind: 'unavailable' };
+    const user = await this.billingUser();
+    if (!user) return { kind: 'needs_account' };
+    const outcome = await restoreStorePurchases(user.uid);
+    if (outcome !== 'restored') return { kind: outcome };
+    const tier = await syncTierWithServer(user.token);
+    return { kind: outcome, synced: tier !== null };
   }
 }
 
