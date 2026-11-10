@@ -256,3 +256,8 @@ export async function openBatteryOptimizationSettings(): Promise<void> {
     await Linking.openSettings();
   }
 }
+
+/** App-Infoseite von Velm (dort liegen bei Xiaomi, Oppo, Vivo, Samsung Autostart/Akku-Einstellungen). */
+export async function openAppSettings(): Promise<void> {
+  await Linking.openSettings();
+}
