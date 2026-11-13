@@ -79,3 +79,11 @@ test('Abbruch im Store: kein Dialog', async () => {
   expect(screen.queryByText('Kauf nicht möglich')).toBeNull();
   expect(screen.queryByText('Danke!')).toBeNull();
 });
+
+test('Store-Fehler zeigt den Fehlercode klein im Dialog', async () => {
+  subscriptionService.openUpgradeFlow.mockResolvedValue({ kind: 'store_error', detail: 'STORE_PROBLEM (5): Billing service unavailable' });
+  renderScreen();
+  fireEvent.press(screen.getByText('Monatlich abonnieren'));
+  await waitFor(() => expect(screen.getByText('Kauf nicht möglich')).toBeTruthy());
+  expect(screen.getByText('Code: STORE_PROBLEM (5): Billing service unavailable')).toBeTruthy();
+});

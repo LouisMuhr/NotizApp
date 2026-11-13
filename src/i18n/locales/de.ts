@@ -523,6 +523,7 @@ export default {
     noProductBody: 'Dieser Plan ist in Google Play gerade nicht verfügbar.',
     notAllowedBody: 'Käufe sind auf diesem Gerät nicht erlaubt (z. B. durch Jugendschutz-Einstellungen).',
     storeErrorBody: 'Google Play konnte den Kauf nicht abschließen. Versuch es später nochmal.',
+    errorCode: 'Code: {{code}}',
     restoreTitle: 'Käufe wiederherstellen',
     restoredBody: 'Dein Abo ist wiederhergestellt.',
     nothingBody: 'Zu diesem Google-Konto gibt es kein aktives Abo.',

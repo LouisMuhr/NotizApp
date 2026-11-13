@@ -33,11 +33,14 @@ export interface ProfileRow {
 export type BillingPrecondition = 'unavailable' | 'needs_account';
 export interface UpgradeResult {
   kind: BillingPrecondition | PurchaseOutcome;
+  /** Technischer Fehlercode (RevenueCat/Google), nur bei Fehlern; der Dialog zeigt ihn klein an. */
+  detail?: string;
   /** true = Bridge hat den neuen Tier schon bestaetigt; false = kommt mit dem Webhook nach. */
   synced?: boolean;
 }
 export interface RestoreResult {
   kind: BillingPrecondition | RestoreOutcome;
+  detail?: string;
   synced?: boolean;
 }
 
@@ -164,8 +167,8 @@ export class SupabaseOnlySubscription implements SubscriptionService {
     if (!isBillingAvailable()) return { kind: 'unavailable' };
     const user = await this.billingUser();
     if (!user) return { kind: 'needs_account' };
-    const outcome = await purchasePro(user.uid, plan);
-    if (outcome !== 'purchased' && outcome !== 'already_owned') return { kind: outcome };
+    const { outcome, detail } = await purchasePro(user.uid, plan);
+    if (outcome !== 'purchased' && outcome !== 'already_owned') return detail ? { kind: outcome, detail } : { kind: outcome };
     const tier = await syncTierWithServer(user.token);
     return { kind: outcome, synced: tier !== null };
   }
@@ -174,8 +177,8 @@ export class SupabaseOnlySubscription implements SubscriptionService {
     if (!isBillingAvailable()) return { kind: 'unavailable' };
     const user = await this.billingUser();
     if (!user) return { kind: 'needs_account' };
-    const outcome = await restoreStorePurchases(user.uid);
-    if (outcome !== 'restored') return { kind: outcome };
+    const { outcome, detail } = await restoreStorePurchases(user.uid);
+    if (outcome !== 'restored') return detail ? { kind: outcome, detail } : { kind: outcome };
     const tier = await syncTierWithServer(user.token);
     return { kind: outcome, synced: tier !== null };
   }

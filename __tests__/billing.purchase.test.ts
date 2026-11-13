@@ -137,3 +137,23 @@ test('altes Paket basic_monthly im Offering wird ignoriert', async () => {
   });
   expect(await billing.getStorePrices(null)).toEqual({});
 });
+
+test('Store-Fehler liefert den RevenueCat-Code mit (fuer den Dialog)', async () => {
+  P.purchasePackage.mockRejectedValue({
+    code: '5', message: 'There was a problem with the store.',
+    userInfo: { readableErrorCode: 'STORE_PROBLEM' }, underlyingErrorMessage: 'Billing service unavailable',
+  });
+  expect(await subscriptionService.openUpgradeFlow('monthly')).toEqual({
+    kind: 'store_error', detail: 'STORE_PROBLEM (5): Billing service unavailable',
+  });
+});
+
+test('Abbruch traegt keinen Code', async () => {
+  P.purchasePackage.mockRejectedValue({ code: '1', userCancelled: true, userInfo: { readableErrorCode: 'PURCHASE_CANCELLED' } });
+  expect(await subscriptionService.openUpgradeFlow('monthly')).toEqual({ kind: 'cancelled' });
+});
+
+test('errorDetailOf: ohne verwertbare Felder null', () => {
+  expect(billing.errorDetailOf(null)).toBeNull();
+  expect(billing.errorDetailOf({})).toBeNull();
+});

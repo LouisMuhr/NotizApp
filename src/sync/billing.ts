@@ -131,6 +131,26 @@ export type PurchaseOutcome =
   | 'not_allowed'
   | 'store_error';
 
+/**
+ * Technischer Fehlercode fuer den Dialog ("STORE_PROBLEM (5): Billing unavailable").
+ * Nur Codes und Store-Meldung, keine Nutzerdaten. null = nichts Brauchbares.
+ */
+export function errorDetailOf(e: unknown): string | null {
+  const err = e as {
+    code?: string | number;
+    message?: string;
+    readableErrorCode?: string;
+    underlyingErrorMessage?: string;
+    userInfo?: { readableErrorCode?: string };
+  } | null;
+  if (!err || typeof err !== 'object') return null;
+  const readable = err.userInfo?.readableErrorCode ?? err.readableErrorCode;
+  const head = [readable, err.code != null && err.code !== '' ? `(${err.code})` : null].filter(Boolean).join(' ');
+  const msg = err.underlyingErrorMessage || err.message;
+  const out = [head, msg].filter(Boolean).join(': ');
+  return out ? out.slice(0, 300) : null;
+}
+
 export function mapPurchaseError(e: unknown): PurchaseOutcome {
   const code = (e as { code?: string } | null)?.code;
   switch (code) {
@@ -145,11 +165,17 @@ export function mapPurchaseError(e: unknown): PurchaseOutcome {
   }
 }
 
-export async function purchasePro(uid: string, plan: ProPlan): Promise<PurchaseOutcome> {
+export interface PurchaseAttempt {
+  outcome: PurchaseOutcome;
+  /** Nur bei Fehlern: technischer Code fuer die Fehlersuche (siehe errorDetailOf). */
+  detail?: string;
+}
+
+export async function purchasePro(uid: string, plan: ProPlan): Promise<PurchaseAttempt> {
   try {
     await ensureUser(uid);
     const pkg = await findPackage(plan);
-    if (!pkg) return 'no_product';
+    if (!pkg) return { outcome: 'no_product', detail: `package ${PACKAGE_ID[plan]} not in current offering` };
 
     // Wechsel von einem anderen Google-Abo (Alt-Abo velm_basic): ersetzen statt zweites abschliessen.
     // Monatlich ↔ jaehrlich ist dasselbe Abo (velm_pro), das regelt Google selbst.
@@ -160,21 +186,26 @@ export async function purchasePro(uid: string, plan: ProPlan): Promise<PurchaseO
         : null;
 
     await Purchases.purchasePackage(pkg, null, change);
-    return 'purchased';
+    return { outcome: 'purchased' };
   } catch (e) {
-    return mapPurchaseError(e);
+    const outcome = mapPurchaseError(e);
+    if (outcome === 'cancelled') return { outcome };
+    const detail = errorDetailOf(e);
+    return detail ? { outcome, detail } : { outcome };
   }
 }
 
 export type RestoreOutcome = 'restored' | 'nothing' | 'network' | 'store_error';
 
-export async function restoreStorePurchases(uid: string): Promise<RestoreOutcome> {
+export async function restoreStorePurchases(uid: string): Promise<{ outcome: RestoreOutcome; detail?: string }> {
   try {
     await ensureUser(uid);
     const info = await Purchases.restorePurchases();
-    return Object.keys(info.entitlements.active ?? {}).length > 0 ? 'restored' : 'nothing';
+    return { outcome: Object.keys(info.entitlements.active ?? {}).length > 0 ? 'restored' : 'nothing' };
   } catch (e) {
-    return mapPurchaseError(e) === 'network' ? 'network' : 'store_error';
+    const outcome = mapPurchaseError(e) === 'network' ? 'network' : 'store_error';
+    const detail = errorDetailOf(e);
+    return detail ? { outcome, detail } : { outcome };
   }
 }
 

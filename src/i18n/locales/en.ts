@@ -523,6 +523,7 @@ const en: typeof de = {
     noProductBody: 'This plan is currently not available in Google Play.',
     notAllowedBody: 'Purchases are not allowed on this device (e.g. parental controls).',
     storeErrorBody: 'Google Play could not complete the purchase. Please try again later.',
+    errorCode: 'Code: {{code}}',
     restoreTitle: 'Restore purchases',
     restoredBody: 'Your subscription has been restored.',
     nothingBody: 'There is no active subscription for this Google account.',
