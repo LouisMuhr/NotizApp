@@ -83,10 +83,18 @@ interface DialogState {
   body: string;
   /** Zusaetzlicher Knopf zum Konto-Screen (Kauf braucht ein bestaetigtes Konto). */
   toAccount?: boolean;
+  /** Technischer Fehlercode, klein unter dem Text (fuer die Fehlersuche bei Testkaeufen). */
+  code?: string;
 }
 
 /** Ergebnis → Dialog. null = nichts anzeigen (z. B. Nutzer hat im Store abgebrochen). */
 export function dialogFor(result: UpgradeResult | RestoreResult, t: Translate): DialogState | null {
+  const base = dialogBase(result, t);
+  if (!base || !result.detail) return base;
+  return { ...base, code: result.detail };
+}
+
+function dialogBase(result: UpgradeResult | RestoreResult, t: Translate): DialogState | null {
   switch (result.kind) {
     case 'cancelled': return null;
     case 'unavailable': return { title: t('subscription.unavailableTitle'), body: t('subscription.unavailableBody') };
@@ -293,6 +301,11 @@ export default function SettingsAboScreen({ navigation }: { navigation?: any }) 
           <Dialog.Title style={{ color: theme.colors.onSurface }}>{dialog?.title}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{dialog?.body}</Text>
+            {dialog?.code && (
+              <Text selectable style={[styles.errorCode, { color: theme.colors.onSurfaceVariant }]}>
+                {t('subscription.errorCode', { code: dialog.code })}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDialog(null)} textColor={theme.colors.onSurfaceVariant}>
@@ -417,6 +430,7 @@ const styles = StyleSheet.create({
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   dialog: { borderRadius: 24 },
+  errorCode: { fontSize: 11, marginTop: 10, opacity: 0.7, fontFamily: Fonts.sans },
   renewalNote: { fontSize: 12, lineHeight: 17, textAlign: 'center', paddingHorizontal: 12, marginTop: 4 },
 
   heroBadge: {
