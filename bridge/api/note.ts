@@ -60,7 +60,7 @@ export default async function handler(req: any, res: any) {
       res.status(503).json({ error: 'profile_unavailable' });
       return;
     }
-    const minTier = (process.env.BOOKMARKLET_MIN_TIER ?? 'basic') as Tier;
+    const minTier = (process.env.BOOKMARKLET_MIN_TIER ?? 'pro') as Tier;
     if (!tierAtLeast(owner.tier, minTier)) {
       res.status(403).json({ error: 'tier_required', min_tier: minTier });
       return;

@@ -14,7 +14,7 @@
 // '../_lib/' statt './': der Jest-Mapper biegt nur '…_lib/x.js'-Importe auf die .ts-Quelle um.
 import { Env, sbHeaders, Tier } from '../_lib/supabaseAdmin.js';
 
-/** Entitlement-IDs im RevenueCat-Dashboard → Tier. */
+/** Entitlement-IDs im RevenueCat-Dashboard → Tier. Verkauft wird nur noch pro (monatlich/jaehrlich); basic bleibt fuer Altbestand. */
 export const ENTITLEMENT_TIER: Record<string, Tier> = { basic: 'basic', pro: 'pro' };
 
 const RANK: Record<Tier, number> = { free: 0, basic: 1, pro: 2 };

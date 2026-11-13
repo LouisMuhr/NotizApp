@@ -32,7 +32,7 @@ beforeEach(() => {
   calls = [];
   notesToday = 0;
   profiles = {
-    'acct-uid': { id: 'acct-uid', tier: 'basic' },
+    'acct-uid': { id: 'acct-uid', tier: 'pro' },
     'other-uid': { id: 'other-uid', tier: 'free' },
   };
   (global as any).fetch = jest.fn(async (url: string, init: any = {}) => {
@@ -118,9 +118,18 @@ describe('/api/note (Bookmarklet)', () => {
       expect(calls.some((c) => c.url.includes('/rest/v1/notes'))).toBe(false);
     });
 
-    test('Free-Konto → 403 tier_required (Entscheidung 7: ab Basic)', async () => {
+    test('Free-Konto → 403 tier_required (Bookmarklet nur mit Pro)', async () => {
       const res = mockRes();
       await noteHandler(req('other-acct-tok', { title: 'T', content: 'C' }), res);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.error).toBe('tier_required');
+      expect(res.body.min_tier).toBe('pro');
+    });
+
+    test('Alt-Tier Basic → 403 tier_required (Basic wird nicht mehr verkauft)', async () => {
+      profiles['acct-uid'].tier = 'basic';
+      const res = mockRes();
+      await noteHandler(req('acct-tok', { title: 'T', content: 'C' }), res);
       expect(res.statusCode).toBe(403);
       expect(res.body.error).toBe('tier_required');
     });

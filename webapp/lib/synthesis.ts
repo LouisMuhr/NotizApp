@@ -7,13 +7,16 @@ import type { Locale, Messages } from '@/lib/i18n';
 
 const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL ?? 'https://bridge-three-coral.vercel.app';
 
+/** Pro-Synthesen pro UTC-Tag, wie in der Bridge. */
+const PRO_SYNTHESES_PER_DAY = 3;
+
 interface LimitProfile { tier: Tier | null; ai_last_run: string | null; ai_runs_today: number | null; ai_day_reset: string | null }
 
 /** Gleiche Regel wie `computeNextAllowedAt` in der App (src/sync/subscriptionService.ts) und in der Bridge. */
 export function computeNextAllowedAt(p: LimitProfile): Date | null {
   const tier = p.tier ?? 'free';
   if (tier === 'pro') {
-    if (p.ai_day_reset && (p.ai_runs_today ?? 0) >= 10) {
+    if (p.ai_day_reset && (p.ai_runs_today ?? 0) >= PRO_SYNTHESES_PER_DAY) {
       const midnight = new Date(p.ai_day_reset); // 'YYYY-MM-DD' → 00:00 UTC
       midnight.setUTCDate(midnight.getUTCDate() + 1);
       return midnight;

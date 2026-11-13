@@ -4,7 +4,7 @@ import { useTheme, Text, Portal, Dialog, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNotes } from '../context/NotesContext';
 import { subscriptionService, Tier, UpgradeResult, RestoreResult } from '../sync/subscriptionService';
-import { getStorePrices, isBillingAvailable, MANAGE_SUBSCRIPTIONS_URL, PaidTier } from '../sync/billing';
+import { getStorePrices, isBillingAvailable, MANAGE_SUBSCRIPTIONS_URL, ProPlan, StorePrices } from '../sync/billing';
 import { getSyncUserId } from '../sync/accountState';
 import { Tokens } from '../theme/theme';
 import { Fonts } from '../theme/typography';
@@ -33,8 +33,6 @@ interface PlanMeta {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-type StorePrices = Partial<Record<PaidTier, string>>;
-
 function getPlans(t: Translate, prices: StorePrices = {}): Record<Tier, PlanMeta> {
   return {
     free: {
@@ -47,36 +45,33 @@ function getPlans(t: Translate, prices: StorePrices = {}): Record<Tier, PlanMeta
         { icon: 'notebook-outline', text: t('settingsAbo.plans.free.features.0') },
         { icon: 'tag-outline', text: t('settingsAbo.plans.free.features.1') },
         { icon: 'bell-outline', text: t('settingsAbo.plans.free.features.2') },
-        { icon: 'brain', text: t('settingsAbo.plans.free.features.3') },
+        { icon: 'cloud-sync-outline', text: t('settingsAbo.plans.free.features.3') },
+        { icon: 'brain', text: t('settingsAbo.plans.free.features.4') },
       ],
     },
+    // Altlast: nicht mehr kaufbar, nur Anzeige fuer Konten, die den Tier noch tragen.
     basic: {
       label: t('settingsAbo.plans.basic.label'),
       icon: 'star-half-full',
       color: Tokens.amber,
-      price: prices.basic ?? t('settingsAbo.plans.basic.price'),
+      price: t('settingsAbo.plans.basic.price'),
       priceDetail: t('settingsAbo.plans.basic.priceDetail'),
       features: [
         { icon: 'check-circle-outline', text: t('settingsAbo.plans.basic.features.0') },
         { icon: 'brain', text: t('settingsAbo.plans.basic.features.1') },
-        { icon: 'cloud-sync-outline', text: t('settingsAbo.plans.basic.features.2') },
-        { icon: 'bookmark-plus-outline', text: t('settingsAbo.plans.basic.features.3') },
-        { icon: 'lightning-bolt-outline', text: t('settingsAbo.plans.basic.features.4') },
       ],
     },
     pro: {
       label: t('settingsAbo.plans.pro.label'),
       icon: 'star',
       color: Tokens.amberDeep,
-      price: prices.pro ?? t('settingsAbo.plans.pro.price'),
+      price: prices.monthly?.price ?? t('settingsAbo.plans.pro.price'),
       priceDetail: t('settingsAbo.plans.pro.priceDetail'),
       features: [
         { icon: 'check-circle-outline', text: t('settingsAbo.plans.pro.features.0') },
         { icon: 'brain', text: t('settingsAbo.plans.pro.features.1') },
-        { icon: 'priority-high', text: t('settingsAbo.plans.pro.features.2') },
-        { icon: 'graph-outline', text: t('settingsAbo.plans.pro.features.3') },
-        { icon: 'headset', text: t('settingsAbo.plans.pro.features.4') },
-        { icon: 'microphone-outline', text: t('settingsAbo.plans.pro.features.5') },
+        { icon: 'microphone-outline', text: t('settingsAbo.plans.pro.features.2') },
+        { icon: 'bookmark-plus-outline', text: t('settingsAbo.plans.pro.features.3') },
       ],
     },
   };
@@ -126,7 +121,7 @@ export default function SettingsAboScreen({ navigation }: { navigation?: any }) 
   const { tier, nextAllowedAt, refreshSubscription } = useNotes();
   const { t, locale } = useLanguage();
   const [prices, setPrices] = useState<StorePrices>({});
-  const [busy, setBusy] = useState<PaidTier | 'restore' | null>(null);
+  const [busy, setBusy] = useState<ProPlan | 'restore' | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const PLANS = getPlans(t, prices);
   const billing = isBillingAvailable();
@@ -142,7 +137,7 @@ export default function SettingsAboScreen({ navigation }: { navigation?: any }) 
     return () => { alive = false; };
   }, [billing]);
 
-  const run = async (what: PaidTier | 'restore') => {
+  const run = async (what: ProPlan | 'restore') => {
     if (busy) return;
     setBusy(what);
     try {
@@ -241,19 +236,16 @@ export default function SettingsAboScreen({ navigation }: { navigation?: any }) 
           <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>
             {t('settingsAbo.upgrade')}
           </Text>
-          {(tier === 'free' ? (['basic', 'pro'] as const) : (['pro'] as const)).map((targetTier) => (
-            <UpgradePlanCard
-              key={targetTier}
-              targetTier={targetTier}
-              prices={prices}
-              busy={busy === targetTier}
-              disabled={busy !== null}
-              onPress={() => run(targetTier)}
-            />
-          ))}
+          <UpgradePlanCard
+            prices={prices}
+            busy={busy}
+            onPress={(plan) => run(plan)}
+          />
           {billing && (
             <Text style={[styles.renewalNote, { color: theme.colors.onSurfaceVariant }]}>
-              {t('subscription.renewalNote')}
+              {prices.monthly?.trialDays || prices.yearly?.trialDays
+                ? t('subscription.renewalNoteTrial')
+                : t('subscription.renewalNote')}
             </Text>
           )}
         </>
@@ -329,29 +321,35 @@ export default function SettingsAboScreen({ navigation }: { navigation?: any }) 
 // ---------------------------------------------------------------------------
 
 interface UpgradePlanCardProps {
-  targetTier: PaidTier;
   prices: StorePrices;
-  busy: boolean;
-  disabled: boolean;
-  onPress: () => void;
+  busy: ProPlan | 'restore' | null;
+  onPress: (plan: ProPlan) => void;
 }
 
-function UpgradePlanCard({ targetTier, prices, busy, disabled, onPress }: UpgradePlanCardProps) {
+/** Eine Pro-Karte mit zwei Kaufknoepfen: monatlich und jaehrlich. */
+function UpgradePlanCard({ prices, busy, onPress }: UpgradePlanCardProps) {
   const theme = useTheme();
   const { t } = useLanguage();
-  const plan = getPlans(t, prices)[targetTier];
+  const plan = getPlans(t, prices).pro;
+  const disabled = busy !== null;
+
+  const cta = (which: ProPlan) => {
+    const trialDays = prices[which]?.trialDays;
+    const price = which === 'monthly'
+      ? prices.monthly?.price ?? t('settingsAbo.plans.pro.price')
+      : prices.yearly?.price ?? t('settingsAbo.plans.pro.yearlyPrice');
+    const label = trialDays
+      ? t('settingsAbo.trialCta', { days: trialDays })
+      : t(which === 'monthly' ? 'settingsAbo.monthlyCta' : 'settingsAbo.yearlyCta');
+    const period = which === 'monthly'
+      ? t('settingsAbo.monthlySub', { price })
+      : t('settingsAbo.yearlySub', { price });
+    const sub = trialDays ? t('settingsAbo.afterTrial', { price: period }) : period;
+    return { label, sub };
+  };
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityState={{ busy, disabled }}
-      style={({ pressed }) => [
-        styles.upgradePlanCard,
-        { backgroundColor: theme.colors.surface, borderColor: plan.color + '50' },
-        pressed && { opacity: 0.75 },
-      ]}
-    >
+    <View style={[styles.upgradePlanCard, { backgroundColor: theme.colors.surface, borderColor: plan.color + '50' }]}>
       {/* Header row */}
       <View style={styles.upgradePlanHeader}>
         <View style={[styles.upgradePlanIconWrap, { backgroundColor: plan.color + '22' }]}>
@@ -376,18 +374,37 @@ function UpgradePlanCard({ targetTier, prices, busy, disabled, onPress }: Upgrad
         ))}
       </View>
 
-      {/* CTA */}
-      <View style={[styles.upgradeCTA, { backgroundColor: plan.color }]}>
-        {busy ? (
-          <ActivityIndicator size="small" color={Tokens.paper} />
-        ) : (
-          <>
-            <Text style={styles.upgradeCTAText}>{t('settingsAbo.upgradeCta', { plan: plan.label })}</Text>
-            <MaterialCommunityIcons name="arrow-right" size={15} color={Tokens.paper} />
-          </>
-        )}
-      </View>
-    </Pressable>
+      {/* CTAs: jaehrlich zuerst (guenstiger pro Monat), monatlich darunter */}
+      {(['yearly', 'monthly'] as const).map((which) => {
+        const { label, sub } = cta(which);
+        const primary = which === 'yearly';
+        return (
+          <Pressable
+            key={which}
+            onPress={() => onPress(which)}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityState={{ busy: busy === which, disabled }}
+            style={({ pressed }) => [
+              styles.upgradeCTA,
+              primary
+                ? { backgroundColor: plan.color }
+                : { backgroundColor: plan.color + '18', borderTopWidth: 1, borderTopColor: plan.color + '30' },
+              pressed && { opacity: 0.75 },
+            ]}
+          >
+            {busy === which ? (
+              <ActivityIndicator size="small" color={primary ? Tokens.paper : plan.color} />
+            ) : (
+              <View style={{ alignItems: 'center' }}>
+                <Text style={[styles.upgradeCTAText, !primary && { color: plan.color }]}>{label}</Text>
+                <Text style={[styles.upgradeCTASub, { color: primary ? Tokens.paper : theme.colors.onSurfaceVariant }]}>{sub}</Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -547,6 +564,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.sansSemibold,
     color: Tokens.paper,
+  },
+  upgradeCTASub: {
+    fontSize: 11,
+    fontFamily: Fonts.sans,
+    marginTop: 1,
+    opacity: 0.9,
   },
 
   restoreBtn: {

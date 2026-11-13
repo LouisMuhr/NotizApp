@@ -1,7 +1,8 @@
 /**
- * Im "Mein Abo"-Screen muss unter Basic stehen, dass das Bookmarklet ab diesem
- * Plan verfuegbar ist — sowohl in der Upgrade-Karte (Free-User) als auch in den
- * enthaltenen Leistungen (Basic-User).
+ * Preismodell Free + Pro: Die Abo-Seite verspricht nur, was der Code kann.
+ * Pro enthaelt das Bookmarklet; Free nennt Sync (laeuft fuer jedes bestaetigte
+ * Konto); nicht umgesetzte Versprechen (Prioritaet, Support, schnellere
+ * Synthese) tauchen nirgends auf.
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react-native';
@@ -19,20 +20,29 @@ const SettingsAboScreen = require('../src/screens/SettingsAboScreen').default;
 
 const BOOKMARKLET = 'Bookmarklet — Webseiten als Notiz speichern';
 
-test('Free-User sieht das Bookmarklet in der Basic-Upgrade-Karte', () => {
+test('Free-User sieht das Bookmarklet in der Pro-Karte', () => {
   useNotes.mockReturnValue({ tier: 'free', nextAllowedAt: null });
+  render(<SettingsAboScreen />);
+  expect(screen.getByText(BOOKMARKLET)).toBeTruthy();
+  expect(screen.getByText('Sync zwischen Geräten (mit Konto)')).toBeTruthy();
+});
+
+test('Pro-User sieht das Bookmarklet unter den enthaltenen Leistungen', () => {
+  useNotes.mockReturnValue({ tier: 'pro', nextAllowedAt: null });
   render(<SettingsAboScreen />);
   expect(screen.getByText(BOOKMARKLET)).toBeTruthy();
 });
 
-test('Basic-User sieht das Bookmarklet unter den enthaltenen Leistungen', () => {
-  useNotes.mockReturnValue({ tier: 'basic', nextAllowedAt: null });
+test.each(['free', 'basic', 'pro'])('%s: keine nicht umgesetzten Versprechen', (tier) => {
+  useNotes.mockReturnValue({ tier, nextAllowedAt: null });
   render(<SettingsAboScreen />);
-  expect(screen.getByText(BOOKMARKLET)).toBeTruthy();
+  for (const fake of [/Priorit/, /Premium-Support/, /Schnellere Synthese/, /Web-Visualisierung/, /Geräte-Synchronisation/]) {
+    expect(screen.queryByText(fake)).toBeNull();
+  }
 });
 
 test('Kein Feature-Eintrag bleibt als roher i18n-Key uebrig', () => {
   useNotes.mockReturnValue({ tier: 'free', nextAllowedAt: null });
   render(<SettingsAboScreen />);
-  expect(screen.queryByText(/settingsAbo\.plans/)).toBeNull();
+  expect(screen.queryByText(/settingsAbo\./)).toBeNull();
 });

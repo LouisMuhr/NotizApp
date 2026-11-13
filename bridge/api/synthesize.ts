@@ -6,6 +6,9 @@ import { randomUUID } from 'node:crypto';
 
 type Tier = 'free' | 'basic' | 'pro';
 
+/** Pro-Synthesen pro UTC-Tag. Gleicher Wert in der App (subscriptionService) und Webapp (lib/synthesis). */
+export const PRO_SYNTHESES_PER_DAY = 3;
+
 interface ProfileRow {
   id: string;
   tier: Tier;
@@ -38,7 +41,7 @@ function checkRateLimit(profile: ProfileRow): string | null {
 
   if (tier === 'pro') {
     const todayUtc = now.toISOString().slice(0, 10);
-    if (ai_day_reset === todayUtc && ai_runs_today >= 10) {
+    if (ai_day_reset === todayUtc && ai_runs_today >= PRO_SYNTHESES_PER_DAY) {
       const midnight = new Date(todayUtc);
       midnight.setUTCDate(midnight.getUTCDate() + 1);
       return midnight.toISOString();

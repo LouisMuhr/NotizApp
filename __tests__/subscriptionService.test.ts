@@ -83,3 +83,13 @@ test('Profilzeile fehlt (PGRST116): free', async () => {
   });
   expect((await subscriptionService.getStatus()).tier).toBe('free');
 });
+
+describe('Pro-Limit: 3 Synthesen pro UTC-Tag', () => {
+  const { computeNextAllowedAt, PRO_SYNTHESES_PER_DAY } = require('../src/sync/subscriptionService');
+  test('Grenze ist 3', () => expect(PRO_SYNTHESES_PER_DAY).toBe(3));
+  test('nach 2 Laeufen frei, nach 3 bis Mitternacht UTC gesperrt', () => {
+    const base = { tier: 'pro', ai_last_run: '2026-11-13T10:00:00Z', ai_day_reset: '2026-11-13' };
+    expect(computeNextAllowedAt({ ...base, ai_runs_today: 2 })).toBeNull();
+    expect(computeNextAllowedAt({ ...base, ai_runs_today: 3 })?.toISOString()).toBe('2026-11-14T00:00:00.000Z');
+  });
+});
