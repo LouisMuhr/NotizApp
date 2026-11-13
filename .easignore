@@ -1,0 +1,67 @@
+# EAS Build: ersetzt .gitignore beim Hochladen. Basis = .gitignore, plus alles, was der native App-Build nicht braucht.
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Design-Handoffs (lokale Referenz, nicht eingecheckt)
+Velm Icon - Final.html
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env*.local
+
+# bridge (Vercel)
+bridge/.vercel
+
+# brainstorm worker logs & secrets
+bridge/worker/logs/
+bridge/worker/.env
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+.vercel
+
+# Lokale Claude-Code-Einstellungen (Berechtigungen dieses Rechners)
+.claude/settings.local.json
+
+# Nicht Teil der App (eigene Vercel-Projekte, Doku, lokale Builds; enthalten teils eigene .env-Dateien)
+/webapp/
+/bridge/
+/docs/
+/migration/
+/store/
+.env*
+!.env.example
