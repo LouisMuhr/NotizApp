@@ -39,10 +39,18 @@ beforeEach(() => {
   useNotes.mockReturnValue({ tier: 'free', nextAllowedAt: null, refreshSubscription });
 });
 
+test('Free sieht nur noch Pro, monatlich und jaehrlich, kein Basic', () => {
+  renderScreen();
+  expect(screen.getByText('Jährlich abonnieren')).toBeTruthy();
+  expect(screen.getByText('Monatlich abonnieren')).toBeTruthy();
+  expect(screen.getByText('39,99 € / Jahr · spart ein Drittel')).toBeTruthy();
+  expect(screen.queryByText('Basic')).toBeNull();
+});
+
 test('ohne Konto: Dialog mit Weg zum Konto', async () => {
   subscriptionService.openUpgradeFlow.mockResolvedValue({ kind: 'needs_account' });
   renderScreen();
-  fireEvent.press(screen.getByText('Auf Basic upgraden'));
+  fireEvent.press(screen.getByText('Monatlich abonnieren'));
   await waitFor(() => expect(screen.getByText('Konto nötig')).toBeTruthy());
   fireEvent.press(screen.getByText('Zum Konto'));
   expect(navigation.navigate).toHaveBeenCalledWith('SettingsKonto');
@@ -51,16 +59,22 @@ test('ohne Konto: Dialog mit Weg zum Konto', async () => {
 test('erfolgreicher Kauf: Tier neu laden + Danke-Dialog', async () => {
   subscriptionService.openUpgradeFlow.mockResolvedValue({ kind: 'purchased', synced: true });
   renderScreen();
-  fireEvent.press(screen.getByText('Auf Pro upgraden'));
+  fireEvent.press(screen.getByText('Jährlich abonnieren'));
   await waitFor(() => expect(screen.getByText('Dein Plan ist freigeschaltet.')).toBeTruthy());
-  expect(subscriptionService.openUpgradeFlow).toHaveBeenCalledWith('pro');
+  expect(subscriptionService.openUpgradeFlow).toHaveBeenCalledWith('yearly');
   expect(refreshSubscription).toHaveBeenCalled();
+});
+
+test('Legacy-Basic sieht ebenfalls das Pro-Angebot', () => {
+  useNotes.mockReturnValue({ tier: 'basic', nextAllowedAt: null, refreshSubscription });
+  renderScreen();
+  expect(screen.getByText('Monatlich abonnieren')).toBeTruthy();
 });
 
 test('Abbruch im Store: kein Dialog', async () => {
   subscriptionService.openUpgradeFlow.mockResolvedValue({ kind: 'cancelled' });
   renderScreen();
-  fireEvent.press(screen.getByText('Auf Basic upgraden'));
+  fireEvent.press(screen.getByText('Monatlich abonnieren'));
   await waitFor(() => expect(subscriptionService.openUpgradeFlow).toHaveBeenCalled());
   expect(screen.queryByText('Kauf nicht möglich')).toBeNull();
   expect(screen.queryByText('Danke!')).toBeNull();

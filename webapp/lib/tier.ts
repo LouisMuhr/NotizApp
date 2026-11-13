@@ -9,7 +9,7 @@ export async function fetchTier(userId: string): Promise<Tier | null> {
   return (data.tier as Tier | null) ?? 'free';
 }
 
-/** Gleiche Regel wie die Bridge (BOOKMARKLET_MIN_TIER, Default basic). */
+/** Gleiche Regel wie die Bridge (BOOKMARKLET_MIN_TIER, Default pro). 'basic' ist eine Altlast. */
 export function hasBookmarklet(tier: Tier | null): boolean {
-  return tier === 'basic' || tier === 'pro';
+  return tier === 'pro';
 }

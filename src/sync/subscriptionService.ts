@@ -2,8 +2,8 @@ import { getSupabase } from './supabaseClient';
 import { getSyncUserId } from './accountState';
 import {
   isBillingAvailable,
-  PaidTier,
-  purchaseTier,
+  ProPlan,
+  purchasePro,
   PurchaseOutcome,
   restoreStorePurchases,
   RestoreOutcome,
@@ -14,7 +14,11 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
+/** 'basic' ist eine Altlast (nicht mehr kaufbar), der Server kann ihn aber noch liefern. */
 export type Tier = 'free' | 'basic' | 'pro';
+
+/** Pro-Synthesen pro UTC-Tag. Muss zu bridge/api/synthesize.ts passen (der Server entscheidet). */
+export const PRO_SYNTHESES_PER_DAY = 3;
 
 export interface ProfileRow {
   id: string;
@@ -54,8 +58,8 @@ export interface SubscriptionService {
   /** Fetches both tier and nextAllowedAt in one Supabase round-trip. */
   getStatus(): Promise<{ tier: Tier; nextAllowedAt: Date | null }>;
 
-  /** Startet den Store-Kauf (Google Play via RevenueCat) und gleicht danach den Tier ab. */
-  openUpgradeFlow(targetTier: PaidTier): Promise<UpgradeResult>;
+  /** Startet den Pro-Kauf (Google Play via RevenueCat) und gleicht danach den Tier ab. */
+  openUpgradeFlow(plan: ProPlan): Promise<UpgradeResult>;
 
   /** Stellt Store-Abos wieder her (Geraetewechsel, Neuinstallation) und gleicht den Tier ab. */
   restorePurchases(): Promise<RestoreResult>;
@@ -77,7 +81,7 @@ export function computeNextAllowedAt(profile: Pick<ProfileRow, 'tier' | 'ai_last
   const { tier, ai_last_run, ai_runs_today, ai_day_reset } = profile;
 
   if (tier === 'pro') {
-    if (ai_day_reset && ai_runs_today >= 10) {
+    if (ai_day_reset && ai_runs_today >= PRO_SYNTHESES_PER_DAY) {
       const midnight = new Date(ai_day_reset); // 'YYYY-MM-DD' → 00:00 UTC
       midnight.setUTCDate(midnight.getUTCDate() + 1);
       return midnight;
@@ -156,11 +160,11 @@ export class SupabaseOnlySubscription implements SubscriptionService {
     return { uid, token: session.access_token };
   }
 
-  async openUpgradeFlow(targetTier: PaidTier): Promise<UpgradeResult> {
+  async openUpgradeFlow(plan: ProPlan): Promise<UpgradeResult> {
     if (!isBillingAvailable()) return { kind: 'unavailable' };
     const user = await this.billingUser();
     if (!user) return { kind: 'needs_account' };
-    const outcome = await purchaseTier(user.uid, targetTier);
+    const outcome = await purchasePro(user.uid, plan);
     if (outcome !== 'purchased' && outcome !== 'already_owned') return { kind: outcome };
     const tier = await syncTierWithServer(user.token);
     return { kind: outcome, synced: tier !== null };

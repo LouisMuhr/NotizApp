@@ -135,7 +135,7 @@ export default function SettingsScreen() {
   // Abo-Gating: Zeilen bleiben sichtbar, zeigen aber nur, ab welchem Plan sie nutzbar sind.
   // Bei unbekanntem Tier wird NICHT gesperrt — ein Pro-Nutzer soll direkt nach
   // dem Start weder ein Schloss sehen noch faelschlich nach SettingsAbo landen.
-  const bookmarkletLocked = tier !== null && tier === 'free';
+  const bookmarkletLocked = tier !== null && tier !== 'pro';
   const webAppLocked = tier !== null && tier !== 'pro';
 
   const colors = {
@@ -228,7 +228,7 @@ export default function SettingsScreen() {
           label={t('settings.bookmarklet')}
           sublabel={
             bookmarkletLocked
-              ? t('settings.lockedFromPlan', { plan: t('settings.tierBasic') })
+              ? t('settings.lockedFromPlan', { plan: t('settings.tierPro') })
               : t('settings.bookmarkletSub')
           }
           locked={bookmarkletLocked}

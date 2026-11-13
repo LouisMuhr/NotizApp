@@ -56,7 +56,7 @@ npm test                # Jest (jest-expo); __tests__/ = Audit- + Regressionstes
 ## Environment Variables
 `NotizApp/.env` (copy from `.env.example`): `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`,
 `EXPO_PUBLIC_BRIDGE_URL` (`EXPO_PUBLIC_BRIDGE_BEARER` entfällt — kein Admin-Token im App-Bundle). Webapp-URL fest: `https://www.velmnote.com`.
-Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH`, optional `BOOKMARKLET_MIN_TIER` (Default `basic`). App: `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
+Bridge (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `REVENUECAT_SECRET_KEY`, `REVENUECAT_WEBHOOK_AUTH`, optional `BOOKMARKLET_MIN_TIER` (Default `pro`). App: `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
 `webapp/.env.local`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_BRIDGE_URL`.
 Sync ist optional — fehlen die Vars, liefert `isSyncConfigured()` false und aller Sync-Code entfällt still.
 ## Architecture Notes
@@ -154,7 +154,7 @@ Akzentfarbe. Fonts: Instrument Serif (Headings), Inter (UI/Body) via `expo-font`
 
 ### Bridge-Auth & Synthese
 Alle Bridge-Endpunkte weisen den Aufrufer über ein **Supabase-Access-Token** aus (`_lib/supabaseAdmin.ts`
-→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (ab Tier `basic`): max. 50 Bookmarklet-Notizen pro
+→ `verifyToken()`); kein statischer Admin-Token mehr. `/api/note` (nur `pro`): max. 50 Bookmarklet-Notizen pro
 UTC-Tag (gezählt über `notes.source`), Inhalt ≤ 50.000 Zeichen, keine Checkliste. `profiles.bookmarklet_token_hash` ist ungenutzt.
 `/api/delete-user` löscht nur den Aufrufer (`src/sync/deleteAccount.ts`). Fehlerantworten sind generische
 Codes (`ai_unavailable`, `internal`, …), Details nur im Log. **Relative Importe in `bridge/api` mit `.js`-Endung** (Vercel = ESM, sonst `ERR_MODULE_NOT_FOUND`).
@@ -163,7 +163,7 @@ Fenster `webapp/app/bookmarklet/save` (Daten im `#`-Fragment). Es hat das Formul
 → `/api/note` (CSP fremder Seiten wie X/Wikipedia blockt `fetch` aus der Seite, ein eigenes Fenster nicht). Setup `/bookmarklet` zeigt nur den Link, App verlinkt dorthin; Kategorien = Standard + in Notizen benutzte.
 
 Synthese läuft **on-demand** (`ThreadsScreen` bzw. Webapp `lib/synthesis.ts`, Topbar-Button nur mit Threads → `POST /api/synthesize`): Rate-Limit pro Tier (free 1×/7×24 h
-rollierend, basic 1×/24 h rollierend, pro 10×/UTC-Tag) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
+rollierend, Alt-basic 1×/24 h, pro 3×/UTC-Tag = `PRO_SYNTHESES_PER_DAY` in Bridge/App/Webapp) über `profiles`; Lauf wird **vor** dem KI-Call gebucht
 (Claim mit Filter auf `ai_last_run`, bei Race einmal Retry) und bei Fehlern auf unserer Seite (Netz, KI, DB)
 zurückgegeben, ebenso bei „keine Notizen"; sortiert die KI nichts ein → `nothing_assigned`, nur 10 min Sperre (Pro: zählt). Client zeigt `next_allowed_at` als Uhrzeit
 (`src/utils/limitFormat.ts` → `formatAvailabilityParts()`), Grenze deterministisch aus Server-Feldern
@@ -179,11 +179,11 @@ wird zurückgegeben. Antwort per Structured Outputs (`SYNTHESIS_SCHEMA`). Server
 in `_lib/parseNoteAi.ts`). Nur diktiert + Pro + Schalter pro Aufnahme im Sheet (nicht mehr global) + bestätigtes Konto; 30/UTC-Tag (`profiles.voice_ai_*`, Claim vor KI-Call).
 Erinnerung kommt als lokale Zeit, `structuredToNote()` rechnet um. KI-Fehler → Diktat unverändert speichern + Alert. Titel-Knopf im Sheet für alle.
 **Offline-Diktat**: Erkennung online per Netz-Dienst, ohne Netz (`utils/connectivity.ts`-Probe) oder nach Fehler einmal `requiresOnDeviceRecognition`; Fehler sind im Sheet sichtbar (Android: Sprachpaket-Download); Geräte-Erkennung: leise Fehler (`aborted`) kippen den Titel↔Inhalt-Neustart nicht, Titel endet nach 1,8 s Stille (kein Satzschluss vom Dienst). Scheitert die KI beim Speichern (offline/Bridge/Tageslimit), landet die Notiz in `@notizapp_pending_parse` (`sync/pendingParse.ts`); `NotesContext.processPendingParses` holt sie nach (Pro, alle 20 s + Vordergrund, erst nach dem Laden der Notizen), überschreibt nie bei geändertem `updatedAt`, verwirft nach 3 Tagen bzw. 5 Fehlversuchen (kaputter Eintrag blockiert die Rest nicht; Abbruch nur bei Offline/Limit, `decideAfterError`); Diktate > 4000 Zeichen gehen nie an die KI; Detach/Alles-löschen leeren sie.
-**Abo-Gating in der UI**: Bookmarklet ab `basic` (zusätzlich bestätigtes Konto nötig; Webapp zeigt Button/Link nur dann, `webapp/lib/tier.ts`), Web App + KI-Sprachnotizen ab `pro`.
+**Preismodell Free + Pro** (seit 1.9.0; `basic` = Altlast, nicht kaufbar, zählt beim Gating wie free): Pro 4,99 €/Monat bzw. 39,99 €/Jahr, 7 Tage Test in der Play Console. Abo-Seite listet **nur umgesetzte** Leistungen (Test `settingsAbo.proPlans`). **Abo-Gating in der UI**: Bookmarklet (zusätzlich bestätigtes Konto; Webapp `webapp/lib/tier.ts`), Web App + KI-Sprachnotizen nur `pro`.
 Gesperrte Einträge bleiben sichtbar (`NavRow locked`), zeigen `settings.lockedFromPlan`, navigieren zu `SettingsAbo`. `tier` ist `Tier | null` —
 **`null` heisst „noch nicht bekannt", nie „free"**: die UI behauptet solange keine Sperre (kein `ProBanner`, kein Schloss, Spinner in
 `SettingsAbo`, Synthese-Button gesperrt via `tierKnown`). `refreshSubscription()` cacht den Wert und fällt bei Netzfehler **nicht** auf `free`
-zurück; `detachSync`/`deleteAllData` räumen den Cache (+ `logOutBilling()`). **Abos (Google Play via RevenueCat)**, Setup `docs/billing-setup.md`: `src/sync/billing.ts` kauft nur Android + bestätigtes Konto, `appUserID` = Supabase-UID, Basic→Pro ersetzt das Google-Abo; Ergebnis als Paper-Dialog (`dialogFor`). Der Tier kommt **nie** vom Client/Webhook-Inhalt: `/api/billing-sync` (nach Kauf) und `/api/billing-webhook` fragen RevenueCat (`_lib/billing.ts`), Entitlements `basic`/`pro`, Pakete `basic_monthly`/`pro_monthly`. `profiles.tier_source` (`manual`|`revenuecat`): Hand-Tiers setzt der Store nie herunter. iOS: „noch nicht verfügbar". `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
+zurück; `detachSync`/`deleteAllData` räumen den Cache (+ `logOutBilling()`). **Abos (Google Play via RevenueCat)**, Setup `docs/billing-setup.md`: `src/sync/billing.ts` kauft nur Android + bestätigtes Konto, `appUserID` = Supabase-UID, Alt-Abo `velm_basic` wird beim Pro-Kauf ersetzt; Ergebnis als Paper-Dialog (`dialogFor`). Der Tier kommt **nie** vom Client/Webhook-Inhalt: `/api/billing-sync` (nach Kauf) und `/api/billing-webhook` fragen RevenueCat (`_lib/billing.ts`), Abo `velm_pro` (Basis-Pläne `monthly`/`yearly`), Entitlement `pro`, Pakete `pro_monthly`/`pro_yearly`; Testphase liest `trialDaysOf()` aus der Google-Preisphase. Production-Build zählt `versionCode` selbst (`autoIncrement`). `profiles.tier_source` (`manual`|`revenuecat`): Hand-Tiers setzt der Store nie herunter. iOS: „noch nicht verfügbar". `bridge/worker/*` sind lokale CLI-Helfer (`.env` dort), nicht Teil der API.
 
 ## Code Conventions
 - **Language**: German UI strings; English code identifiers.

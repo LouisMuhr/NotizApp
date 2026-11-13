@@ -22,10 +22,23 @@ import Purchases, {
 import { bridgePost, BRIDGE_URL } from './bridge';
 import type { Tier } from './subscriptionService';
 
-export type PaidTier = 'basic' | 'pro';
+/**
+ * Kaufbar ist nur noch Pro, monatlich oder jaehrlich (Google-Abo `velm_pro`,
+ * Basis-Abos `monthly`/`yearly`, beide am Entitlement `pro`). Basic gibt es
+ * nur noch als Altlast im Tier, gekauft wird es nicht mehr.
+ */
+export type ProPlan = 'monthly' | 'yearly';
 
 /** Paket-IDs im RevenueCat-Offering „default". */
-export const PACKAGE_ID: Record<PaidTier, string> = { basic: 'basic_monthly', pro: 'pro_monthly' };
+export const PACKAGE_ID: Record<ProPlan, string> = { monthly: 'pro_monthly', yearly: 'pro_yearly' };
+
+export interface PlanPrice {
+  /** Lokalisierter Store-Preis ("4,99 €"). */
+  price: string;
+  /** Gratis-Testphase in Tagen, wenn Google sie diesem Konto anbietet (sonst fehlt das Feld). */
+  trialDays?: number;
+}
+export type StorePrices = Partial<Record<ProPlan, PlanPrice>>;
 
 export const ANDROID_PACKAGE = 'com.velm.app';
 export const MANAGE_SUBSCRIPTIONS_URL =
@@ -62,21 +75,34 @@ export function __resetBillingForTests(): void {
   configuredFor = null;
 }
 
-async function findPackage(target: PaidTier): Promise<PurchasesPackage | null> {
+async function findPackage(plan: ProPlan): Promise<PurchasesPackage | null> {
   const offerings = await Purchases.getOfferings();
-  return offerings.current?.availablePackages.find((p) => p.identifier === PACKAGE_ID[target]) ?? null;
+  return offerings.current?.availablePackages.find((p) => p.identifier === PACKAGE_ID[plan]) ?? null;
 }
 
-/** Lokalisierte Store-Preise ("1,99 €"); fehlt etwas, bleibt der Text aus i18n. */
-export async function getStorePrices(uid: string | null): Promise<Partial<Record<PaidTier, string>>> {
+/** Testphase in Tagen aus der Google-Preisphase; null = keine (oder schon verbraucht). */
+export function trialDaysOf(pkg: PurchasesPackage): number | null {
+  const period = pkg.product.defaultOption?.freePhase?.billingPeriod;
+  if (!period || period.value <= 0) return null;
+  switch (period.unit) {
+    case 'DAY': return period.value;
+    case 'WEEK': return period.value * 7;
+    default: return null;
+  }
+}
+
+/** Lokalisierte Store-Preise; fehlt etwas, bleibt der Text aus i18n. */
+export async function getStorePrices(uid: string | null): Promise<StorePrices> {
   if (!isBillingAvailable()) return {};
   try {
     await ensureUser(uid);
     const offerings = await Purchases.getOfferings();
-    const out: Partial<Record<PaidTier, string>> = {};
-    for (const tier of ['basic', 'pro'] as const) {
-      const pkg = offerings.current?.availablePackages.find((p) => p.identifier === PACKAGE_ID[tier]);
-      if (pkg) out[tier] = pkg.product.priceString;
+    const out: StorePrices = {};
+    for (const plan of ['monthly', 'yearly'] as const) {
+      const pkg = offerings.current?.availablePackages.find((p) => p.identifier === PACKAGE_ID[plan]);
+      if (!pkg) continue;
+      const trialDays = trialDaysOf(pkg);
+      out[plan] = trialDays ? { price: pkg.product.priceString, trialDays } : { price: pkg.product.priceString };
     }
     return out;
   } catch {
@@ -84,12 +110,12 @@ export async function getStorePrices(uid: string | null): Promise<Partial<Record
   }
 }
 
-/** Google-Abo-ID ohne Basis-Plan ("velm_basic:monthly" → "velm_basic"). */
+/** Google-Abo-ID ohne Basis-Plan ("velm_pro:monthly" → "velm_pro"). */
 export function subscriptionIdOf(productIdentifier: string): string {
   return productIdentifier.split(':')[0];
 }
 
-/** Produkt des aktiven Abos (fuer den Planwechsel Basic → Pro). */
+/** Produkt des aktiven Abos (fuer den Wechsel von einem Alt-Abo wie velm_basic). */
 export function activeProductOf(info: CustomerInfo): string | null {
   const active = Object.values(info.entitlements.active ?? {});
   return active[0]?.productIdentifier ?? null;
@@ -119,13 +145,14 @@ export function mapPurchaseError(e: unknown): PurchaseOutcome {
   }
 }
 
-export async function purchaseTier(uid: string, target: PaidTier): Promise<PurchaseOutcome> {
+export async function purchasePro(uid: string, plan: ProPlan): Promise<PurchaseOutcome> {
   try {
     await ensureUser(uid);
-    const pkg = await findPackage(target);
+    const pkg = await findPackage(plan);
     if (!pkg) return 'no_product';
 
-    // Planwechsel innerhalb von Google Play: altes Abo ersetzen statt zweites abschliessen.
+    // Wechsel von einem anderen Google-Abo (Alt-Abo velm_basic): ersetzen statt zweites abschliessen.
+    // Monatlich ↔ jaehrlich ist dasselbe Abo (velm_pro), das regelt Google selbst.
     const old = activeProductOf(await Purchases.getCustomerInfo());
     const change =
       old && subscriptionIdOf(old) !== subscriptionIdOf(pkg.product.identifier)
